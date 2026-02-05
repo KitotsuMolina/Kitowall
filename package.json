@@ -1,0 +1,21 @@
+{
+  "name": "hyprwall",
+  "version": "0.1.0",
+  "description": "CLI/daemon for Hyprland wallpapers using swww with pack-based rotation.",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "hyprwall": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsc --watch",
+    "lint": "node dist/cli.js --help"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.4.0"
+  }
+}
