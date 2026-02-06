@@ -1,0 +1,172 @@
+Perfecto: si ya clonaron RandomWallpaperGnome3 justamente por su “pool” de fuentes, entonces lo más inteligente es copiar el modelo mental (adapters + pool + cache), pero sin arrastrar nada GNOME/UI.
+
+Ese repo deja claro el enfoque que queremos replicar: “Various configurable wallpaper sources” + “Multiple sources to create a pool of sources”.
+
+Cómo lo integramos en hyprwall (sin inventarnos otra rueda)
+1) Mapeo 1:1 entre “Sources” (RandomWallpaperGnome3) y “Packs” (hyprwall)
+
+En hyprwall, un Pack debe poder:
+
+producir candidatos (URLs + metadata normalizada)
+
+materializar un candidato a archivo local (descarga + cache)
+
+reportar estado (último refresh, tamaño cache, errores recientes)
+
+Eso calza con el patrón del repo: “adapter por source” + “controlador que elige uno random”.
+
+2) Nueva capa: SourceAdapter + Pool
+
+En vez de que el scheduler “sepa” de Unsplash/Reddit/etc, el scheduler solo habla con:
+
+PackAdapter (local o remoto)
+
+PoolPackAdapter (agrega N packs y devuelve un stream/pool único)
+
+Regla de oro: selector/state/scheduler trabajan con “wallpaper candidates” ya normalizados.
+
+Interfaces exactas recomendadas (TypeScript)
+WallpaperCandidate (lo que consume el selector)
+export type WallpaperCandidate = {
+  id: string;                  // estable (hash de source+remoteId+url)
+  source: string;              // "unsplash" | "wallhaven" | ...
+  remoteId?: string;           // id propio del provider si existe
+  url: string;                 // url directa a imagen (o endpoint descargable)
+  previewUrl?: string;
+
+
+  width?: number;
+  height?: number;
+  mime?: string;
+  fileExtHint?: "jpg" | "png" | "webp";
+
+
+  tags?: string[];
+  author?: string;
+  pageUrl?: string;
+
+
+  // para políticas (NSFW, score, etc.)
+  rating?: "safe" | "sketchy" | "nsfw";
+  score?: number;
+
+
+  // para cache/ttl
+  ttlSec?: number;
+};
+RemotePackAdapter (equivalente práctico al “adapter” del repo)
+export interface RemotePackAdapter {
+  name: string; // "unsplash:myPack", "reddit:wallpapers", etc.
+
+
+  // 1) construir/actualizar índice local de candidatos (sin descargar todo)
+  refreshIndex(opts: { force?: boolean }): Promise<{ count: number }>;
+
+
+  // 2) obtener candidatos ya filtrados (resolución, ratio, nsfw, etc.)
+  listCandidates(): Promise<WallpaperCandidate[]>;
+
+
+  // 3) materializar candidato -> archivo local (cache + ttl)
+  hydrate(candidate: WallpaperCandidate): Promise<{ localPath: string }>;
+
+
+  // 4) salud/estado para doctor/health
+  status(): Promise<{
+    ok: boolean;
+    lastRefresh?: number;
+    cacheItems?: number;
+    cacheBytes?: number;
+    lastError?: string;
+  }>;
+}
+PoolPackAdapter (la “pool of sources”)
+export interface PoolPackAdapter {
+  name: string; // "pool:default"
+  listCandidates(): Promise<WallpaperCandidate[]>; // concat + dedupe + pesos
+}
+Políticas clave (para que no se rompa lo que ya está sólido)
+A) No descargues “todo”; descarga on-demand
+
+refreshIndex() solo trae metadata/listados (paginado).
+
+hydrate() descarga solo el wallpaper elegido por el selector.
+
+B) Cache con TTL + dedupe por hash
+
+cache key: sha256(url) o sha256(source+remoteId)
+
+TTL por source (ej: Bing/NASA diario, Unsplash 7d, Reddit 1d)
+
+limpieza: LRU + límite por tamaño (maxCacheMB) + TTL expirado
+
+C) Pool con pesos + fallback
+
+cada source puede tener weight
+
+si un source falla (rate limit / API key), se “degrada” sin tumbar todo el pool
+
+el selector/state ya maneja anti-repetición → el pool solo entrega variedad
+
+Configuración (alineada con lo que quieres del repo)
+
+Ejemplo config.json (conceptual, sin pelearte todavía con el schema final):
+
+{
+  "packs": [
+    { "type": "local", "name": "local:main", "paths": ["~/Wallpapers"] },
+
+
+    { "type": "unsplash", "name": "unsplash:featured", "apiKeyEnv": "UNSPLASH_KEY", "query": "cyberpunk", "orientation": "landscape" },
+
+
+    { "type": "wallhaven", "name": "wallhaven:top", "apiKeyEnv": "WALLHAVEN_KEY", "categories": "111", "purity": "100", "sorting": "toplist" },
+
+
+    { "type": "reddit", "name": "reddit:wallpapers", "subreddit": "wallpapers", "sort": "top", "time": "week" },
+
+
+    { "type": "json", "name": "json:nasa_pod", "endpoint": "https://api.nasa.gov/planetary/apod?api_key=...", "jsonPath": "$.hdurl" }
+  ],
+  "pool": {
+    "enabled": true,
+    "sources": [
+      { "name": "local:main", "weight": 2 },
+      { "name": "unsplash:featured", "weight": 1 },
+      { "name": "wallhaven:top", "weight": 1 },
+      { "name": "reddit:wallpapers", "weight": 1 },
+      { "name": "json:nasa_pod", "weight": 1 }
+    ]
+  },
+  "cache": { "dir": "~/.cache/hyprwall", "maxMB": 2048, "defaultTtlSec": 604800 }
+}
+CLI (lo que tú pediste: múltiples repositorios + comandos claros)
+
+hyprwall list-packs → lista packs + tipo + estado
+
+hyprwall pack-status <name> → estado detallado (último refresh, cache, error)
+
+hyprwall refresh-pack <name> [--force] → solo índice
+
+hyprwall cache-prune [--max-mb N] → limpieza manual
+
+hyprwall next (lo existente) → si el candidato viene de remoto, hace hydrate() antes de aplicar
+
+Importante por el repo que clonaron
+
+RandomWallpaperGnome3 es MIT, así que pueden reutilizar ideas y hasta código si preservan el aviso de licencia cuando corresponda.
+Mi recomendación práctica: copiar patrón/arquitectura, y si copian código literal, hacerlo en un módulo aislado con su header MIT.
+
+Orden de implementación (para que no rompas scheduler/state ya cerrados)
+
+CacheManager (dir, ttl, lru, size limit)
+
+RemotePackAdapter base + status()
+
+Un provider primero (yo arrancaría por reddit o json porque no exige tanto)
+
+PoolPackAdapter (concat + dedupe + pesos)
+
+Integrar con hyprwall next: si candidate.url no es local → hydrate() → aplicar
+
+Si me pegas el árbol de carpetas actual de hyprwall (o el path donde Codex dejó packs/ o adapters/), te lo aterrizo en una estructura exacta de archivos y nombres (tipo src/packs/remote/unsplash.ts, src/cache/cacheManager.ts, etc.) para que Codex lo implemente sin inventar nada.

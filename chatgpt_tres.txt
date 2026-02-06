@@ -1,0 +1,84 @@
+🧠 Lectura rápida (mi veredicto técnico)
+
+Hyprwall está en estado B+ / casi 1.0 CLI:
+
+✅ Core sólido (controller, cache, favorites, state/history).
+
+✅ CLI muy completa (pack/pool/cache/favorites/transition).
+
+✅ Arquitectura clara y extensible (adapters bien aislados).
+
+✅ Decisiones buenas:
+
+Packs ≠ Sources
+
+Pool ponderado
+
+TTL por pack
+
+Favoritos intocables
+
+next random por carpeta local → UX 🔥
+
+Honestamente: esto ya no es un “script”, es una herramienta.
+
+🧭 Prioridades reales (orden recomendado)
+1️⃣ Reddit (403) — bloqueador menor, pero feo
+
+No rompe el sistema, pero ensucia la experiencia.
+
+Opciones realistas:
+
+A) User-Agent + Accept headers (90% de los casos lo arregla).
+
+B) old.reddit.com/.json como fallback.
+
+C) OAuth “installed app” (más pesado, pero definitivo).
+
+👉 Yo haría A + B ahora, y dejaría C documentado.
+
+2️⃣ UX de errores en CLI (impacto alto, poco esfuerzo)
+
+Casos clave:
+
+No hay imágenes descargadas
+
+Pack existe pero TTL vencido y sin red
+
+Pool vacío / todos los packs disabled
+
+Source responde pero devuelve 0 candidatos
+
+Mejoras concretas:
+
+Mensajes tipo:
+
+❌ “No images available for pack ‘anime-night’. Try: hydrate-pack anime-night --count 10”
+
+Exit codes consistentes (0 / 1 / 2)
+
+--json opcional para UI futura
+
+👉 Esto prepara directamente la UI.
+
+3️⃣ Pack-group v2 (solo si quieres subir nivel)
+
+Ahora mismo:
+
+pack-group add = generador + pool helper ✅
+
+Evolución natural:
+
+Declarativo:
+
+{
+  "theme": "cyberpunk",
+  "sources": {
+    "wallhaven": { "weight": 2 },
+    "unsplash": { "weight": 1 },
+    "reddit": { "subreddits": ["Cyberpunk"] }
+  }
+}
+
+Pero ojo ⚠️
+👉 No es obligatorio ahora. El diseño actual ya sirve.

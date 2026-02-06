@@ -43,7 +43,7 @@ async function ensureSwwwRunning(namespace?: string): Promise<void> {
 
 export async function applySwww(
     images: OutputImageMap[],
-    transition: { type: string; fps: number; duration: number },
+    transition: { type: string; fps: number; duration: number; angle?: number; pos?: string },
     namespace: string = 'hyprwall'
 ) : Promise<void> {
   await ensureSwwwRunning();
@@ -61,6 +61,12 @@ export async function applySwww(
       '--transition-duration',
       String(transition.duration)
     ];
+    if (transition.angle !== undefined) {
+      args.push('--transition-angle', String(transition.angle));
+    }
+    if (transition.pos) {
+      args.push('--transition-pos', transition.pos);
+    }
 
     await run('swww', args);
   }
