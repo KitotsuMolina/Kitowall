@@ -1,0 +1,83 @@
+Perfecto. Con eso ya pasaste a “CLI lista para UI” de verdad. ✅
+
+Lo siguiente que yo haría (sin meterme aún en UI) es cerrar el contrato y la observabilidad para que cualquier UI/daemon tenga garantías.
+
+1) Estandarizar el contrato --json (y exit codes)
+
+Asegúrate de que todos los comandos cumplan esto:
+
+stdout:
+
+sin --json: humano
+
+con --json: solo JSON (nada de logs mezclados)
+
+stderr:
+
+reservado para errores humanos si no hay --json
+
+con --json, idealmente nada (o solo debug si --verbose)
+
+exit code:
+
+0 ok
+
+2 “degradado / requiere acción” (ej: falta service, falta daemon, 403 persistente, pool vacío)
+
+1 error real (config corrupta, excepción, permisos, etc.)
+
+Esto hace que la UI pueda decidir: mostrar warning + botón “Fix / Init” vs “crash”.
+
+2) health como API estable para UI (mínimo necesario)
+
+Ya tienes health; ahora conviene que sea la única fuente de verdad para la UI al abrir.
+
+Campos recomendados (ejemplo):
+
+{
+  "ok": false,
+  "code": "SYSTEMD_MISSING",
+  "namespace": "hyprwall",
+  "swww": { "daemon": true, "namespaceOk": true },
+  "systemd": { "timerInstalled": false, "timerActive": false },
+  "packs": { "total": 12, "availableLocalFolders": 5 },
+  "pool": { "enabled": true, "candidates": 42 },
+  "hint": "Run: hyprwall init --apply"
+}
+3) “Quick check” para el botón “Repair”
+
+Tú lo pediste antes y ahora encaja perfecto:
+
+hyprwall check (o services-status)
+
+no arregla nada, solo detecta:
+
+timer/service existen
+
+activos
+
+swww-daemon namespace match
+
+directorios críticos accesibles
+
+devuelve exit 0/2/1 + JSON si --json
+
+La UI lo ejecuta al abrir:
+
+0: todo bien
+
+2: muestra banner con botón “Repair” → llama init --apply
+
+1: muestra error duro
+
+4) Tests de regresión (rápido pero clave)
+
+Ya tienes TEST_COMMANDS.sh; yo añadiría 3 tests simples más:
+
+--json no contamina stdout (solo JSON)
+
+next cuando no hay imágenes → ok:false + hint correcto
+
+Reddit 403 forzado (simulado) → se ve que entra a fallback
+
+Si me pegas un ejemplo real de la salida --json cuando falla next (pool vacío o sin imágenes), te digo si el contrato ya quedó “UI-proof” o si falta algún detalle (p.ej. code estable, o separar error vs details).

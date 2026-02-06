@@ -16,6 +16,7 @@ export type UnitStatus = {
 
 export type HealthReport = {
     ok: boolean;
+    code?: string;
     namespace: string;
     deps: {
         swww: boolean;
@@ -185,6 +186,19 @@ export async function getHealth(namespace: string): Promise<HealthReport> {
 
     const depsOk = deps.swww && deps.swwwDaemon && deps.hyprctl && deps.systemctlUser;
 
+    let code: string | undefined;
+    if (!deps.swww || !deps.swwwDaemon || !deps.hyprctl || !deps.systemctlUser) {
+        code = 'DEPS_MISSING';
+    } else if (!units.swwwDaemonNs.exists || !units.nextService.exists || !units.nextTimer.exists || !units.watch.exists) {
+        code = 'SYSTEMD_MISSING';
+    } else if ((units.swwwDaemonNs.exists && !units.swwwDaemonNs.active) || (units.watch.exists && !units.watch.active)) {
+        code = 'SYSTEMD_INACTIVE';
+    } else if ((units.nextTimer.exists && !units.nextTimer.enabled) || (units.nextTimer.exists && !units.nextTimer.active)) {
+        code = 'TIMER_INACTIVE';
+    } else if (!swww.ok) {
+        code = 'SWWW_NAMESPACE_FAIL';
+    }
+
     const ok =
         depsOk &&
         units.swwwDaemonNs.exists &&
@@ -197,7 +211,7 @@ export async function getHealth(namespace: string): Promise<HealthReport> {
         units.nextTimer.active === true &&
         swww.ok;
 
-    return {ok, namespace, deps, units, swww: {namespaceQueryOk: swww.ok, error: swww.error}, hints};
+    return {ok, code, namespace, deps, units, swww: {namespaceQueryOk: swww.ok, error: swww.error}, hints};
 }
 
 export async function printDoctor(namespace: string): Promise<void> {

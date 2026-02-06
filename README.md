@@ -1,61 +1,51 @@
-hyprwall
-========
+# hyprwall
 
-CLI/daemon for Hyprland wallpapers using `swww` with pack-based random rotation. This project is independent from RandomWallpaperGnome3 and targets Wayland.
+CLI/daemon para Hyprland (Wayland) con `swww`, packs temáticos y multi-monitor.
 
-Goals (MVP)
-- Per-output wallpapers via `swww img -o <output> ...`
-- Pack-based random rotation (all outputs share the same pack per cycle)
-- Simple CLI: `outputs`, `next`, `status`
+## Qué hace hoy
+- Cambia wallpapers por output (`swww img -o <output>`).
+- Mantiene coherencia temática por ciclo (pack actual).
+- Soporta packs locales y remotos.
+- Permite hydrate/refresh, historial, favoritos, logs y cache TTL.
+- Incluye UI de escritorio (Tauri + Svelte) en `ui/`.
 
-Project Layout
-- `src/cli.ts`: CLI entrypoint and command routing.
-- `src/core/config.ts`: Config loading/saving and defaults.
-- `src/core/state.ts`: Runtime state (current pack, last set wallpapers).
-- `src/core/history.ts`: History append-only log.
-- `src/core/outputs.ts`: Detect outputs using `hyprctl` or fallback to `swww query`.
-- `src/core/controller.ts`: Orchestrates pack selection, image selection, and applying via `swww`.
-- `src/core/scheduler.ts`: Rotation scheduler stub (future).
-- `src/managers/swww.ts`: Applies wallpapers per output with transition settings.
-- `src/adapters/localFolder.ts`: Local folder pack adapter (implemented).
-- `src/adapters/*`: Stubs for future adapters.
-- `src/utils/exec.ts`: Shell execution wrapper.
-- `src/utils/fs.ts`: Filesystem helpers (config, history, image scan).
+## Sources soportados
+- `local`
+- `wallhaven`
+- `unsplash`
+- `reddit`
+- `generic_json`
+- `static_url`
 
-Config
-Default config is created at:
-`~/.config/hyprwall/config.json`
-
-Example:
-```json
-{
-  "mode": "manual",
-  "rotation_interval_seconds": 1800,
-  "transition": { "type": "center", "fps": 60, "duration": 0.7 },
-  "packs": {
-    "sao": { "type": "local", "paths": ["~/Pictures/Wallpapers/SAO"] },
-    "edgerunners": { "type": "local", "paths": ["~/Pictures/Wallpapers/Edgerunners"] }
-  }
-}
-```
-
-State and History
+## Rutas importantes
+- Config: `~/.config/hyprwall/config.json`
 - State: `~/.local/state/hyprwall/state.json`
 - History: `~/.local/state/hyprwall/history.json`
+- Logs: `~/.local/state/hyprwall/logs.jsonl`
+- Descargas: `~/Pictures/Wallpapers/<pack>`
 
-Usage
-- `hyprwall outputs`
-- `hyprwall next [--pack <name>]`
-- `hyprwall status`
+## CLI rápido
+```bash
+npm run build
 
-Build
-- `npm install`
-- `npm run build`
+node dist/cli.js outputs
+node dist/cli.js status
+node dist/cli.js next
+node dist/cli.js next --pack sao
+node dist/cli.js hydrate-pack sao --count 10
+node dist/cli.js list-packs --refresh
+node dist/cli.js check --json
+```
 
-Notes
-- Only the local folder adapter is implemented right now.
-- Remote adapters (Wallhaven/Reddit/Unsplash/Generic JSON/Static URL) are placeholders.
+## UI
+```bash
+cd ui
+npm install
+npm run tauri dev
+```
 
-
-Codex
-- ` codex resume 019c2d80-40eb-71f2-a695-99faf15744a8`
+## Documentación
+- Estado actual: `STATUS.md`
+- Ejemplos de config: `CONFIG_EXAMPLES.md`
+- Dependencias de sistema: `DEPENDENCIES.md`
+- Fases: `PHASES.md`, `PHASES_ES.md`
