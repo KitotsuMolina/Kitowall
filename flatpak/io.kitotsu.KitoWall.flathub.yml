@@ -1,0 +1,77 @@
+app-id: io.kitotsu.KitoWall
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: kitowall-ui
+
+# Flathub-oriented manifest (source build, no host binary copy).
+# Before building, generate vendored sources:
+#   ./GENERATE_FLATHUB_SOURCES.sh v1.0.1
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  env:
+    npm_config_cache: /run/build/kitowall/flatpak-node/npm-cache
+    npm_config_devdir: /run/build/kitowall/flatpak-node/cache/node-gyp
+    npm_config_nodedir: /usr/lib/sdk/node20
+    CARGO_NET_OFFLINE: "true"
+
+finish-args:
+  - --share=network
+  - --filesystem=home
+  - --filesystem=xdg-pictures
+  - --socket=wayland
+  - --device=dri
+  - --talk-name=org.freedesktop.Flatpak
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+modules:
+  - name: kitowall
+    buildsystem: simple
+    build-commands:
+      - npm ci --offline --no-audit --progress=false
+      - npm run build
+      - cd ui && npm ci --offline --no-audit --progress=false
+      - cd ui && npm run build
+      - mkdir -p ui/src-tauri/.cargo
+      - |
+        cat > ui/src-tauri/.cargo/config.toml << 'EOF'
+        [source.crates-io]
+        replace-with = "vendored-sources"
+
+        [source.vendored-sources]
+        directory = "../../cargo/vendor"
+        EOF
+      - cd ui && npm exec -- tauri build --no-bundle
+      - install -Dm755 ui/src-tauri/target/release/kitowall-ui /app/bin/kitowall-ui
+      - install -Dm644 io.kitotsu.KitoWall.desktop /app/share/applications/io.kitotsu.KitoWall.desktop
+      - install -Dm644 io.kitotsu.KitoWall.metainfo.xml /app/share/metainfo/io.kitotsu.KitoWall.metainfo.xml
+      - install -Dm644 io.kitotsu.KitoWall-64.png /app/share/icons/hicolor/64x64/apps/io.kitotsu.KitoWall.png
+      - install -Dm644 io.kitotsu.KitoWall-128.png /app/share/icons/hicolor/128x128/apps/io.kitotsu.KitoWall.png
+      - install -Dm644 io.kitotsu.KitoWall-256.png /app/share/icons/hicolor/256x256/apps/io.kitotsu.KitoWall.png
+    sources:
+      - type: archive
+        url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/v1.0.1.tar.gz
+        sha256: e526ed6ed691a262da846194a4a92094cdc45d080305f9f969c49719edee1eda
+        strip-components: 1
+      - type: file
+        path: io.kitotsu.KitoWall.desktop
+      - type: file
+        path: io.kitotsu.KitoWall.metainfo.xml
+      - type: file
+        path: io.kitotsu.KitoWall-64.png
+      - type: file
+        path: io.kitotsu.KitoWall-128.png
+      - type: file
+        path: io.kitotsu.KitoWall-256.png
+      - generated-sources/node-deps-root.json
+      - generated-sources/node-deps-ui.json
+      - generated-sources/cargo-deps.json
+      - type: file
+        path: generated-sources/ui-package-lock.json
+        dest: ui
+        dest-filename: package-lock.json
