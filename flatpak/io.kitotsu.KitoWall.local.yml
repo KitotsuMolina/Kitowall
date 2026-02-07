@@ -54,10 +54,8 @@ modules:
       - install -Dm644 io.kitotsu.KitoWall-128.png /app/share/icons/hicolor/128x128/apps/io.kitotsu.KitoWall.png
       - install -Dm644 io.kitotsu.KitoWall-256.png /app/share/icons/hicolor/256x256/apps/io.kitotsu.KitoWall.png
     sources:
-      - type: archive
-        url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/v1.0.3.tar.gz
-        sha256: 9bf4efb7b2ea70efd57b6425b79840403d961e28e3c47f381d16c7dd61549505
-        strip-components: 1
+      - type: dir
+        path: ..
       - type: file
         path: io.kitotsu.KitoWall.desktop
       - type: file
