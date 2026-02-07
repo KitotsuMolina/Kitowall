@@ -8,6 +8,7 @@ import {RemotePackAdapter, RemotePackStatus} from '../core/remotePack';
 import {ensureDir} from '../utils/fs';
 import {sha256Hex} from '../utils/hash';
 import {appendSystemLog} from '../core/logs';
+import {fetchWithRetry} from '../utils/net';
 
 interface RedditResponse {
   data: {
@@ -155,7 +156,7 @@ export class RedditAdapter implements RemotePackAdapter {
         action: 'hydrate-request',
         url: candidate.url
       });
-      const res = await fetch(candidate.url);
+      const res = await fetchWithRetry(candidate.url);
       appendSystemLog({
         level: res.ok ? 'info' : 'warn',
         source: 'reddit',
@@ -164,7 +165,6 @@ export class RedditAdapter implements RemotePackAdapter {
         url: candidate.url,
         status: res.status
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buffer = Buffer.from(await res.arrayBuffer());
       fs.writeFileSync(localPath, buffer);
       this.cache.addEntry({
@@ -262,12 +262,15 @@ export class RedditAdapter implements RemotePackAdapter {
           action: 'refresh-request',
           url
         });
-        const res = await fetch(url, {
+        const res = await fetchWithRetry(url, {
           headers: {
             'User-Agent': 'hyprwall/0.1 (wallpaper CLI)',
             'Accept': 'application/json',
             'Accept-Language': 'en-US,en;q=0.8'
           }
+        }, {
+          retries: 1,
+          retryOnStatus: [429, 500, 502, 503, 504]
         });
         appendSystemLog({
           level: res.ok ? 'info' : 'warn',
@@ -277,16 +280,15 @@ export class RedditAdapter implements RemotePackAdapter {
           url,
           status: res.status
         });
-        if (!res.ok) {
-          lastStatus = res.status;
-          lastErr = `HTTP ${res.status}`;
-          // Solo intenta fallback ante 403/429
-          if (res.status === 403 || res.status === 429) continue;
-          throw new Error(`HTTP ${res.status}`);
-        }
         return (await res.json()) as RedditResponse;
       } catch (err) {
-        lastErr = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        lastErr = msg;
+        // Solo fallback de dominio para 403/429 o errores de red.
+        if (msg.includes('HTTP 403') || msg.includes('HTTP 429') || msg.includes('fetch failed') || msg.includes('NetworkError')) {
+          continue;
+        }
+        throw err;
       }
     }
     if (lastStatus) throw new Error(`HTTP ${lastStatus}`);

@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import {readJson, writeJson} from '../utils/fs';
+import {assertValidConfig, validateConfig} from './configValidator';
 
 export type PackType =
     | 'local'
@@ -471,10 +472,18 @@ export function loadConfig(): Config {
     writeJson(configPath, config);
   }
 
+  const validation = validateConfig(config);
+  if (!validation.ok) {
+    ensureConfigDir();
+    writeJson(configPath, fallback);
+    return fallback;
+  }
+
   return config;
 }
 
 export function saveConfig(config: Config): void {
+  assertValidConfig(config);
   ensureConfigDir();
   writeJson(getConfigPath(), config);
 }

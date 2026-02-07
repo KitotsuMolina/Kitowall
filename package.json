@@ -11,7 +11,8 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsc --watch",
-    "lint": "node dist/cli.js --help"
+    "lint": "node dist/cli.js --help",
+    "test:smoke": "bash ./tests/smoke.e2e.sh"
   },
   "dependencies": {},
   "devDependencies": {

@@ -8,6 +8,7 @@ import {ensureDir} from '../utils/fs';
 import {sha256Hex} from '../utils/hash';
 import {UnsplashPackConfig, resolveApiKey} from '../core/config';
 import {appendSystemLog} from '../core/logs';
+import {fetchWithRetry} from '../utils/net';
 
 interface UnsplashResponse {
   urls: { raw: string };
@@ -27,8 +28,6 @@ export class UnsplashAdapter implements RemotePackAdapter {
   private readonly cache: CacheManager;
   private readonly indexPath: string;
   private lastError?: string;
-  private readonly requestTimeoutMs = 15000;
-  private readonly maxRetries = 2;
 
   constructor(packName: string, config: UnsplashPackConfig, cache: CacheManager) {
     this.name = `unsplash:${packName}`;
@@ -63,7 +62,7 @@ export class UnsplashAdapter implements RemotePackAdapter {
           url,
           meta: {query: q}
         });
-        const res = await this.fetchWithRetry(url, {
+        const res = await fetchWithRetry(url, {
           headers: { 'User-Agent': 'hyprwall/0.1' }
         });
         appendSystemLog({
@@ -74,12 +73,6 @@ export class UnsplashAdapter implements RemotePackAdapter {
           url,
           status: res.status
         });
-        if (!res.ok) {
-          const rate = res.headers.get('x-ratelimit-remaining');
-          const reset = res.headers.get('x-ratelimit-reset');
-          const hint = rate !== null || reset !== null ? ` (rate=${rate ?? 'n/a'}, reset=${reset ?? 'n/a'})` : '';
-          throw new Error(`HTTP ${res.status}${hint}`);
-        }
         const payload = (await res.json()) as UnsplashResponse | UnsplashResponse[];
         const json = Array.isArray(payload) ? payload : [payload];
 
@@ -143,7 +136,7 @@ export class UnsplashAdapter implements RemotePackAdapter {
         action: 'hydrate-request',
         url: candidate.url
       });
-      const res = await this.fetchWithRetry(candidate.url);
+      const res = await fetchWithRetry(candidate.url);
       appendSystemLog({
         level: res.ok ? 'info' : 'warn',
         source: 'unsplash',
@@ -152,7 +145,6 @@ export class UnsplashAdapter implements RemotePackAdapter {
         url: candidate.url,
         status: res.status
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buffer = Buffer.from(await res.arrayBuffer());
       fs.writeFileSync(localPath, buffer);
       this.cache.addEntry({
@@ -241,40 +233,4 @@ export class UnsplashAdapter implements RemotePackAdapter {
     return queries;
   }
 
-  private async fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
-    let lastErr: Error | null = null;
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
-      try {
-        return await fetch(url, {...init, signal: controller.signal});
-      } catch (err) {
-        const parsed = this.normalizeFetchError(err);
-        lastErr = new Error(parsed);
-        appendSystemLog({
-          level: 'warn',
-          source: 'unsplash',
-          pack: this.packName,
-          action: 'fetch-retry',
-          url,
-          message: `attempt=${attempt + 1}/${this.maxRetries + 1} ${parsed}`
-        });
-        if (attempt >= this.maxRetries) break;
-        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-    throw lastErr ?? new Error('fetch failed');
-  }
-
-  private normalizeFetchError(err: unknown): string {
-    if (!(err instanceof Error)) return String(err ?? 'fetch failed');
-    const parts: string[] = [];
-    parts.push(err.message || 'fetch failed');
-    const cause = (err as Error & {cause?: unknown}).cause as {code?: string; message?: string} | undefined;
-    if (cause?.code) parts.push(`code=${cause.code}`);
-    if (cause?.message) parts.push(`cause=${cause.message}`);
-    return parts.join(' | ');
-  }
 }

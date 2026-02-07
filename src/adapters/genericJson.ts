@@ -9,6 +9,7 @@ import {ensureDir} from '../utils/fs';
 import {sha256Hex} from '../utils/hash';
 import {getTarget, replaceRandomInPath} from '../utils/jsonPath';
 import {appendSystemLog} from '../core/logs';
+import {fetchWithRetry} from '../utils/net';
 
 interface IndexFile {
   updatedAt: number;
@@ -52,7 +53,7 @@ export class GenericJsonAdapter implements RemotePackAdapter {
         action: 'refresh-request',
         url: endpoint
       });
-      const res = await fetch(endpoint);
+      const res = await fetchWithRetry(endpoint);
       appendSystemLog({
         level: res.ok ? 'info' : 'warn',
         source: 'generic_json',
@@ -61,7 +62,6 @@ export class GenericJsonAdapter implements RemotePackAdapter {
         url: endpoint,
         status: res.status
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
 
       const [target, resolvedPath] = getTarget(json, imagePath);
@@ -135,7 +135,7 @@ export class GenericJsonAdapter implements RemotePackAdapter {
         action: 'hydrate-request',
         url: candidate.url
       });
-      const res = await fetch(candidate.url);
+      const res = await fetchWithRetry(candidate.url);
       appendSystemLog({
         level: res.ok ? 'info' : 'warn',
         source: 'generic_json',
@@ -144,7 +144,6 @@ export class GenericJsonAdapter implements RemotePackAdapter {
         url: candidate.url,
         status: res.status
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buffer = Buffer.from(await res.arrayBuffer());
       fs.writeFileSync(localPath, buffer);
       this.cache.addEntry({
