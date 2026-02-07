@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::collections::HashSet;
 use thiserror::Error;
 
 type Json = Value;
@@ -174,8 +175,7 @@ fn hyprwall_list_packs() -> Result<Json, String> {
 
 #[tauri::command]
 fn hyprwall_list_pack_folders() -> Result<Json, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = PathBuf::from(home).join("Pictures").join("Wallpapers");
+    let dir = resolve_download_root()?;
     let mut names: Vec<String> = vec![];
     if dir.exists() {
         let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
@@ -200,13 +200,97 @@ fn is_image_ext(path: &PathBuf) -> bool {
     matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif" | "avif")
 }
 
+fn resolve_download_root() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let default_root = PathBuf::from(&home).join("Pictures").join("Wallpapers");
+    let config_path = PathBuf::from(&home).join(".config").join("hyprwall").join("config.json");
+    if !config_path.exists() {
+        return Ok(default_root);
+    }
+
+    let raw = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    let json: Json = serde_json::from_str(&raw).map_err(|e| format!("invalid config.json: {}", e))?;
+    let dir = json
+        .get("cache")
+        .and_then(|v| v.get("downloadDir"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("~/Pictures/Wallpapers");
+
+    if dir == "~" {
+        return Ok(PathBuf::from(home));
+    }
+    if let Some(rest) = dir.strip_prefix("~/") {
+        return Ok(PathBuf::from(home).join(rest));
+    }
+    Ok(PathBuf::from(dir))
+}
+
+fn expand_tilde_path(input: &str) -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    if input == "~" {
+        return Ok(PathBuf::from(home));
+    }
+    if let Some(rest) = input.strip_prefix("~/") {
+        return Ok(PathBuf::from(home).join(rest));
+    }
+    Ok(PathBuf::from(input))
+}
+
+fn resolve_local_pack_roots() -> Result<Vec<(PathBuf, String)>, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let config_path = PathBuf::from(&home).join(".config").join("hyprwall").join("config.json");
+    if !config_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let raw = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    let json: Json = serde_json::from_str(&raw).map_err(|e| format!("invalid config.json: {}", e))?;
+    let packs = json.get("packs").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+    let mut roots: Vec<(PathBuf, String)> = vec![];
+
+    for (pack_name, pack) in packs {
+        let is_local = pack.get("type").and_then(|v| v.as_str()) == Some("local");
+        if !is_local {
+            continue;
+        }
+        let paths_value = pack.get("paths");
+        match paths_value {
+            Some(Value::Array(items)) => {
+                for item in items {
+                    if let Some(p) = item.as_str() {
+                        let expanded = expand_tilde_path(p)?;
+                        roots.push((expanded, pack_name.clone()));
+                    }
+                }
+            }
+            Some(Value::String(single)) => {
+                let expanded = expand_tilde_path(single)?;
+                roots.push((expanded, pack_name.clone()));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(roots)
+}
+
 #[tauri::command]
 fn hyprwall_wallpapers_list() -> Result<Json, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let root = PathBuf::from(home).join("Pictures").join("Wallpapers");
+    let root = resolve_download_root()?;
+    let local_roots = resolve_local_pack_roots()?;
     let mut items: Vec<Json> = vec![];
+    let mut roots_to_scan: Vec<(PathBuf, Option<String>)> = vec![];
 
-    if !root.exists() {
+    if root.exists() {
+        roots_to_scan.push((fs::canonicalize(&root).map_err(|e| e.to_string())?, None));
+    }
+    for (p, pack_name) in local_roots {
+        if p.exists() {
+            roots_to_scan.push((fs::canonicalize(&p).map_err(|e| e.to_string())?, Some(pack_name)));
+        }
+    }
+
+    if roots_to_scan.is_empty() {
         return Ok(serde_json::json!({
             "ok": true,
             "root": root,
@@ -214,10 +298,13 @@ fn hyprwall_wallpapers_list() -> Result<Json, String> {
         }));
     }
 
-    let root_canon = fs::canonicalize(&root).map_err(|e| e.to_string())?;
-    let mut stack: Vec<PathBuf> = vec![root_canon.clone()];
+    let mut stack: Vec<(PathBuf, usize)> = vec![];
+    for (idx, (base, _)) in roots_to_scan.iter().enumerate() {
+        stack.push((base.clone(), idx));
+    }
+    let mut seen_paths: HashSet<String> = HashSet::new();
 
-    while let Some(dir) = stack.pop() {
+    while let Some((dir, root_idx)) = stack.pop() {
         let entries = match fs::read_dir(&dir) {
             Ok(v) => v,
             Err(_) => continue,
@@ -225,7 +312,7 @@ fn hyprwall_wallpapers_list() -> Result<Json, String> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                stack.push(path);
+                stack.push((path, root_idx));
                 continue;
             }
             if !is_image_ext(&path) {
@@ -236,19 +323,28 @@ fn hyprwall_wallpapers_list() -> Result<Json, String> {
                 Ok(v) => v,
                 Err(_) => continue,
             };
-            let rel = match abs.strip_prefix(&root_canon) {
+            let base_root = &roots_to_scan[root_idx].0;
+            let rel = match abs.strip_prefix(base_root) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
+            let abs_str = abs.to_string_lossy().to_string();
+            if seen_paths.contains(&abs_str) {
+                continue;
+            }
+            seen_paths.insert(abs_str.clone());
 
             let rel_parts: Vec<String> = rel
                 .iter()
                 .map(|s| s.to_string_lossy().to_string())
                 .collect();
-            let pack = rel_parts
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "root".to_string());
+            let pack = match &roots_to_scan[root_idx].1 {
+                Some(local_pack_name) => local_pack_name.clone(),
+                None => rel_parts
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "root".to_string())
+            };
             let file_name = abs
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -263,7 +359,7 @@ fn hyprwall_wallpapers_list() -> Result<Json, String> {
                 .unwrap_or(0);
 
             items.push(serde_json::json!({
-                "path": abs,
+                "path": abs_str,
                 "pack": pack,
                 "fileName": file_name,
                 "modifiedMs": modified_ms
@@ -279,15 +375,14 @@ fn hyprwall_wallpapers_list() -> Result<Json, String> {
 
     Ok(serde_json::json!({
         "ok": true,
-        "root": root_canon,
+        "root": root,
         "items": items
     }))
 }
 
 #[tauri::command]
 fn hyprwall_open_pack_folder(name: String) -> Result<Json, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let root = PathBuf::from(home).join("Pictures").join("Wallpapers");
+    let root = resolve_download_root()?;
     if !root.exists() {
         return Err(format!("Wallpaper root not found: {}", root.display()));
     }

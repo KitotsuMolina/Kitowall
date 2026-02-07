@@ -8,6 +8,7 @@ import {ensureDir} from '../utils/fs';
 import {sha256Hex} from '../utils/hash';
 import {StaticUrlPackConfig} from '../core/config';
 import {appendSystemLog} from '../core/logs';
+import {fetchWithRetry} from '../utils/net';
 
 interface IndexFile {
   updatedAt: number;
@@ -91,7 +92,7 @@ export class StaticUrlAdapter implements RemotePackAdapter {
         action: 'hydrate-request',
         url: candidate.url
       });
-      const res = await fetch(candidate.url);
+      const res = await fetchWithRetry(candidate.url);
       appendSystemLog({
         level: res.ok ? 'info' : 'warn',
         source: 'static_url',
@@ -100,7 +101,6 @@ export class StaticUrlAdapter implements RemotePackAdapter {
         url: candidate.url,
         status: res.status
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buffer = Buffer.from(await res.arrayBuffer());
       fs.writeFileSync(localPath, buffer);
       this.cache.addEntry({

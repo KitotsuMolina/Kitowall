@@ -169,11 +169,15 @@ import {onDestroy, onMount, tick} from 'svelte';
   let favorites: string[] = [];
   let galleryBusy = false;
   let galleryItems: WallpaperItem[] = [];
+  let galleryRoot = '';
   let galleryPackFilter = 'all';
   let gallerySearch = '';
   let galleryOnlyFavorites = false;
   let gallerySort: 'newest' | 'oldest' | 'name' = 'newest';
   let galleryVisible = 60;
+  let galleryFiltered: WallpaperItem[] = [];
+  let galleryHasMore = false;
+  const fileSrcCache = new Map<string, string>();
   let systemLogsBusy = false;
   let systemLogs: UiSystemLogEntry[] = [];
   let logsLimit = 200;
@@ -372,11 +376,33 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function imageSrc(path?: string): string | null {
     if (!path) return null;
+    const cached = fileSrcCache.get(path);
+    if (cached) return cached;
     try {
-      return convertFileSrc(path);
+      const src = convertFileSrc(path);
+      fileSrcCache.set(path, src);
+      return src;
     } catch {
+      // Do not cache failed conversion fallback; allow future retries.
       return path;
     }
+  }
+
+  function fileUrl(path?: string): string | null {
+    if (!path) return null;
+    if (path.startsWith('file://')) return path;
+    if (!path.startsWith('/')) return null;
+    return `file://${encodeURI(path)}`;
+  }
+
+  function onGalleryImageError(e: Event, path: string): void {
+    const img = e.currentTarget;
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.dataset.fallbackApplied === '1') return;
+    const fallback = fileUrl(path);
+    if (!fallback) return;
+    img.dataset.fallbackApplied = '1';
+    img.src = fallback;
   }
 
   function normalizeName(input: string): string {
@@ -453,8 +479,8 @@ import {onDestroy, onMount, tick} from 'svelte';
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }
 
-  function filteredGalleryItems(): WallpaperItem[] {
-    let items = [...galleryItems];
+  function buildGalleryFiltered(itemsInput: WallpaperItem[]): WallpaperItem[] {
+    let items = [...itemsInput];
     if (galleryPackFilter !== 'all') {
       items = items.filter(i => i.pack === galleryPackFilter);
     }
@@ -472,7 +498,16 @@ import {onDestroy, onMount, tick} from 'svelte';
     } else {
       items.sort((a, b) => a.fileName.localeCompare(b.fileName));
     }
-    return items.slice(0, galleryVisible);
+    return items;
+  }
+
+  $: {
+    // Keep dependencies explicit so Svelte updates on every filter/state change.
+    const _deps = [galleryItems, galleryPackFilter, gallerySearch, galleryOnlyFavorites, gallerySort, galleryVisible, favorites];
+    void _deps;
+    const all = buildGalleryFiltered(galleryItems);
+    galleryFiltered = all.slice(0, Math.max(0, Number(galleryVisible) || 0));
+    galleryHasMore = all.length > galleryFiltered.length;
   }
 
   $: {
@@ -480,6 +515,13 @@ import {onDestroy, onMount, tick} from 'svelte';
     visiblePacks = !q
       ? packs
       : packs.filter(p => p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q));
+  }
+
+  $: {
+    const opts = galleryPackOptions();
+    if (galleryPackFilter !== 'all' && !opts.includes(galleryPackFilter)) {
+      galleryPackFilter = 'all';
+    }
   }
 
   $: {
@@ -1269,6 +1311,8 @@ import {onDestroy, onMount, tick} from 'svelte';
         invoke<string[]>('hyprwall_favorites_list')
       ]);
       galleryItems = Array.isArray(data?.items) ? data.items : [];
+      galleryRoot = String(data?.root ?? '');
+      fileSrcCache.clear();
       favorites = Array.isArray(favs) ? favs : [];
     } catch (e) {
       lastError = String(e);
@@ -2849,6 +2893,13 @@ import {onDestroy, onMount, tick} from 'svelte';
     {:else if activeSection === 'library'}
       <h2>Wallpapers</h2>
       <div class="card">
+        <div class="row actions-buttons-row">
+          <span class="badge">total: {galleryItems.length}</span>
+          <span class="badge">showing: {galleryFiltered.length}</span>
+          {#if galleryRoot}
+            <span class="badge">root: {galleryRoot}</span>
+          {/if}
+        </div>
         <div class="row actions-input-row">
           <label for="gallery-pack">Pack</label>
           <select id="gallery-pack" bind:value={galleryPackFilter}>
@@ -2868,15 +2919,20 @@ import {onDestroy, onMount, tick} from 'svelte';
           <label class="inline-check"><input type="checkbox" bind:checked={galleryOnlyFavorites} /> favorites only</label>
           <button class="secondary" on:click={loadWallpaperLibrary} disabled={galleryBusy}>Refresh Library</button>
         </div>
-        {#if filteredGalleryItems().length === 0}
+        {#if galleryFiltered.length === 0}
           <p class="muted">No wallpapers matched the selected filters.</p>
         {:else}
           <div class="wallpaper-gallery-grid">
-            {#each filteredGalleryItems() as item, i (`${item.path}-${i}`)}
+            {#each galleryFiltered as item, i (`${item.path}-${i}`)}
               <div class="gallery-item-card">
                 <div class="gallery-image-wrap">
                   {#if imageSrc(item.path)}
-                    <img class="gallery-image" src={imageSrc(item.path) ?? ''} alt={item.fileName} />
+                    <img
+                      class="gallery-image"
+                      src={imageSrc(item.path) ?? ''}
+                      alt={item.fileName}
+                      on:error={(e) => onGalleryImageError(e, item.path)}
+                    />
                   {:else}
                     <div class="monitor-placeholder">No preview</div>
                   {/if}
@@ -2900,7 +2956,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/each}
           </div>
-          {#if filteredGalleryItems().length < galleryItems.length}
+          {#if galleryHasMore}
             <div class="row actions-buttons-row">
               <button class="secondary" on:click={loadMoreGallery}>Load More</button>
             </div>
