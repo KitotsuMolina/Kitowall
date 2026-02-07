@@ -11,11 +11,17 @@ function startSwwwDaemon(namespace?: string) {
   const args = [];
   if (namespace) args.push('--namespace', namespace);
 
-  const child = spawn('swww-daemon', args, {
+  const inFlatpak = Boolean(process.env.FLATPAK_ID);
+  const cmd = inFlatpak ? 'flatpak-spawn' : 'swww-daemon';
+  const spawnArgs = inFlatpak ? ['--host', 'swww-daemon', ...args] : args;
+
+  const child = spawn(cmd, spawnArgs, {
     stdio: 'ignore',
     detached: true
   });
 
+  // Avoid crashing caller on missing binary or spawn failures.
+  child.on('error', () => {});
   child.unref();
 }
 
@@ -46,7 +52,7 @@ export async function applySwww(
     transition: { type: string; fps: number; duration: number; angle?: number; pos?: string },
     namespace: string = 'kitowall'
 ) : Promise<void> {
-  await ensureSwwwRunning();
+  await ensureSwwwRunning(namespace);
   for (const item of images) {
     const args = [
       'img',

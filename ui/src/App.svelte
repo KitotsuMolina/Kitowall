@@ -1847,6 +1847,16 @@ import {onDestroy, onMount, tick} from 'svelte';
                   {/each}
                 </ul>
               {/if}
+              <div class="row">
+                <span class="badge status warn">
+                  {tr('Flatpak note', 'Nota Flatpak')}
+                </span>
+                <span class="help-wrap">
+                  <button type="button" class="help-icon" aria-label={tr('Repair in Flatpak help', 'Ayuda reparar en Flatpak')}>?</button>
+                  <span class="help-tooltip">{tr('If this app is running as Flatpak, use host shell for repair so systemd units are generated with host paths (not /app/bin/node).', 'Si esta app corre como Flatpak, usa la terminal del host para reparar y generar units de systemd con rutas del host (no /app/bin/node).')}</span>
+                </span>
+                <code>node dist/cli.js init --namespace kitowall --apply --force</code>
+              </div>
               <button on:click={runRepair} disabled={busy}>{tr('Repair (init --apply)', 'Reparar (init --apply)')}</button>
             </div>
           {/if}

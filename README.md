@@ -83,6 +83,10 @@ flatpak-builder flatpak/build-dir flatpak/io.kitotsu.KitoWall.yml --user --insta
 - Config examples: `CONFIG_EXAMPLES.md`
 - UI details: `ui/README.md`
 
+## Known Issues
+- Flatpak watch unit failing with `/app/bin/node` in user systemd:
+  - `issues/flatpak-watch-service-failed.md`
+
 ## Legal
 - License: `LICENSE.md`
 - Attribution notice: `NOTICE.md`
