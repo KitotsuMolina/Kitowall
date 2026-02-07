@@ -16,7 +16,7 @@ export interface HistoryState {
 }
 
 export function getHistoryPath(): string {
-  return path.join(os.homedir(), '.local', 'state', 'hyprwall', 'history.json');
+  return path.join(os.homedir(), '.local', 'state', 'kitowall', 'history.json');
 }
 
 export function loadHistory(): HistoryState {

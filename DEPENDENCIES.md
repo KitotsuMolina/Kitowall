@@ -1,9 +1,10 @@
-# Hyprwall Dependencies
+# Kitowall Dependencies
+Version scope: `1.0.0`.
 
-Este documento lista todas las dependencias necesarias para correr y desarrollar `hyprwall` (CLI + UI Tauri/Svelte) en Arch Linux.
+Este documento lista todas las dependencias necesarias para correr y desarrollar `kitowall` (CLI + UI Tauri/Svelte) en Arch Linux.
 
 ## 1) Dependencias de runtime (CLI)
-Requeridas para usar `hyprwall` en Hyprland:
+Requeridas para usar `kitowall` en Hyprland:
 
 - `hyprland` (o al menos `hyprctl` disponible)
 - `swww`
@@ -23,7 +24,7 @@ systemctl --user --version
 ```
 
 ## 2) Dependencias de desarrollo (CLI Node/TypeScript)
-Requeridas para compilar y ejecutar el proyecto `hyprwall`:
+Requeridas para compilar y ejecutar el proyecto `kitowall`:
 
 - Node.js `>= 20` (recomendado 24.x)
 - `npm` (incluido con Node)
@@ -41,7 +42,7 @@ npm -v
 ```
 
 ## 3) Dependencias de runtime/build (UI Tauri + Svelte)
-Requeridas para `hyprwall/ui`:
+Requeridas para `kitowall/ui`:
 
 - Rust toolchain (`rustup`, `cargo`, `rustc`)
 - `pkgconf`
@@ -85,18 +86,18 @@ Tambien se puede configurar por pack con `--api-key` o `--api-key-env`.
 
 Para UI Tauri (si el bin no esta en PATH):
 
-- `HYPRWALL_CMD`
+- `KITOWALL_CMD`
 
 Ejemplo:
 ```bash
-export HYPRWALL_CMD="node /home/kitotsu/Programacion/Personal/Wallpaper/hyprwall/dist/cli.js"
+export KITOWALL_CMD="node /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall/dist/cli.js"
 ```
 
 ## 6) Instalacion rapida completa (Arch)
 ### CLI
 ```bash
 sudo pacman -S --needed nodejs npm hyprland swww systemd bash
-cd /home/kitotsu/Programacion/Personal/Wallpaper/hyprwall
+cd /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall
 npm install
 npm run build
 ```
@@ -105,14 +106,14 @@ npm run build
 ```bash
 sudo pacman -S --needed rustup pkgconf base-devel webkit2gtk-4.1 gtk3 libsoup3
 rustup default stable
-cd /home/kitotsu/Programacion/Personal/Wallpaper/hyprwall/ui
+cd /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall/ui
 npm install
-export HYPRWALL_CMD="node /home/kitotsu/Programacion/Personal/Wallpaper/hyprwall/dist/cli.js"
-npx tauri dev
+export KITOWALL_CMD="node /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall/dist/cli.js"
+npm run tauri:dev
 ```
 
 ## 7) Comandos de diagnostico utiles
-Desde `hyprwall`:
+Desde `kitowall`:
 ```bash
 node dist/cli.js doctor
 node dist/cli.js health --json
@@ -138,4 +139,3 @@ sudo pacman -S --needed webkit2gtk-4.1 pkgconf gtk3 libsoup3
 ### Error: `fish: Unknown command: pnpm`
 Causa: `pnpm` no instalado.
 Solucion: usar `npm` o instalar `pnpm`.
-

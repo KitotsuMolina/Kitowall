@@ -4,7 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import {readJson, writeJson} from '../utils/fs';
 
+export const STATE_SCHEMA_VERSION = 1;
+
 export interface State {
+  schemaVersion: number;
   mode: 'manual' | 'rotate';
   current_pack: string | null;
 
@@ -102,7 +105,7 @@ export function commitSelection(state: State, output: string, pathStr: string, n
 }
 
 export function getStatePath(): string {
-  return path.join(os.homedir(), '.local', 'state', 'hyprwall', 'state.json');
+  return path.join(os.homedir(), '.local', 'state', 'kitowall', 'state.json');
 }
 
 function ensureStateDir(): void {
@@ -112,6 +115,7 @@ function ensureStateDir(): void {
 
 export function defaultState(): State {
   return {
+    schemaVersion: STATE_SCHEMA_VERSION,
     mode: 'manual',
     current_pack: null,
     last_outputs: [],
@@ -137,6 +141,17 @@ export function loadState(): State {
 
   // Snapshot antes de migraciones para decidir si guardar o no
   const originalState = JSON.parse(JSON.stringify(state)) as State;
+
+  // Freeze schema contract: only migrate missing/invalid to current version.
+  if (typeof state.schemaVersion !== 'number' || !Number.isFinite(state.schemaVersion)) {
+    state.schemaVersion = STATE_SCHEMA_VERSION;
+  } else if (state.schemaVersion > STATE_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported state schemaVersion ${state.schemaVersion}. This build supports up to ${STATE_SCHEMA_VERSION}.`
+    );
+  } else if (state.schemaVersion < STATE_SCHEMA_VERSION) {
+    state.schemaVersion = STATE_SCHEMA_VERSION;
+  }
 
   // Migraciones / defaults
   if (state.mode !== 'manual' && state.mode !== 'rotate') state.mode = 'manual';
@@ -168,6 +183,14 @@ export function loadState(): State {
 }
 
 export function saveState(state: State): void {
+  if (typeof state.schemaVersion !== 'number' || !Number.isFinite(state.schemaVersion)) {
+    state.schemaVersion = STATE_SCHEMA_VERSION;
+  }
+  if (state.schemaVersion !== STATE_SCHEMA_VERSION) {
+    throw new Error(
+      `Invalid state schemaVersion ${state.schemaVersion}. Expected ${STATE_SCHEMA_VERSION}.`
+    );
+  }
   ensureStateDir();
 
   const statePath = getStatePath();

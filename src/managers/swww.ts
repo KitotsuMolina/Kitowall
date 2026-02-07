@@ -44,7 +44,7 @@ async function ensureSwwwRunning(namespace?: string): Promise<void> {
 export async function applySwww(
     images: OutputImageMap[],
     transition: { type: string; fps: number; duration: number; angle?: number; pos?: string },
-    namespace: string = 'hyprwall'
+    namespace: string = 'kitowall'
 ) : Promise<void> {
   await ensureSwwwRunning();
   for (const item of images) {

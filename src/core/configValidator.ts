@@ -1,4 +1,5 @@
 // Formal config validator used before returning/saving config.
+import {CONFIG_SCHEMA_VERSION} from './config';
 import type {
   Config,
   GenericJsonPackConfig,
@@ -111,6 +112,14 @@ function validatePack(name: string, pack: PackConfig, errors: string[]): void {
 export function validateConfig(config: Config): {ok: boolean; errors: string[]} {
   const errors: string[] = [];
 
+  if (
+    typeof config.schemaVersion !== 'number' ||
+    !Number.isFinite(config.schemaVersion) ||
+    config.schemaVersion !== CONFIG_SCHEMA_VERSION
+  ) {
+    errors.push(`schemaVersion must be ${CONFIG_SCHEMA_VERSION}`);
+  }
+
   if (config.mode !== 'manual' && config.mode !== 'rotate') {
     errors.push('mode must be manual|rotate');
   }
@@ -152,4 +161,3 @@ export function assertValidConfig(config: Config): void {
     throw new Error(`Invalid config: ${result.errors.join('; ')}`);
   }
 }
-

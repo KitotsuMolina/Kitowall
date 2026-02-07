@@ -8,7 +8,7 @@ export interface FavoritesState {
 }
 
 export function getFavoritesPath(): string {
-  return path.join(os.homedir(), '.local', 'state', 'hyprwall', 'favorites.json');
+  return path.join(os.homedir(), '.local', 'state', 'kitowall', 'favorites.json');
 }
 
 export function loadFavorites(): FavoritesState {

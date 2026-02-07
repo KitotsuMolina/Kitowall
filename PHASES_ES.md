@@ -1,4 +1,5 @@
-# Fases de Hyprwall (Estado Actual)
+# Fases de Kitowall (Estado Actual)
+Release objetivo: `v1.0.0`.
 
 ## Fase 0 — CLI base
 Estado: `completada`
@@ -43,7 +44,7 @@ Estado: `completada`
 - doctor/health/check
 
 ## Fase 7 — UI (escritorio)
-Estado: `en progreso`
+Estado: `completada (base)`
 Completado:
 - Control Center
 - General Settings
@@ -56,3 +57,4 @@ Siguiente:
 - pulido visual y unificación de componentes
 - más cobertura de pruebas E2E
 - UX opcional para importar/exportar configuraciones de packs
+- checklist de empaquetado/release

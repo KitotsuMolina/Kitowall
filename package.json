@@ -1,18 +1,31 @@
 {
-  "name": "hyprwall",
-  "version": "0.1.0",
+  "name": "kitowall",
+  "version": "1.0.0",
   "description": "CLI/daemon for Hyprland wallpapers using swww with pack-based rotation.",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md",
+    "NOTICE.md",
+    "TRADEMARKS.md"
+  ],
   "bin": {
-    "hyprwall": "dist/cli.js"
+    "kitowall": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsc --watch",
     "lint": "node dist/cli.js --help",
-    "test:smoke": "bash ./tests/smoke.e2e.sh"
+    "release:check": "npm run build && npm run test:e2e",
+    "package:cli": "npm pack",
+    "package:ui": "npm --prefix ui run tauri:build",
+    "package:all": "npm run release:check && npm run package:cli && npm run package:ui",
+    "test:smoke": "bash ./tests/smoke.e2e.sh",
+    "test:regression": "bash ./tests/regression.e2e.sh",
+    "test:e2e": "npm run test:smoke && npm run test:regression"
   },
   "dependencies": {},
   "devDependencies": {

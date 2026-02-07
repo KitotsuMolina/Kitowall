@@ -63,7 +63,7 @@ export class UnsplashAdapter implements RemotePackAdapter {
           meta: {query: q}
         });
         const res = await fetchWithRetry(url, {
-          headers: { 'User-Agent': 'hyprwall/0.1' }
+          headers: { 'User-Agent': 'Kitowall/0.1' }
         });
         appendSystemLog({
           level: res.ok ? 'info' : 'warn',

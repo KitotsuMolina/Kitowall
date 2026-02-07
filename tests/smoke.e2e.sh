@@ -13,8 +13,8 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 export HOME="${TMP_DIR}/home"
 mkdir -p "${HOME}/Pictures/Wallpapers/SmokeA"
 mkdir -p "${HOME}/Pictures/Wallpapers/SmokeB"
-mkdir -p "${HOME}/.config/hyprwall"
-mkdir -p "${HOME}/.local/state/hyprwall"
+mkdir -p "${HOME}/.config/kitowall"
+mkdir -p "${HOME}/.local/state/kitowall"
 
 # Seed fake image files for local packs.
 touch "${HOME}/Pictures/Wallpapers/SmokeA/a1.jpg"

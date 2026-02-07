@@ -42,7 +42,7 @@ async function detectAndHandleConflicts(force: boolean) {
     }
 }
 
-export async function initHyprwall(opts: {
+export async function initKitowall(opts: {
     namespace?: string;
     apply?: boolean;
     force?: boolean;
@@ -50,7 +50,7 @@ export async function initHyprwall(opts: {
     const config = loadConfig(); // crea/migra config si hace falta
     const state = loadState();   // crea/migra state si hace falta
 
-    const ns = (opts.namespace && opts.namespace.trim()) ? opts.namespace.trim() : 'hyprwall';
+    const ns = (opts.namespace && opts.namespace.trim()) ? opts.namespace.trim() : 'kitowall';
     const force = !!opts.force;
 
     // Validaciones mínimas
@@ -105,13 +105,13 @@ WantedBy=graphical-session.target
 
     writeFileSync(join(userDir, 'swww-daemon@.service'), swwwDaemonTemplate, 'utf8');
 
-    // 2) hyprwall-next.service (oneshot)
+    // 2) kitowall-next.service (oneshot)
     // OJO: aunque CLI ignore --namespace en algunos comandos, aquí lo dejamos por compatibilidad.
     const nextExec = `${nodePath} ${esc(cliPath)} ${esc('next')} ${esc('--namespace')} ${esc(ns)}`;
 
-    const hyprwallNextService = `
+    const kitowallNextService = `
 [Unit]
-Description=Hyprwall apply next wallpapers
+Description=Kitowall apply next wallpapers
 After=swww-daemon@${ns}.service
 Requires=swww-daemon@${ns}.service
 
@@ -123,14 +123,14 @@ Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
 ExecStart=${nextExec}
 `.trimStart();
 
-    writeFileSync(join(userDir, 'hyprwall-next.service'), hyprwallNextService, 'utf8');
+    writeFileSync(join(userDir, 'kitowall-next.service'), kitowallNextService, 'utf8');
 
-    // 3) hyprwall-watch.service (hotplug watcher)
+    // 3) kitowall-watch.service (hotplug watcher)
     const watchExec = `${nodePath} ${esc(cliPath)} ${esc('watch')} ${esc('--namespace')} ${esc(ns)}`;
 
-    const hyprwallWatchService = `
+    const kitowallWatchService = `
 [Unit]
-Description=Hyprwall watcher (monitor hotplug)
+Description=Kitowall watcher (monitor hotplug)
 After=graphical-session.target swww-daemon@${ns}.service
 Requires=swww-daemon@${ns}.service
 PartOf=graphical-session.target
@@ -148,12 +148,12 @@ RestartSec=1
 WantedBy=graphical-session.target
 `.trimStart();
 
-    writeFileSync(join(userDir, 'hyprwall-watch.service'), hyprwallWatchService, 'utf8');
+    writeFileSync(join(userDir, 'kitowall-watch.service'), kitowallWatchService, 'utf8');
 
     // Activación
     await run('systemctl', ['--user', 'daemon-reload']);
     await run('systemctl', ['--user', 'enable', '--now', `swww-daemon@${ns}.service`]);
-    await run('systemctl', ['--user', 'enable', '--now', 'hyprwall-watch.service']);
+    await run('systemctl', ['--user', 'enable', '--now', 'kitowall-watch.service']);
 
     // Si quieres: aplicar una vez ahora mismo
     if (opts.apply) {

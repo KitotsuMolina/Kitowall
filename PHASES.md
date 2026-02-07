@@ -1,4 +1,5 @@
-# Hyprwall Phases (Current Snapshot)
+# Kitowall Phases (Current Snapshot)
+Release target: `v1.0.0`.
 
 ## Phase 0 — CLI Base
 Status: `done`
@@ -43,7 +44,7 @@ Status: `done`
 - doctor/health/check
 
 ## Phase 7 — UI (Desktop)
-Status: `in progress`
+Status: `done (base)`
 Done:
 - Control Center
 - General Settings
@@ -56,3 +57,4 @@ Next:
 - UI polish and component unification
 - stronger end-to-end test coverage
 - optional import/export UX for pack configurations
+- release packaging checklist

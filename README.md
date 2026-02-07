@@ -1,51 +1,73 @@
-# hyprwall
+# Kitowall
 
-CLI/daemon para Hyprland (Wayland) con `swww`, packs temáticos y multi-monitor.
+`Kitowall` is a wallpaper manager for Hyprland/Wayland using `swww`.
 
-## Qué hace hoy
-- Cambia wallpapers por output (`swww img -o <output>`).
-- Mantiene coherencia temática por ciclo (pack actual).
-- Soporta packs locales y remotos.
-- Permite hydrate/refresh, historial, favoritos, logs y cache TTL.
-- Incluye UI de escritorio (Tauri + Svelte) en `ui/`.
+Current version: `1.0.0`.
 
-## Sources soportados
-- `local`
-- `wallhaven`
-- `unsplash`
-- `reddit`
-- `generic_json`
-- `static_url`
+## What You Can Do
+- Rotate wallpapers with transitions.
+- Use different wallpapers per monitor.
+- Organize by thematic packs (`sao`, `edgerunners`, etc.).
+- Download from sources: `local`, `wallhaven`, `unsplash`, `reddit`, `generic_json`, `static_url`.
+- Manage everything from CLI and desktop UI.
 
-## Rutas importantes
-- Config: `~/.config/hyprwall/config.json`
-- State: `~/.local/state/hyprwall/state.json`
-- History: `~/.local/state/hyprwall/history.json`
-- Logs: `~/.local/state/hyprwall/logs.jsonl`
-- Descargas: `~/Pictures/Wallpapers/<pack>`
+## Default Paths
+- Config: `~/.config/kitowall/config.json`
+- Runtime state: `~/.local/state/kitowall/state.json`
+- History: `~/.local/state/kitowall/history.json`
+- Logs: `~/.local/state/kitowall/logs.jsonl`
+- Wallpapers: `~/Pictures/Wallpapers/<pack>`
 
-## CLI rápido
+## Quick Start (CLI)
 ```bash
+npm install
 npm run build
 
 node dist/cli.js outputs
 node dist/cli.js status
 node dist/cli.js next
-node dist/cli.js next --pack sao
-node dist/cli.js hydrate-pack sao --count 10
-node dist/cli.js list-packs --refresh
 node dist/cli.js check --json
 ```
 
-## UI
+## Quick Start (UI)
 ```bash
 cd ui
 npm install
-npm run tauri dev
+npm run tauri:dev
 ```
 
-## Documentación
-- Estado actual: `STATUS.md`
-- Ejemplos de config: `CONFIG_EXAMPLES.md`
-- Dependencias de sistema: `DEPENDENCIES.md`
-- Fases: `PHASES.md`, `PHASES_ES.md`
+If your system needs it on Wayland:
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri:dev
+```
+
+## Package / Release
+- Release checklist: `RELEASE_CHECKLIST.md`
+- Release notes: `RELEASE_NOTES_1.0.0.md`
+- Dependencies: `DEPENDENCIES.md`
+
+Main commands:
+```bash
+# Validate CLI before release
+npm run release:check
+
+# Build distributable CLI tarball
+npm run package:cli
+
+# Build desktop app package (Tauri)
+npm run package:ui
+
+# Full pipeline
+npm run package:all
+```
+
+## User Docs
+- Current status: `STATUS.md`
+- Config examples: `CONFIG_EXAMPLES.md`
+- UI details: `ui/README.md`
+
+## Legal
+- License: `LICENSE.md`
+- Attribution notice: `NOTICE.md`
+- Trademarks: `TRADEMARKS.md`
+- Logo license: `ui/src/assets/logo-LICENSE.md`

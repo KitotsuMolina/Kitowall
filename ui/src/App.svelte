@@ -1,6 +1,7 @@
 <script lang="ts">
   import {convertFileSrc, invoke} from '@tauri-apps/api/core';
 import {onDestroy, onMount, tick} from 'svelte';
+  import logo from './assets/logo.png';
 
   type HealthReport = {
     ok: boolean;
@@ -117,8 +118,9 @@ import {onDestroy, onMount, tick} from 'svelte';
   };
 
   type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs';
+  type UiLanguage = 'en' | 'es';
 
-  let namespace = 'hyprwall';
+  let namespace = 'kitowall';
   let health: HealthReport | null = null;
   let status: StatusReport | null = null;
   let lastError: string | null = null;
@@ -143,7 +145,9 @@ import {onDestroy, onMount, tick} from 'svelte';
   let showLogsClearConfirm = false;
   let mobileMenuOpen = false;
   let activeSection: SectionId = 'control';
-  const SELECTED_PACK_KEY = 'hyprwall:selected-pack';
+  const SELECTED_PACK_KEY = 'kitowall:selected-pack';
+  const UI_LANG_KEY = 'kitowall:ui-language';
+  let uiLanguage: UiLanguage = 'en';
   let toastSeq = 1;
   let settingsMode: 'manual' | 'rotate' = 'manual';
   let settingsInterval = 1800;
@@ -307,6 +311,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     '000000', '999999', 'cccccc', 'ffffff', '424153', ''
   ] as const;
   let gsSelectOpen:
+    | 'language'
     | 'mode'
     | 'transition'
     | 'timer'
@@ -369,9 +374,33 @@ import {onDestroy, onMount, tick} from 'svelte';
     return isTruthy(value) ? 'true' : 'false';
   }
 
+  function tr(en: string, es: string): string {
+    return uiLanguage === 'es' ? es : en;
+  }
+
+  function setUiLanguage(value: string): void {
+    uiLanguage = value === 'es' ? 'es' : 'en';
+    try {
+      localStorage.setItem(UI_LANG_KEY, uiLanguage);
+    } catch {}
+  }
+
+  function onUiLanguageChange(e: Event): void {
+    const el = e.currentTarget as HTMLSelectElement;
+    setUiLanguage(el.value);
+  }
+
   function formatTimestamp(ts: number | null): string {
-    if (!ts) return 'unknown';
-    return new Date(ts).toLocaleString();
+    if (!ts) return tr('unknown', 'desconocido');
+    const locale = uiLanguage === 'es' ? 'es-ES' : 'en-US';
+    return new Date(ts).toLocaleString(locale);
+  }
+
+  function systemdFieldText(value: unknown): string {
+    if (typeof value !== 'string') return tr('No scheduled run', 'Sin ejecucion programada');
+    const clean = value.trim();
+    if (!clean || clean.toLowerCase() === 'n/a') return tr('No scheduled run', 'Sin ejecucion programada');
+    return clean;
   }
 
   function imageSrc(path?: string): string | null {
@@ -594,6 +623,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     gsSelectOpen = null;
   }
 
+  function selectLanguage(value: UiLanguage): void {
+    setUiLanguage(value);
+    gsSelectOpen = null;
+  }
+
   function selectTransitionType(value: string): void {
     settingsTransitionType = value;
     gsSelectOpen = null;
@@ -662,7 +696,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busy = true;
     lastError = null;
     try {
-      health = await invoke<HealthReport>('hyprwall_check', {namespace});
+      health = await invoke<HealthReport>('kitowall_check', {namespace});
     } catch (e) {
       lastError = String(e);
     } finally {
@@ -674,7 +708,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busy = true;
     lastError = null;
     try {
-      status = await invoke<StatusReport>('hyprwall_status');
+      status = await invoke<StatusReport>('kitowall_status');
     } catch (e) {
       lastError = String(e);
     } finally {
@@ -684,7 +718,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   async function syncStatus(): Promise<void> {
     try {
-      const latest = await invoke<StatusReport>('hyprwall_status');
+      const latest = await invoke<StatusReport>('kitowall_status');
       status = latest;
     } catch (e) {
       lastError = String(e);
@@ -694,8 +728,8 @@ import {onDestroy, onMount, tick} from 'svelte';
   async function runListPacks(): Promise<void> {
     try {
       const [cfg, folders] = await Promise.all([
-        invoke<ListPacksResponse>('hyprwall_list_packs'),
-        invoke<FolderPacksResponse>('hyprwall_list_pack_folders')
+        invoke<ListPacksResponse>('kitowall_list_packs'),
+        invoke<FolderPacksResponse>('kitowall_list_pack_folders')
       ]);
       const map = new Map<string, SelectPackItem>();
       for (const p of (cfg?.packs ?? [])) {
@@ -751,7 +785,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   async function loadPacksRaw(): Promise<void> {
     try {
-      const data = await invoke<PacksRawResponse>('hyprwall_pack_list_raw');
+      const data = await invoke<PacksRawResponse>('kitowall_pack_list_raw');
       rawPacksByName = JSON.parse(JSON.stringify(data?.packs ?? {}));
     } catch (e) {
       lastError = String(e);
@@ -789,7 +823,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         if (wallhavenRatioMode === '4:3') ratiosValue = '4x3';
         if (wallhavenRatioMode === '5:4') ratiosValue = '5x4';
       }
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_upsert_wallhaven', {
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_upsert_wallhaven', {
         name: wallhavenPackName.trim(),
         keyword: wallhavenKeyword.trim(),
         subthemes: wallhavenSubthemes.trim() || null,
@@ -827,7 +861,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     try {
       if (!unsplashPackName.trim()) throw new Error('Unsplash pack name is required');
       if (!unsplashQuery.trim()) throw new Error('Unsplash query is required');
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_upsert_unsplash', {
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_upsert_unsplash', {
         name: unsplashPackName.trim(),
         query: unsplashQuery.trim(),
         subthemes: unsplashSubthemes.trim() || null,
@@ -862,7 +896,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     try {
       if (!redditPackName.trim()) throw new Error('Reddit pack name is required');
       if (!redditSubreddits.trim()) throw new Error('Reddit subreddits is required');
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_upsert_reddit', {
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_upsert_reddit', {
         name: redditPackName.trim(),
         subreddits: redditSubreddits.trim(),
         subthemes: redditSubthemes.trim() || null,
@@ -893,7 +927,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!genericJsonPackName.trim()) throw new Error('Generic JSON pack name is required');
       if (!genericJsonEndpoint.trim()) throw new Error('Generic JSON endpoint is required');
       if (!genericJsonImagePath.trim()) throw new Error('Generic JSON imagePath is required');
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_upsert_generic_json', {
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_upsert_generic_json', {
         name: genericJsonPackName.trim(),
         endpoint: genericJsonEndpoint.trim(),
         imagePath: genericJsonImagePath.trim(),
@@ -932,7 +966,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         .map(s => s.trim())
         .filter(Boolean)
         .join(',');
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_upsert_static_url', {
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_upsert_static_url', {
         name: staticUrlPackName.trim(),
         url: staticUrlSingle.trim() || null,
         urls: normalizedList || null,
@@ -964,7 +998,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!localPackName.trim()) throw new Error('Local pack name is required');
       if (localPathItems.length === 0) throw new Error('Add at least one folder path');
       const normalizedPaths = localPathItems.join(',');
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_upsert_local', {
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_upsert_local', {
         name: localPackName.trim(),
         paths: normalizedPaths
       });
@@ -1107,7 +1141,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busyPacks = true;
     lastError = null;
     try {
-      const result = await invoke<{path?: string | null}>('hyprwall_pick_folder');
+      const result = await invoke<{path?: string | null}>('kitowall_pick_folder');
       const selected = String(result?.path ?? '').trim();
       if (!selected) return;
       if (localPathItems.includes(selected)) {
@@ -1141,7 +1175,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busyPacks = true;
     lastError = null;
     try {
-      const result = await invoke<Record<string, unknown>>('hyprwall_pack_remove', {name});
+      const result = await invoke<Record<string, unknown>>('kitowall_pack_remove', {name});
       ensureCommandOk(result);
       pushToast(`Pack removed: ${name}`, 'success');
       pushLog(`pack removed: ${name}`, 'success');
@@ -1157,7 +1191,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   async function loadSettings(): Promise<void> {
     try {
-      const data = await invoke<SettingsReport>('hyprwall_settings_get');
+      const data = await invoke<SettingsReport>('kitowall_settings_get');
       settingsMode = data.mode;
       settingsInterval = data.rotation_interval_seconds;
       settingsTransitionType = data.transition?.type ?? 'center';
@@ -1177,7 +1211,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       const keys = await invoke<{
         wallhaven?: {value?: string | null; apiKeyEnv?: string | null};
         unsplash?: {value?: string | null; apiKeyEnv?: string | null};
-      }>('hyprwall_source_keys_get');
+      }>('kitowall_source_keys_get');
       wallhavenApiKey = keys?.wallhaven?.value ?? '';
       unsplashApiKey = keys?.unsplash?.value ?? '';
     } catch (e) {
@@ -1199,7 +1233,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!Number.isFinite(duration) || duration <= 0) throw new Error('transition duration must be > 0');
       if (angle !== null && !Number.isFinite(angle)) throw new Error('transition angle must be a number');
 
-      const result = await invoke<Record<string, unknown>>('hyprwall_settings_set', {
+      const result = await invoke<Record<string, unknown>>('kitowall_settings_set', {
         mode: settingsMode,
         rotationIntervalSec: interval,
         transitionType: settingsTransitionType,
@@ -1230,7 +1264,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('timer interval value must be > 0');
       if (!['s', 'm', 'h'].includes(timerIntervalUnit)) throw new Error('timer unit must be s, m, or h');
       const every = `${amount}${timerIntervalUnit}`;
-      const result = await invoke<Record<string, unknown>>('hyprwall_install_timer', {
+      const result = await invoke<Record<string, unknown>>('kitowall_install_timer', {
         every
       });
       ensureCommandOk(result);
@@ -1254,7 +1288,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       const wall = wallhavenApiKey.trim();
       const uns = unsplashApiKey.trim();
       if (!wall && !uns) throw new Error('Provide at least one API key');
-      const result = await invoke<Record<string, unknown>>('hyprwall_source_keys_set', {
+      const result = await invoke<Record<string, unknown>>('kitowall_source_keys_set', {
         wallhavenKey: wall || null,
         unsplashKey: uns || null
       });
@@ -1273,7 +1307,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   async function loadTimerStatus(): Promise<void> {
     try {
-      timerStatus = await invoke<TimerStatusReport>('hyprwall_timer_status');
+      timerStatus = await invoke<TimerStatusReport>('kitowall_timer_status');
     } catch (e) {
       lastError = String(e);
     }
@@ -1286,8 +1320,8 @@ import {onDestroy, onMount, tick} from 'svelte';
       const outputsCount = status?.outputs?.length && status.outputs.length > 0 ? status.outputs.length : 1;
       const fetchLimit = Math.max(500, limit * Math.max(1, historyPage) * outputsCount * 6);
       const [history, favs] = await Promise.all([
-        invoke<HistoryReport>('hyprwall_history_list', {limit: fetchLimit}),
-        invoke<string[]>('hyprwall_favorites_list')
+        invoke<HistoryReport>('kitowall_history_list', {limit: fetchLimit}),
+        invoke<string[]>('kitowall_favorites_list')
       ]);
       favorites = Array.isArray(favs) ? favs : [];
       rawHistoryEntries = (history?.entries ?? []).map(e => ({
@@ -1307,8 +1341,8 @@ import {onDestroy, onMount, tick} from 'svelte';
     lastError = null;
     try {
       const [data, favs] = await Promise.all([
-        invoke<WallpapersListResponse>('hyprwall_wallpapers_list'),
-        invoke<string[]>('hyprwall_favorites_list')
+        invoke<WallpapersListResponse>('kitowall_wallpapers_list'),
+        invoke<string[]>('kitowall_favorites_list')
       ]);
       galleryItems = Array.isArray(data?.items) ? data.items : [];
       galleryRoot = String(data?.root ?? '');
@@ -1326,7 +1360,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     systemLogsBusy = true;
     lastError = null;
     try {
-      const data = await invoke<SystemLogsResponse>('hyprwall_logs', {
+      const data = await invoke<SystemLogsResponse>('kitowall_logs', {
         limit: Math.max(1, Math.floor(Number(logsLimit) || 200)),
         source: logsSource === 'all' ? null : logsSource,
         pack: logsPack.trim() || null,
@@ -1346,7 +1380,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busyHistory = true;
     lastError = null;
     try {
-      await invoke('hyprwall_history_clear');
+      await invoke('kitowall_history_clear');
       rawHistoryEntries = [];
       historyEntries = [];
       historyHasMore = false;
@@ -1364,7 +1398,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     systemLogsBusy = true;
     lastError = null;
     try {
-      await invoke('hyprwall_logs_clear');
+      await invoke('kitowall_logs_clear');
       systemLogs = [];
       pushToast('Logs cleared', 'success');
     } catch (e) {
@@ -1424,11 +1458,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     lastError = null;
     try {
       if (isFavorite(path)) {
-        await invoke('hyprwall_favorite_remove', {path});
+        await invoke('kitowall_favorite_remove', {path});
         favorites = favorites.filter(p => p !== path);
         pushToast('Removed from favorites', 'success');
       } else {
-        await invoke('hyprwall_favorite_add', {path});
+        await invoke('kitowall_favorite_add', {path});
         favorites = [...favorites, path];
         pushToast('Added to favorites', 'success');
       }
@@ -1449,11 +1483,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     lastError = null;
     try {
       if (isFavorite(path)) {
-        await invoke('hyprwall_favorite_remove', {path});
+        await invoke('kitowall_favorite_remove', {path});
         favorites = favorites.filter(p => p !== path);
         pushToast('Removed from favorites', 'success');
       } else {
-        await invoke('hyprwall_favorite_add', {path});
+        await invoke('kitowall_favorite_add', {path});
         favorites = [...favorites, path];
         pushToast('Added to favorites', 'success');
       }
@@ -1473,7 +1507,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busy = true;
     lastError = null;
     try {
-      const result = await invoke<unknown>('hyprwall_next', {namespace, force});
+      const result = await invoke<unknown>('kitowall_next', {namespace, force});
       ensureCommandOk(result);
       pushToast('Wallpaper changed', 'success');
       pushLog(`next${force ? ' (force)' : ''}`, 'success');
@@ -1492,7 +1526,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busy = true;
     lastError = null;
     try {
-      const result = await invoke<unknown>('hyprwall_next', {
+      const result = await invoke<unknown>('kitowall_next', {
         namespace,
         force: true,
         pack: selectedPack
@@ -1514,7 +1548,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busy = true;
     lastError = null;
     try {
-      await invoke('hyprwall_init_apply', {namespace});
+      await invoke('kitowall_init_apply', {namespace});
       pushToast('Repair completed', 'success');
       pushLog('repair: init --apply', 'success');
       await runHealth();
@@ -1545,7 +1579,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         for (let i = 0; i < hydratable.length; i++) {
           const pack = hydratable[i];
           pushToast(`Hydrating ${i + 1}/${hydratable.length}: ${pack.name}`, 'info');
-          await invoke<Record<string, unknown>>('hyprwall_hydrate_pack', {
+          await invoke<Record<string, unknown>>('kitowall_hydrate_pack', {
             name: pack.name,
             count
           });
@@ -1558,7 +1592,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         if (!selected.hydratable) {
           throw new Error(`Pack "${selectedPack}" is folder-only (no source configured to hydrate)`);
         }
-        const result = await invoke<Record<string, unknown>>('hyprwall_hydrate_pack', {
+        const result = await invoke<Record<string, unknown>>('kitowall_hydrate_pack', {
           name: selectedPack,
           count
         });
@@ -1589,11 +1623,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     lastError = null;
     try {
       if (selectedPack === 'all') {
-        const result = await invoke<Record<string, unknown>>('hyprwall_cache_prune');
+        const result = await invoke<Record<string, unknown>>('kitowall_cache_prune');
         pushToast('Cleaned all packs', 'success');
         pushLog(`cache-prune-hard all: ${JSON.stringify(result)}`, 'success');
       } else {
-        const result = await invoke<Record<string, unknown>>('hyprwall_cache_prune_pack', {
+        const result = await invoke<Record<string, unknown>>('kitowall_cache_prune_pack', {
           name: selectedPack
         });
         pushToast(`Cleaned pack: ${selectedPack}`, 'success');
@@ -1614,7 +1648,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     busy = true;
     lastError = null;
     try {
-      const result = await invoke<Record<string, unknown>>('hyprwall_open_pack_folder', {
+      const result = await invoke<Record<string, unknown>>('kitowall_open_pack_folder', {
         name: selectedPack
       });
       pushToast(`Opened folder: ${selectedPack}`, 'success');
@@ -1634,6 +1668,12 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (saved && saved.trim().length > 0) {
         selectedPack = saved;
         selectedPackInfo = null;
+      }
+    } catch {}
+    try {
+      const savedLang = localStorage.getItem(UI_LANG_KEY);
+      if (savedLang === 'es' || savedLang === 'en') {
+        uiLanguage = savedLang;
       }
     } catch {}
 
@@ -1691,35 +1731,43 @@ import {onDestroy, onMount, tick} from 'svelte';
 </script>
 
 <div class="app-shell">
-  <button class="menu-toggle" on:click={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label="Toggle menu">
-    Menu
+  <button class="menu-toggle" on:click={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label={tr('Toggle menu', 'Mostrar menu')}>
+    {tr('Menu', 'Menu')}
   </button>
 
   <aside class={`side-menu ${mobileMenuOpen ? 'open' : ''}`}>
-    <div class="side-title">Hyprwall</div>
+    <div class="side-title">Kitowall</div>
+    <div class="menu-items">
     <button class={`menu-item ${activeSection === 'control' ? 'active' : ''}`} on:click={() => selectSection('control')}>
-      Control Center
+      {tr('Control Center', 'Centro de Control')}
     </button>
     <button class={`menu-item ${activeSection === 'settings' ? 'active' : ''}`} on:click={() => selectSection('settings')}>
-      General Settings
+      {tr('General Settings', 'Configuracion General')}
     </button>
     <button class={`menu-item ${activeSection === 'history' ? 'active' : ''}`} on:click={() => selectSection('history')}>
-      History
+      {tr('History', 'Historial')}
     </button>
     <button class={`menu-item ${activeSection === 'library' ? 'active' : ''}`} on:click={() => selectSection('library')}>
-      Wallpapers
+      {tr('Wallpapers', 'Wallpapers')}
     </button>
     <button class={`menu-item ${activeSection === 'packs' ? 'active' : ''}`} on:click={() => selectSection('packs')}>
-      Packs
+      {tr('Packs', 'Packs')}
     </button>
     <button class={`menu-item ${activeSection === 'logs' ? 'active' : ''}`} on:click={() => selectSection('logs')}>
-      Logs
+      {tr('Logs', 'Logs')}
     </button>
+    </div>
+    <div class="sidebar-footer">
+      <img class="sidebar-logo" src={logo} alt="Kitotsu logo" />
+      <div class="sidebar-author">Kitotsu</div>
+      <div class="sidebar-disclaimer">Original code by Kitotsu</div>
+      <div class="sidebar-disclaimer muted-note">{tr('Attribution required by project license.', 'Atribucion obligatoria por la licencia del proyecto.')}</div>
+    </div>
   </aside>
 
   <main>
-    <h1>Hyprwall UI</h1>
-    <p>Minimal dashboard wired to the CLI contract.</p>
+    <h1>Kitowall UI</h1>
+    <p>{tr('Minimal dashboard wired to the CLI contract.', 'Panel minimal conectado al contrato del CLI.')}</p>
 
     {#if lastError}
       <div class="banner error">{lastError}</div>
@@ -1735,13 +1783,13 @@ import {onDestroy, onMount, tick} from 'svelte';
     {#if activeSection === 'control'}
       <div class="card">
         <div class="row actions-input-row">
-          <label for="namespace-input">Namespace</label>
-          <input id="namespace-input" bind:value={namespace} placeholder="hyprwall" />
-          <button class="secondary" on:click={runHealth} disabled={busy}>Refresh Health</button>
+          <label for="namespace-input">{tr('Namespace', 'Namespace')}</label>
+          <input id="namespace-input" bind:value={namespace} placeholder="kitowall" />
+          <button class="secondary" on:click={runHealth} disabled={busy}>{tr('Refresh Health', 'Actualizar Health')}</button>
         </div>
       </div>
 
-      <h2>Health</h2>
+      <h2>{tr('Health', 'Health')}</h2>
       <div class="card">
         {#if health}
           <div class="row">
@@ -1751,7 +1799,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             {/if}
           </div>
 
-          <h3>Dependencies</h3>
+          <h3>{tr('Dependencies', 'Dependencias')}</h3>
           <div class="row">
             {#each Object.entries(health.deps) as [name, value]}
               <span class={`badge status ${isTruthy(value) ? 'ok' : 'bad'}`}>
@@ -1760,7 +1808,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             {/each}
           </div>
 
-          <h3>Units</h3>
+          <h3>{tr('Units', 'Unidades')}</h3>
           <div class="units">
             {#each Object.entries(health.units) as [key, unit]}
               <details class="unit-card">
@@ -1791,7 +1839,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
           {#if !health.ok}
             <div class="banner">
-              <div>Issues detected.</div>
+              <div>{tr('Issues detected.', 'Se detectaron problemas.')}</div>
               {#if health.hints?.length}
                 <ul>
                   {#each health.hints as h}
@@ -1799,24 +1847,24 @@ import {onDestroy, onMount, tick} from 'svelte';
                   {/each}
                 </ul>
               {/if}
-              <button on:click={runRepair} disabled={busy}>Repair (init --apply)</button>
+              <button on:click={runRepair} disabled={busy}>{tr('Repair (init --apply)', 'Reparar (init --apply)')}</button>
             </div>
           {/if}
         {:else}
-          <div>Loading...</div>
+          <div>{tr('Loading...', 'Cargando...')}</div>
         {/if}
       </div>
 
-      <h2>Actions</h2>
+      <h2>{tr('Actions', 'Acciones')}</h2>
       <div class="card">
         <div class="row">
-          <button on:click={() => runNext(false)} disabled={busy}>Next</button>
-          <button class="secondary" on:click={() => runNext(true)} disabled={busy}>Rotate Now</button>
-          <button class="secondary" on:click={runStatus} disabled={busy}>Refresh Status</button>
+          <button on:click={() => runNext(false)} disabled={busy}>{tr('Next', 'Siguiente')}</button>
+          <button class="secondary" on:click={() => runNext(true)} disabled={busy}>{tr('Rotate Now', 'Rotar Ahora')}</button>
+          <button class="secondary" on:click={runStatus} disabled={busy}>{tr('Refresh Status', 'Actualizar Estado')}</button>
         </div>
-        <h3>Download</h3>
+        <h3>{tr('Download', 'Descarga')}</h3>
         <div class="row actions-input-row">
-          <span class="field-label">Pack</span>
+          <span class="field-label">{tr('Pack', 'Pack')}</span>
           <div class="pack-select">
             <button
               type="button"
@@ -1836,7 +1884,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   on:click|stopPropagation
                   on:input={onPackFilterInput}
                 />
-                <button type="button" class="pack-option" on:click|stopPropagation={() => choosePack('all', null)}>all</button>
+                <button type="button" class="pack-option" on:click|stopPropagation={() => choosePack('all', null)}>{tr('all', 'todos')}</button>
                 {#each visiblePacks as p}
                   <button type="button" class="pack-option" on:click|stopPropagation={() => choosePack(p.name, p.type)}>
                     {p.name} ({p.type})
@@ -1845,7 +1893,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/if}
           </div>
-          <label for="hydrate-count">Count</label>
+          <label for="hydrate-count">{tr('Count', 'Cantidad')}</label>
           <input
             id="hydrate-count"
             type="number"
@@ -1856,23 +1904,23 @@ import {onDestroy, onMount, tick} from 'svelte';
         <div class="row actions-buttons-row">
           {#if selectedPack !== 'all'}
             <button class="secondary next-pack-btn" on:click={runNextForSelectedPack} disabled={busy}>
-              Next ({selectedPack})
+              {tr('Next', 'Siguiente')} ({selectedPack})
             </button>
-            <button class="secondary" on:click={runOpenPackFolder} disabled={busy}>Open Folder</button>
+            <button class="secondary" on:click={runOpenPackFolder} disabled={busy}>{tr('Open Folder', 'Abrir Carpeta')}</button>
           {/if}
-          <button class="secondary" on:click={runHydratePack} disabled={busy}>Hydrate Pack</button>
-          <button class="secondary" on:click={openCleanConfirm} disabled={busy}>Clean Wallpapers</button>
+          <button class="secondary" on:click={runHydratePack} disabled={busy}>{tr('Hydrate Pack', 'Hidratar Pack')}</button>
+          <button class="secondary danger-outline" on:click={openCleanConfirm} disabled={busy}>{tr('Clean Wallpapers', 'Limpiar Wallpapers')}</button>
         </div>
       </div>
 
-      <h2>State</h2>
+      <h2>{tr('State', 'Estado')}</h2>
       <div class="card">
         {#if status}
           <div class="row">
             <span class="badge">mode: {status.mode}</span>
             <span class="badge">pack: {status.pack ?? 'none'}</span>
           </div>
-          <p class="muted">last updated: {formatTimestamp(status.last_updated)}</p>
+          <p class="muted">{tr('last updated', 'ultima actualizacion')}: {formatTimestamp(status.last_updated)}</p>
 
           <div class="last-state-grid">
             {#each status.outputs as output}
@@ -1885,7 +1933,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                     {#if imageSrc(status.last_set?.[output])}
                       <img class="monitor-image" src={imageSrc(status.last_set?.[output]) ?? ''} alt={`last wallpaper for ${output}`} />
                     {:else}
-                      <div class="monitor-placeholder">No previous image</div>
+                      <div class="monitor-placeholder">{tr('No previous image', 'Sin imagen previa')}</div>
                     {/if}
                   </div>
                   {#if status.last_set?.[output]}
@@ -1900,19 +1948,19 @@ import {onDestroy, onMount, tick} from 'svelte';
                     </button>
                   {/if}
                 </div>
-                <div class="monitor-caption">{status.last_set?.[output] ?? 'No path available'}</div>
+                <div class="monitor-caption">{status.last_set?.[output] ?? tr('No path available', 'Sin ruta disponible')}</div>
               </div>
             {/each}
           </div>
         {:else}
-          <div>Loading...</div>
+          <div>{tr('Loading...', 'Cargando...')}</div>
         {/if}
       </div>
 
-      <h2>Action Logs</h2>
+      <h2>{tr('Action Logs', 'Logs de Accion')}</h2>
       <div class="card">
         {#if actionLogs.length === 0}
-          <p class="muted">No actions yet.</p>
+          <p class="muted">{tr('No actions yet.', 'Aun no hay acciones.')}</p>
         {:else}
           <div class="log-list">
             {#each actionLogs as log, i (i)}
@@ -1926,11 +1974,37 @@ import {onDestroy, onMount, tick} from 'svelte';
         {/if}
       </div>
     {:else if activeSection === 'settings'}
-      <h2>General Settings</h2>
+      <h2>{tr('General Settings', 'Configuracion General')}</h2>
       <div class="card">
+        <div class="row actions-input-row language-row">
+          <span class="field-label">{tr('Language', 'Idioma')}</span>
+          <div class="gs-select language-select">
+            <button
+              type="button"
+              id="ui-language"
+              class="gs-select-trigger"
+              aria-expanded={gsSelectOpen === 'language'}
+              on:click|stopPropagation={() => toggleGsSelect('language')}
+            >
+              <span>{uiLanguage === 'en' ? 'English' : 'Espanol'}</span>
+              <span class="caret">▾</span>
+            </button>
+            {#if gsSelectOpen === 'language'}
+              <div class="gs-select-menu">
+                <button type="button" class="gs-option" on:click|stopPropagation={() => selectLanguage('en')}>
+                  English
+                </button>
+                <button type="button" class="gs-option" on:click|stopPropagation={() => selectLanguage('es')}>
+                  Espanol
+                </button>
+              </div>
+            {/if}
+          </div>
+          <span class="badge">{tr('current', 'actual')}: {uiLanguage === 'en' ? 'English' : 'Espanol'}</span>
+        </div>
         <div class="settings-grid">
           <div class="settings-field">
-            <label for="settings-mode">Mode</label>
+            <label for="settings-mode">{tr('Mode', 'Modo')}</label>
             <div class="gs-select">
               <button
                 type="button"
@@ -1955,16 +2029,16 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
           <div class="settings-field">
             <div class="label-help">
-              <label for="settings-interval">Rotation Interval (sec)</label>
+              <label for="settings-interval">{tr('Rotation Interval (sec)', 'Intervalo de Rotacion (seg)')}</label>
               <span class="help-wrap">
-                <button type="button" class="help-icon" aria-label="Ayuda Rotation Interval">?</button>
-                <span class="help-tooltip">Cada cuántos segundos el motor de rotación escoge el siguiente wallpaper cuando el modo es rotate.</span>
+                <button type="button" class="help-icon" aria-label={tr('Rotation interval help', 'Ayuda intervalo de rotacion')}>?</button>
+                <span class="help-tooltip">{tr('How many seconds between automatic wallpaper changes when mode is rotate.', 'Cada cuantos segundos el motor escoge el siguiente wallpaper cuando el modo es rotate.')}</span>
               </span>
             </div>
             <input id="settings-interval" type="number" min="1" bind:value={settingsInterval} />
           </div>
           <div class="settings-field">
-            <label for="settings-transition-type">Transition Type</label>
+            <label for="settings-transition-type">{tr('Transition Type', 'Tipo de Transicion')}</label>
             <div class="gs-select">
               <button
                 type="button"
@@ -1988,25 +2062,25 @@ import {onDestroy, onMount, tick} from 'svelte';
             </div>
           </div>
           <div class="settings-field">
-            <label for="settings-transition-fps">Transition FPS</label>
+            <label for="settings-transition-fps">{tr('Transition FPS', 'FPS de Transicion')}</label>
             <input id="settings-transition-fps" type="number" min="1" bind:value={settingsTransitionFps} />
           </div>
           <div class="settings-field">
             <div class="label-help">
-              <label for="settings-transition-duration">Transition Duration</label>
+              <label for="settings-transition-duration">{tr('Transition Duration', 'Duracion de Transicion')}</label>
               <span class="help-wrap">
-                <button type="button" class="help-icon" aria-label="Ayuda Transition Duration">?</button>
-                <span class="help-tooltip">Duración de la animación de transición en segundos al aplicar una imagen.</span>
+                <button type="button" class="help-icon" aria-label={tr('Transition duration help', 'Ayuda duracion de transicion')}>?</button>
+                <span class="help-tooltip">{tr('Animation duration in seconds when applying a wallpaper.', 'Duracion de la animacion en segundos al aplicar una imagen.')}</span>
               </span>
             </div>
             <input id="settings-transition-duration" type="number" min="0.1" step="0.1" bind:value={settingsTransitionDuration} />
           </div>
           <div class="settings-field">
             <div class="label-help">
-              <label for="timer-interval-sec">System Timer Interval (sec)</label>
+              <label for="timer-interval-sec">{tr('System Timer Interval', 'Intervalo del Timer de Sistema')}</label>
               <span class="help-wrap">
-                <button type="button" class="help-icon" aria-label="Ayuda System Timer Interval">?</button>
-                <span class="help-tooltip">Frecuencia del timer de systemd. Puedes usar segundos (s), minutos (m) o horas (h): ejemplo 30s, 10m, 1h.</span>
+                <button type="button" class="help-icon" aria-label={tr('System timer interval help', 'Ayuda del intervalo del timer')}>?</button>
+                <span class="help-tooltip">{tr('How often systemd timer runs. You can use seconds (s), minutes (m), or hours (h), for example 30s, 10m, 1h.', 'Frecuencia del timer de systemd. Puedes usar segundos (s), minutos (m) o horas (h): por ejemplo 30s, 10m, 1h.')}</span>
               </span>
             </div>
             <div class="timer-interval-row">
@@ -2034,21 +2108,30 @@ import {onDestroy, onMount, tick} from 'svelte';
             </div>
           </div>
           <div class="settings-field">
-            <label for="settings-transition-angle">Transition Angle (optional)</label>
+            <label for="settings-transition-angle">{tr('Transition Angle (optional)', 'Angulo de Transicion (opcional)')}</label>
             <input id="settings-transition-angle" placeholder="e.g. 45" bind:value={settingsTransitionAngle} />
           </div>
           <div class="settings-field">
-            <label for="settings-transition-pos">Transition Pos (optional)</label>
+            <label for="settings-transition-pos">{tr('Transition Pos (optional)', 'Posicion de Transicion (opcional)')}</label>
             <input id="settings-transition-pos" placeholder="e.g. 0.5,0.5" bind:value={settingsTransitionPos} />
           </div>
         </div>
         <div class="row actions-buttons-row settings-actions-row">
-          <button class="secondary" on:click={loadSettings} disabled={busySettings}>Reload</button>
-          <button on:click={saveSettings} disabled={busySettings}>Save Settings</button>
-          <button class="secondary" on:click={applyTimerInterval} disabled={busySettings}>Apply Timer</button>
-          <button class="secondary" on:click={loadTimerStatus} disabled={busySettings}>Refresh Timer Status</button>
+          <button class="secondary" on:click={loadSettings} disabled={busySettings}>{tr('Reload', 'Recargar')}</button>
+          <button on:click={saveSettings} disabled={busySettings}>{tr('Save Settings', 'Guardar Configuracion')}</button>
+          <button class="secondary" on:click={applyTimerInterval} disabled={busySettings}>{tr('Apply Timer', 'Aplicar Timer')}</button>
+          <button class="secondary" on:click={loadTimerStatus} disabled={busySettings}>{tr('Refresh Timer Status', 'Actualizar Estado del Timer')}</button>
         </div>
         {#if timerStatus}
+          <div class="timer-info-header">
+            <div class="label-help">
+              <span class="field-label">{tr('Systemd Runtime Status', 'Estado Runtime de Systemd')}</span>
+              <span class="help-wrap">
+                <button type="button" class="help-icon" aria-label={tr('Systemd runtime status help', 'Ayuda estado runtime de systemd')}>?</button>
+                <span class="help-tooltip">{tr('Timer card shows scheduling status (when next run happens). Service card shows execution status of the worker unit.', 'La tarjeta Timer muestra el estado de programacion (cuando ocurre la siguiente ejecucion). La tarjeta Service muestra el estado de ejecucion de la unidad trabajadora.')}</span>
+              </span>
+            </div>
+          </div>
           <div class="timer-status-grid">
             <div class="timer-status-card">
               <div class="row">
@@ -2056,8 +2139,22 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <span class="badge">{timerStatus.timer?.SubState ?? 'n/a'}</span>
                 <span class="badge">{timerStatus.timer?.UnitFileState ?? 'n/a'}</span>
               </div>
-              <p class="muted">next: {timerStatus.timer?.NextElapseUSecRealtime ?? 'n/a'}</p>
-              <p class="muted">last trigger: {timerStatus.timer?.LastTriggerUSec ?? 'n/a'}</p>
+              <div class="timer-kv-list">
+                <div class="timer-kv-row">
+                  <span class="timer-kv-key timer-kv-key-with-help">
+                    {tr('next', 'siguiente')}
+                    <span class="help-wrap">
+                      <button type="button" class="help-icon" aria-label={tr('Next schedule fallback help', 'Ayuda fallback de siguiente ejecucion')}>?</button>
+                      <span class="help-tooltip">{tr('If no next run is scheduled yet, we show a fallback label. This is not an error by itself and usually means timer is inactive or has no pending trigger yet.', 'Si aun no hay siguiente ejecucion programada, mostramos una etiqueta fallback. No es un error por si solo y normalmente significa que el timer esta inactivo o aun no tiene un disparo pendiente.')}</span>
+                    </span>
+                  </span>
+                  <span class="timer-kv-value">{systemdFieldText(timerStatus.timer?.NextElapseUSecRealtime)}</span>
+                </div>
+                <div class="timer-kv-row">
+                  <span class="timer-kv-key">{tr('last trigger', 'ultimo disparo')}</span>
+                  <span class="timer-kv-value">{timerStatus.timer?.LastTriggerUSec ?? 'n/a'}</span>
+                </div>
+              </div>
             </div>
             <div class="timer-status-card">
               <div class="row">
@@ -2065,21 +2162,26 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <span class="badge">{timerStatus.service?.SubState ?? 'n/a'}</span>
                 <span class="badge">{timerStatus.service?.UnitFileState ?? 'n/a'}</span>
               </div>
-              <p class="muted">unit: {timerStatus.service?.Id ?? 'hyprwall-next.service'}</p>
+              <div class="timer-kv-list">
+                <div class="timer-kv-row">
+                  <span class="timer-kv-key">{tr('unit', 'unidad')}</span>
+                  <span class="timer-kv-value">{timerStatus.service?.Id ?? 'kitowall-next.service'}</span>
+                </div>
+              </div>
             </div>
           </div>
         {/if}
       </div>
 
-      <h2>Source API Keys</h2>
+      <h2>{tr('Source API Keys', 'API Keys de Sources')}</h2>
       <div class="card">
         <div class="settings-grid">
           <div class="settings-field">
             <div class="label-help">
               <label for="wallhaven-key">Wallhaven API Key</label>
               <span class="help-wrap">
-                <button type="button" class="help-icon" aria-label="Ayuda Wallhaven API Key">?</button>
-                <span class="help-tooltip">Se guarda en los packs wallhaven dentro del archivo de configuración y se usa en descargas.</span>
+                <button type="button" class="help-icon" aria-label={tr('Wallhaven API key help', 'Ayuda de key de Wallhaven')}>?</button>
+                <span class="help-tooltip">{tr('Stored in wallhaven packs in config and used for downloads.', 'Se guarda en los packs wallhaven del config y se usa en descargas.')}</span>
               </span>
             </div>
             <div class="key-input-row">
@@ -2097,8 +2199,8 @@ import {onDestroy, onMount, tick} from 'svelte';
             <div class="label-help">
               <label for="unsplash-key">Unsplash API Key</label>
               <span class="help-wrap">
-                <button type="button" class="help-icon" aria-label="Ayuda Unsplash API Key">?</button>
-                <span class="help-tooltip">Se guarda en los packs unsplash dentro del archivo de configuración y se usa en descargas.</span>
+                <button type="button" class="help-icon" aria-label={tr('Unsplash API key help', 'Ayuda de key de Unsplash')}>?</button>
+                <span class="help-tooltip">{tr('Stored in unsplash packs in config and used for downloads.', 'Se guarda en los packs unsplash del config y se usa en descargas.')}</span>
               </span>
             </div>
             <div class="key-input-row">
@@ -2114,12 +2216,12 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
         </div>
         <div class="row actions-buttons-row settings-actions-row">
-          <button class="secondary" on:click={loadSourceKeys} disabled={busyKeys}>Reload Keys</button>
-          <button on:click={saveSourceKeys} disabled={busyKeys}>Save API Keys</button>
+          <button class="secondary" on:click={loadSourceKeys} disabled={busyKeys}>{tr('Reload Keys', 'Recargar Keys')}</button>
+          <button on:click={saveSourceKeys} disabled={busyKeys}>{tr('Save API Keys', 'Guardar API Keys')}</button>
         </div>
       </div>
     {:else if activeSection === 'packs'}
-      <h2>Packs</h2>
+      <h2>{tr('Packs', 'Packs')}</h2>
       <div class="card">
         <div class="packs-tabs">
           <button class={`secondary ${packTab === 'wallhaven' ? 'tab-active' : ''}`} on:click={() => (packTab = 'wallhaven')}>Wallhaven</button>
@@ -2167,14 +2269,14 @@ import {onDestroy, onMount, tick} from 'svelte';
                 </div>
                 <div>
                   <div class="label-help">
-                    <label for="wallhaven-atleast">Minimum Resolution</label>
+                    <label for="wallhaven-atleast">{tr('Minimum Resolution', 'Resolucion Minima')}</label>
                     <span class="help-wrap">
-                      <button type="button" class="help-icon" aria-label="Wallhaven resolution help">?</button>
+                      <button type="button" class="help-icon" aria-label={tr('Wallhaven resolution help', 'Ayuda de resolucion de Wallhaven')}>?</button>
                       <span class="help-tooltip">
                         {#if wallhavenRatioMode === 'x:x'}
-                          Modo x:x: define ancho y alto manualmente.
+                          {tr('x:x mode: set width and height manually.', 'Modo x:x: define ancho y alto manualmente.')}
                         {:else}
-                          Se muestran presets permitidos para el ratio seleccionado.
+                          {tr('Allowed presets are shown for the selected ratio.', 'Se muestran presets permitidos para el ratio seleccionado.')}
                         {/if}
                       </span>
                     </span>
@@ -2327,7 +2429,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => editWallhavenPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
                   </div>
                 </div>
               {/each}
@@ -2459,7 +2561,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => editUnsplashPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
                   </div>
                 </div>
               {/each}
@@ -2536,7 +2638,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => editRedditPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
                   </div>
                 </div>
               {/each}
@@ -2614,7 +2716,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => editGenericJsonPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
                   </div>
                 </div>
               {/each}
@@ -2678,7 +2780,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => editLocalPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
                   </div>
                 </div>
               {/each}
@@ -2757,7 +2859,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => editStaticUrlPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
                   </div>
                 </div>
               {/each}
@@ -2770,12 +2872,12 @@ import {onDestroy, onMount, tick} from 'svelte';
         </div>
       {/if}
     {:else if activeSection === 'logs'}
-      <h2>Logs</h2>
+      <h2>{tr('Logs', 'Logs')}</h2>
       <div class="card">
         <div class="row actions-input-row">
-          <label for="logs-limit">Limit</label>
+          <label for="logs-limit">{tr('Limit', 'Limite')}</label>
           <input id="logs-limit" type="number" min="1" bind:value={logsLimit} />
-          <label for="logs-source">Source</label>
+          <label for="logs-source">{tr('Source', 'Source')}</label>
           <select id="logs-source" bind:value={logsSource}>
             <option value="all">all</option>
             <option value="wallhaven">wallhaven</option>
@@ -2784,22 +2886,22 @@ import {onDestroy, onMount, tick} from 'svelte';
             <option value="generic_json">generic_json</option>
             <option value="static_url">static_url</option>
           </select>
-          <label for="logs-level">Level</label>
+          <label for="logs-level">{tr('Level', 'Nivel')}</label>
           <select id="logs-level" bind:value={logsLevel}>
             <option value="all">all</option>
             <option value="info">info</option>
             <option value="warn">warn</option>
             <option value="error">error</option>
           </select>
-          <label for="logs-pack">Pack</label>
-          <input id="logs-pack" bind:value={logsPack} placeholder="optional pack name" />
-          <label for="logs-q">Search</label>
-          <input id="logs-q" bind:value={logsQuery} placeholder="url, action, message..." />
-          <button class="secondary" on:click={loadSystemLogs} disabled={systemLogsBusy}>Refresh Logs</button>
-          <button class="secondary" on:click={openLogsClearConfirm} disabled={systemLogsBusy}>Clear Logs</button>
+          <label for="logs-pack">{tr('Pack', 'Pack')}</label>
+          <input id="logs-pack" bind:value={logsPack} placeholder={tr('optional pack name', 'nombre de pack opcional')} />
+          <label for="logs-q">{tr('Search', 'Buscar')}</label>
+          <input id="logs-q" bind:value={logsQuery} placeholder={tr('url, action, message...', 'url, accion, mensaje...')} />
+          <button class="secondary" on:click={loadSystemLogs} disabled={systemLogsBusy}>{tr('Refresh Logs', 'Actualizar Logs')}</button>
+          <button class="secondary danger-outline" on:click={openLogsClearConfirm} disabled={systemLogsBusy}>{tr('Clear Logs', 'Limpiar Logs')}</button>
         </div>
         {#if systemLogs.length === 0}
-          <p class="muted">No logs yet.</p>
+          <p class="muted">{tr('No logs yet.', 'Aun no hay logs.')}</p>
         {:else}
           <div class="syslog-list">
             {#each systemLogs as row, i (`${row.ts}-${row.action}-${i}`)}
@@ -2826,23 +2928,23 @@ import {onDestroy, onMount, tick} from 'svelte';
         {/if}
       </div>
     {:else if activeSection === 'history'}
-      <h2>History</h2>
+      <h2>{tr('History', 'Historial')}</h2>
       <div class="card">
         <div class="row actions-input-row">
-          <label for="history-limit">Limit</label>
+          <label for="history-limit">{tr('Limit', 'Limite')}</label>
           <input id="history-limit" type="number" min="1" bind:value={historyLimit} />
-          <label for="history-output">Output</label>
+          <label for="history-output">{tr('Output', 'Salida')}</label>
           <select id="history-output" value={historyOutputFilter} on:change={onHistoryFilterChange}>
             <option value="all">all</option>
             {#each historyOutputOptions as o}
               <option value={o}>{o}</option>
             {/each}
           </select>
-          <button class="secondary" on:click={refreshHistorySection} disabled={busyHistory}>Refresh History</button>
-          <button class="secondary" on:click={openHistoryClearConfirm} disabled={busyHistory}>Clear History</button>
+          <button class="secondary" on:click={refreshHistorySection} disabled={busyHistory}>{tr('Refresh History', 'Actualizar Historial')}</button>
+          <button class="secondary danger-outline" on:click={openHistoryClearConfirm} disabled={busyHistory}>{tr('Clear History', 'Limpiar Historial')}</button>
         </div>
         {#if historyEntries.length === 0}
-          <p class="muted">No history entries yet.</p>
+          <p class="muted">{tr('No history entries yet.', 'Aun no hay entradas de historial.')}</p>
         {:else}
           <div class="history-groups">
             {#each groupedHistoryEntries(historyEntries) as group}
@@ -2886,12 +2988,12 @@ import {onDestroy, onMount, tick} from 'svelte';
         {/if}
         {#if historyHasMore}
           <div class="row actions-buttons-row">
-            <button class="secondary" on:click={loadMoreHistory} disabled={busyHistory}>Load More</button>
+            <button class="secondary" on:click={loadMoreHistory} disabled={busyHistory}>{tr('Load More', 'Cargar Mas')}</button>
           </div>
         {/if}
       </div>
     {:else if activeSection === 'library'}
-      <h2>Wallpapers</h2>
+      <h2>{tr('Wallpapers', 'Wallpapers')}</h2>
       <div class="card">
         <div class="row actions-buttons-row">
           <span class="badge">total: {galleryItems.length}</span>
@@ -2901,26 +3003,26 @@ import {onDestroy, onMount, tick} from 'svelte';
           {/if}
         </div>
         <div class="row actions-input-row">
-          <label for="gallery-pack">Pack</label>
+          <label for="gallery-pack">{tr('Pack', 'Pack')}</label>
           <select id="gallery-pack" bind:value={galleryPackFilter}>
             <option value="all">all</option>
             {#each galleryPackOptions() as p}
               <option value={p}>{p}</option>
             {/each}
           </select>
-          <label for="gallery-sort">Sort</label>
+          <label for="gallery-sort">{tr('Sort', 'Orden')}</label>
           <select id="gallery-sort" bind:value={gallerySort}>
             <option value="newest">newest</option>
             <option value="oldest">oldest</option>
             <option value="name">name</option>
           </select>
-          <label for="gallery-search">Search</label>
-          <input id="gallery-search" bind:value={gallerySearch} placeholder="file name or path" />
-          <label class="inline-check"><input type="checkbox" bind:checked={galleryOnlyFavorites} /> favorites only</label>
-          <button class="secondary" on:click={loadWallpaperLibrary} disabled={galleryBusy}>Refresh Library</button>
+          <label for="gallery-search">{tr('Search', 'Buscar')}</label>
+          <input id="gallery-search" bind:value={gallerySearch} placeholder={tr('file name or path', 'nombre o ruta del archivo')} />
+          <label class="inline-check"><input type="checkbox" bind:checked={galleryOnlyFavorites} /> {tr('favorites only', 'solo favoritos')}</label>
+          <button class="secondary" on:click={loadWallpaperLibrary} disabled={galleryBusy}>{tr('Refresh Library', 'Actualizar Libreria')}</button>
         </div>
         {#if galleryFiltered.length === 0}
-          <p class="muted">No wallpapers matched the selected filters.</p>
+          <p class="muted">{tr('No wallpapers matched the selected filters.', 'No hay wallpapers con los filtros seleccionados.')}</p>
         {:else}
           <div class="wallpaper-gallery-grid">
             {#each galleryFiltered as item, i (`${item.path}-${i}`)}
@@ -2958,7 +3060,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
           {#if galleryHasMore}
             <div class="row actions-buttons-row">
-              <button class="secondary" on:click={loadMoreGallery}>Load More</button>
+              <button class="secondary" on:click={loadMoreGallery}>{tr('Load More', 'Cargar Mas')}</button>
             </div>
           {/if}
         {/if}
@@ -2976,7 +3078,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         }}
       >
         <div class="modal-card resolution-modal" role="dialog" aria-modal="true" aria-label="Wallhaven resolution picker">
-          <h3>Pick a resolution ({wallhavenRatioMode})</h3>
+          <h3>{tr('Pick a resolution', 'Selecciona una resolucion')} ({wallhavenRatioMode})</h3>
           <div class="resolution-grid">
             {#each wallhavenResByRatio[wallhavenRatioMode] ?? [] as r}
               <button type="button" class="secondary resolution-option" on:click={() => { wallhavenAtleast = r; showResolutionModal = false; }}>
@@ -2985,7 +3087,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             {/each}
           </div>
           <div class="row actions-buttons-row">
-            <button class="secondary" on:click={() => (showResolutionModal = false)}>Close</button>
+            <button class="secondary" on:click={() => (showResolutionModal = false)}>{tr('Close', 'Cerrar')}</button>
           </div>
         </div>
       </div>
@@ -3002,7 +3104,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         }}
       >
         <div class="modal-card resolution-modal" role="dialog" aria-modal="true" aria-label="Wallhaven color picker">
-          <h3>Pick a color</h3>
+          <h3>{tr('Pick a color', 'Selecciona un color')}</h3>
           <div class="color-grid-modal">
             {#each wallhavenColorOptions as color}
               <button
@@ -3015,7 +3117,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             {/each}
           </div>
           <div class="row actions-buttons-row">
-            <button class="secondary" on:click={() => (showColorModal = false)}>Close</button>
+            <button class="secondary" on:click={() => (showColorModal = false)}>{tr('Close', 'Cerrar')}</button>
           </div>
         </div>
       </div>
@@ -3037,18 +3139,18 @@ import {onDestroy, onMount, tick} from 'svelte';
           aria-modal="true"
           aria-label="Clean wallpapers confirmation"
         >
-          <h3>Clean Wallpapers Cache</h3>
+          <h3>{tr('Clean Wallpapers Cache', 'Limpiar Cache de Wallpapers')}</h3>
           <p class="muted">
             {#if selectedPack === 'all'}
-              This will hard-clean downloaded wallpapers for ALL packs. Favorites are preserved.
+              {tr('This will hard-clean downloaded wallpapers for ALL packs. Favorites are preserved.', 'Esto hara una limpieza total de wallpapers descargados para TODOS los packs. Los favoritos se conservan.')}
             {:else}
-              This will hard-clean downloaded wallpapers only for pack: <strong>{selectedPack}</strong>. Favorites are preserved.
+              {tr('This will hard-clean downloaded wallpapers only for pack:', 'Esto hara una limpieza total de wallpapers descargados solo para el pack:')} <strong>{selectedPack}</strong>. {tr('Favorites are preserved.', 'Los favoritos se conservan.')}
             {/if}
           </p>
           <div class="row">
-            <button class="secondary" on:click={closeCleanConfirm} disabled={busy}>Cancel</button>
-            <button on:click={runCleanWallpapers} disabled={busy}>
-              {#if selectedPack === 'all'}Confirm Clean All{:else}Confirm Clean Pack{/if}
+            <button class="secondary" on:click={closeCleanConfirm} disabled={busy}>{tr('Cancel', 'Cancelar')}</button>
+            <button class="danger" on:click={runCleanWallpapers} disabled={busy}>
+              {#if selectedPack === 'all'}{tr('Confirm Clean All', 'Confirmar Limpieza Total')}{:else}{tr('Confirm Clean Pack', 'Confirmar Limpieza de Pack')}{/if}
             </button>
           </div>
         </div>
@@ -3071,13 +3173,13 @@ import {onDestroy, onMount, tick} from 'svelte';
           aria-modal="true"
           aria-label="Clear history confirmation"
         >
-          <h3>Clear History</h3>
+          <h3>{tr('Clear History', 'Limpiar Historial')}</h3>
           <p class="muted">
-            This will remove all entries from wallpaper history.
+            {tr('This will remove all entries from wallpaper history.', 'Esto eliminara todas las entradas del historial de wallpapers.')}
           </p>
           <div class="row">
-            <button class="secondary" on:click={closeHistoryClearConfirm} disabled={busyHistory}>Cancel</button>
-            <button on:click={confirmHistoryClear} disabled={busyHistory}>Confirm Clear</button>
+            <button class="secondary" on:click={closeHistoryClearConfirm} disabled={busyHistory}>{tr('Cancel', 'Cancelar')}</button>
+            <button class="danger" on:click={confirmHistoryClear} disabled={busyHistory}>{tr('Confirm Clear', 'Confirmar Limpieza')}</button>
           </div>
         </div>
       </div>
@@ -3099,13 +3201,13 @@ import {onDestroy, onMount, tick} from 'svelte';
           aria-modal="true"
           aria-label="Clear logs confirmation"
         >
-          <h3>Clear Logs</h3>
+          <h3>{tr('Clear Logs', 'Limpiar Logs')}</h3>
           <p class="muted">
-            This will remove all system logs. This action cannot be undone.
+            {tr('This will remove all system logs. This action cannot be undone.', 'Esto eliminara todos los logs del sistema. Esta accion no se puede deshacer.')}
           </p>
           <div class="row">
-            <button class="secondary" on:click={closeLogsClearConfirm} disabled={systemLogsBusy}>Cancel</button>
-            <button on:click={confirmLogsClear} disabled={systemLogsBusy}>Confirm Clear</button>
+            <button class="secondary" on:click={closeLogsClearConfirm} disabled={systemLogsBusy}>{tr('Cancel', 'Cancelar')}</button>
+            <button class="danger" on:click={confirmLogsClear} disabled={systemLogsBusy}>{tr('Confirm Clear', 'Confirmar Limpieza')}</button>
           </div>
         </div>
       </div>
