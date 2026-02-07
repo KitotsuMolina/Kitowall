@@ -15,7 +15,13 @@ export interface ExecOptions {
 
 export function run(cmd: string, args: string[] = [], options: ExecOptions = {}): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
+    const isFlatpak = Boolean(process.env.FLATPAK_ID);
+    const hostCommands = new Set(['swww', 'swww-daemon', 'hyprctl', 'systemctl', 'which', 'xdg-open']);
+    const useHost = isFlatpak && hostCommands.has(cmd);
+    const finalCmd = useHost ? 'flatpak-spawn' : cmd;
+    const finalArgs = useHost ? ['--host', cmd, ...args] : args;
+
+    const child = spawn(finalCmd, finalArgs, {
       cwd: options.cwd,
       env: options.env,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -27,7 +33,7 @@ export function run(cmd: string, args: string[] = [], options: ExecOptions = {})
     const timeout = options.timeoutMs
       ? setTimeout(() => {
           child.kill('SIGKILL');
-          reject(new Error(`Command timed out: ${cmd}`));
+          reject(new Error(`Command timed out: ${finalCmd}`));
         }, options.timeoutMs)
       : null;
 
@@ -44,7 +50,7 @@ export function run(cmd: string, args: string[] = [], options: ExecOptions = {})
       const result: ExecResult = {stdout, stderr, code: code ?? 0};
       if (code && code !== 0) {
         const err = new Error(
-          `Command failed: ${cmd} ${args.join(' ')}\n` +
+          `Command failed: ${finalCmd} ${finalArgs.join(' ')}\n` +
           `exit=${code}\nstdout=${stdout.trim()}\nstderr=${stderr.trim()}`
         );
         (err as Error & {result?: ExecResult}).result = result;

@@ -1,0 +1,49 @@
+app-id: io.kitotsu.KitoWall
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: kitowall-ui
+
+finish-args:
+  - --share=network
+  - --filesystem=home
+  - --filesystem=xdg-pictures
+  - --socket=wayland
+  - --device=dri
+  - --talk-name=org.freedesktop.Flatpak
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+modules:
+  - name: kitowall-ui
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 kitowall-ui /app/bin/kitowall-ui
+      - install -Dm755 node /app/bin/node
+      - install -Dm755 kitowall /app/bin/kitowall
+      - mkdir -p /app/lib/kitowall
+      - mkdir -p /app/lib/kitowall/dist
+      - tar -xf kitowall-dist.tar -C /app/lib/kitowall/dist
+      - install -Dm644 io.kitotsu.KitoWall.desktop /app/share/applications/io.kitotsu.KitoWall.desktop
+      - install -Dm644 io.kitotsu.KitoWall-64.png /app/share/icons/hicolor/64x64/apps/io.kitotsu.KitoWall.png
+      - install -Dm644 io.kitotsu.KitoWall-128.png /app/share/icons/hicolor/128x128/apps/io.kitotsu.KitoWall.png
+      - install -Dm644 io.kitotsu.KitoWall-256.png /app/share/icons/hicolor/256x256/apps/io.kitotsu.KitoWall.png
+      - install -Dm644 io.kitotsu.KitoWall.metainfo.xml /app/share/metainfo/io.kitotsu.KitoWall.metainfo.xml
+    sources:
+      - type: file
+        path: kitowall-ui
+      - type: file
+        path: node
+      - type: file
+        path: kitowall
+      - type: file
+        path: kitowall-dist.tar
+      - type: file
+        path: io.kitotsu.KitoWall.desktop
+      - type: file
+        path: io.kitotsu.KitoWall-64.png
+      - type: file
+        path: io.kitotsu.KitoWall-128.png
+      - type: file
+        path: io.kitotsu.KitoWall-256.png
+      - type: file
+        path: io.kitotsu.KitoWall.metainfo.xml

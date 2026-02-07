@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.kitotsu.KitoWall</id>
+  <name>KitoWall</name>
+  <summary>Wallpaper manager for Hyprland and Wayland</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>LicenseRef-Kitotsu-Attribution-1.0</project_license>
+  <developer id="io.kitotsu">
+    <name>Kitotsu</name>
+  </developer>
+  <launchable type="desktop-id">io.kitotsu.KitoWall.desktop</launchable>
+  <description>
+    <p>
+      KitoWall is a desktop wallpaper manager designed for Hyprland and Wayland,
+      with support for themed packs, multi-monitor apply, and source-based downloads.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/KitotsuMolina/Kitowall</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-02-07">
+      <description>
+        <p>First stable release.</p>
+      </description>
+    </release>
+  </releases>
+  <categories>
+    <category>Utility</category>
+    <category>Graphics</category>
+  </categories>
+</component>

@@ -47,6 +47,7 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri:dev
 - Release checklist: `RELEASE_CHECKLIST.md`
 - Release notes: `RELEASE_NOTES_1.0.0.md`
 - Dependencies: `DEPENDENCIES.md`
+- Flatpak packaging: `flatpak/`
 
 Main commands:
 ```bash
@@ -61,6 +62,20 @@ npm run package:ui
 
 # Full pipeline
 npm run package:all
+```
+
+## Flatpak (Linux)
+```bash
+# 1) Build desktop binary
+cd ui
+npm run tauri:build
+cd ..
+
+# 2) Prepare flatpak sources (binary + icon)
+./flatpak/prepare.sh
+
+# 3) Build and install flatpak
+flatpak-builder flatpak/build-dir flatpak/io.kitotsu.KitoWall.yml --user --install --force-clean
 ```
 
 ## User Docs

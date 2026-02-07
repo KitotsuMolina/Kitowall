@@ -6,3 +6,15 @@
 /ui/src-tauri/Cargo.lock
 /.npm-cache/
 /*.tgz
+/flatpak/build-dir/
+/flatpak/kitowall-ui
+/flatpak/io.kitotsu.KitoWall-64.png
+/flatpak/io.kitotsu.KitoWall-128.png
+/flatpak/io.kitotsu.KitoWall-256.png
+/flatpak/node
+/flatpak/kitowall
+/flatpak/dist/
+/flatpak/kitowall-dist.tar
+/backups/
+/CODEX_RESUME.md
+/ui/.vite/

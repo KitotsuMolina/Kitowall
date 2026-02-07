@@ -93,8 +93,22 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
     Ok(stdout)
 }
 
+fn is_flatpak() -> bool {
+    std::env::var("FLATPAK_ID").is_ok() || PathBuf::from("/.flatpak-info").exists()
+}
+
+fn host_aware_command(base: &str) -> Command {
+    if is_flatpak() {
+        let mut cmd = Command::new("flatpak-spawn");
+        cmd.arg("--host").arg(base);
+        cmd
+    } else {
+        Command::new(base)
+    }
+}
+
 fn systemctl_show(unit: &str, props: &[&str]) -> Result<Json, String> {
-    let mut cmd = Command::new("systemctl");
+    let mut cmd = host_aware_command("systemctl");
     cmd.args(["--user", "show", unit, "--no-pager"]);
     for p in props {
         cmd.arg("-p").arg(p);
@@ -409,7 +423,7 @@ fn kitowall_open_pack_folder(name: String) -> Result<Json, String> {
         return Err(format!("Pack folder not found: {}", path.display()));
     }
 
-    let status = Command::new("xdg-open")
+    let status = host_aware_command("xdg-open")
         .arg(&path)
         .status()
         .map_err(|e| format!("failed to run xdg-open: {}", e))?;
