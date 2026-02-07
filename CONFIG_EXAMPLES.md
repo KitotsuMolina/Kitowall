@@ -1,4 +1,5 @@
-# Hyprwall Config Examples
+# Kitowall Config Examples
+Version scope: `1.0.0`.
 
 This file documents strict validation expectations and API key priority for pack types.
 
@@ -329,29 +330,29 @@ Invalid packs are ignored and will not be used for selection.
 
 ## Pool Status (CLI)
 ```bash
-hyprwall pool-status
+kitowall pool-status
 ```
 
 ## Pool Status (refresh)
 ```bash
-hyprwall pool-status --refresh
+kitowall pool-status --refresh
 ```
 
 ## CLI Refresh Examples
 ```bash
-hyprwall list-packs --refresh
-hyprwall pack-status wallhaven_sao --refresh
+kitowall list-packs --refresh
+kitowall pack-status wallhaven_sao --refresh
 ```
 
 ## Refresh All Packs
 ```bash
-hyprwall refresh-pack --all
+kitowall refresh-pack --all
 ```
 
 ## CLI Extras
 ```bash
-hyprwall list-packs --only-remote
-hyprwall refresh-pack --all --parallel
+kitowall list-packs --only-remote
+kitowall refresh-pack --all --parallel
 ```
 
 ## Wallhaven con subtemas (subthemes)
@@ -423,13 +424,13 @@ Nota: todas las imágenes se guardan en ~/Pictures/Wallpapers/sao/
 
 ## Pack/Pool CLI Examples
 ```bash
-hyprwall pack add sao --type wallhaven --api-key-env WALLHAVEN_KEY --keyword "sao" --subthemes "minimalista,dark" --ratios "16x9" --purity 100
-hyprwall pack update sao --sorting random
-hyprwall pack subtheme add sao "neon"
-hyprwall pack set-key sao --api-key-env WALLHAVEN_KEY
-hyprwall pack list
-hyprwall pack show sao
-hyprwall pool enable
-hyprwall pool add sao --weight 2 --max 200
-hyprwall pool list
+kitowall pack add sao --type wallhaven --api-key-env WALLHAVEN_KEY --keyword "sao" --subthemes "minimalista,dark" --ratios "16x9" --purity 100
+kitowall pack update sao --sorting random
+kitowall pack subtheme add sao "neon"
+kitowall pack set-key sao --api-key-env WALLHAVEN_KEY
+kitowall pack list
+kitowall pack show sao
+kitowall pool enable
+kitowall pool add sao --weight 2 --max 200
+kitowall pool list
 ```

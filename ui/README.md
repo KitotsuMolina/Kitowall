@@ -1,26 +1,35 @@
-# hyprwall-ui
+# Kitowall UI
 
-UI de escritorio para `hyprwall` (Tauri + Svelte).
+Desktop app for `Kitowall` built with `Tauri + Svelte`.
 
-## Requisitos
-- Tener construido el CLI principal (`hyprwall/dist/cli.js`).
-- Dependencias de Tauri/Rust instaladas (ver `../DEPENDENCIES.md`).
+Version: `1.0.0`.
 
-## Desarrollo
+## Requirements
+- Root CLI built: `../dist/cli.js`
+- System deps installed (see `../DEPENDENCIES.md`)
+
+## Development
 ```bash
 cd ui
 npm install
-npm run tauri dev
+npm run tauri:dev
 ```
 
-## Build
+Wayland fallback if needed:
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri:dev
+```
+
+## Build Package
 ```bash
 cd ui
-npm run build
-cd src-tauri && cargo check
+npm run tauri:build
 ```
 
-## Módulos UI implementados
+Output bundle:
+- `ui/src-tauri/target/release/bundle/`
+
+## Main Modules
 - Control Center
 - General Settings
 - History
@@ -28,14 +37,8 @@ cd src-tauri && cargo check
 - Packs
 - Logs
 
-## Packs UI implementados
-- Wallhaven
-- Unsplash
-- Reddit
-- Generic JSON
-- Static URL
-- Local (con selector nativo de carpetas)
-
-## Integración
-La UI invoca el CLI y comandos auxiliares vía Tauri commands en:
-- `ui/src-tauri/src/main.rs`
+## Branding and Legal
+- Project license: `../LICENSE.md`
+- Attribution notice: `../NOTICE.md`
+- Trademarks: `../TRADEMARKS.md`
+- Logo license: `src/assets/logo-LICENSE.md`

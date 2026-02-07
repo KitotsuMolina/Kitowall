@@ -13,12 +13,14 @@ export type PackType =
     | 'generic_json'
     | 'static_url';
 
+export const CONFIG_SCHEMA_VERSION = 1;
+
 function deepEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
 export function getConfigPath(): string {
-  return path.join(os.homedir(), '.config', 'hyprwall', 'config.json');
+  return path.join(os.homedir(), '.config', 'kitowall', 'config.json');
 }
 
 function ensureConfigDir(): void {
@@ -187,6 +189,7 @@ function normalizeStringArray(input: string | string[] | undefined): string[] | 
 }
 
 export interface Config {
+  schemaVersion: number;
   mode: 'manual' | 'rotate';
   rotation_interval_seconds: number;
   transition: TransitionConfig;
@@ -207,6 +210,7 @@ export interface Config {
 
 export function defaultConfig(): Config {
   return {
+    schemaVersion: CONFIG_SCHEMA_VERSION,
     mode: 'manual',
     rotation_interval_seconds: 1800,
     transition: {type: 'center', fps: 60, duration: 0.7},
@@ -216,7 +220,7 @@ export function defaultConfig(): Config {
       avoidSameTickDuplicates: true
     },
     cache: {
-      dir: '~/.cache/hyprwall',
+      dir: '~/.cache/kitowall',
       downloadDir: '~/Pictures/Wallpapers',
       maxMB: 2048,
       defaultTtlSec: 604800
@@ -244,6 +248,17 @@ export function loadConfig(): Config {
 
   // Snapshot antes de migraciones para decidir si guardar o no
   const originalConfig = JSON.parse(JSON.stringify(config)) as Config;
+
+  // Freeze schema contract: only migrate missing/invalid to current version.
+  if (typeof config.schemaVersion !== 'number' || !Number.isFinite(config.schemaVersion)) {
+    config.schemaVersion = CONFIG_SCHEMA_VERSION;
+  } else if (config.schemaVersion > CONFIG_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported config schemaVersion ${config.schemaVersion}. This build supports up to ${CONFIG_SCHEMA_VERSION}.`
+    );
+  } else if (config.schemaVersion < CONFIG_SCHEMA_VERSION) {
+    config.schemaVersion = CONFIG_SCHEMA_VERSION;
+  }
 
   if (!config.transition) config.transition = fallback.transition;
 

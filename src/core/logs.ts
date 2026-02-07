@@ -18,7 +18,7 @@ export interface SystemLogEntry {
   meta?: Record<string, unknown>;
 }
 
-const LOG_DIR = path.join(os.homedir(), '.local', 'state', 'hyprwall');
+const LOG_DIR = path.join(os.homedir(), '.local', 'state', 'kitowall');
 const LOG_FILE = path.join(LOG_DIR, 'logs.jsonl');
 const MAX_LINES = 5000;
 

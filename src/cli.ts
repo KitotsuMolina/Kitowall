@@ -15,7 +15,7 @@ import {loadState, saveState} from './core/state';
 import {Controller} from './core/controller';
 import {detectOutputs} from './core/outputs';
 import {installSystemd, uninstallSystemd, systemdStatus} from './core/systemd';
-import {initHyprwall} from './core/init';
+import {initKitowall} from './core/init';
 import {watchMonitors} from './core/watch';
 import {getHealth, printDoctor} from './core/doctor';
 import {CacheManager} from './core/cache';
@@ -30,7 +30,7 @@ import {StaticUrlAdapter} from './adapters/staticUrl';
 import {listSystemLogs, clearSystemLogs} from './core/logs';
 
 function printUsage(): void {
-  console.log(`hyprwall <command> [options]
+  console.log(`kitowall <command> [options]
 
 Commands:
   outputs                                  List outputs (Wayland monitors)
@@ -81,7 +81,7 @@ Commands:
   logs clear                             Clear system logs
   check [--namespace <ns>] [--json]        Quick system check (no changes)
 
-  init [--namespace <ns>] [--apply] [--force]       Setup hyprwall (install daemon + watcher + next.service), validate deps
+  init [--namespace <ns>] [--apply] [--force]       Setup kitowall (install daemon + watcher + next.service), validate deps
   watch [--debounce <ms>]                  Watch Hyprland monitor hotplug events and apply wallpapers
   doctor [--namespace <ns>]
   health [--namespace <ns>]
@@ -92,20 +92,20 @@ Commands:
   rotate-now [--pack <name>]               Apply next wallpapers ignoring manual mode (for timers)
   mode <manual|rotate>                     Set mode persistently in state.json
 Examples:
-  hyprwall init --namespace hyprwall --apply
-  hyprwall install-systemd --every 5m
-  hyprwall next --pack sao
-  hyprwall outputs
-  hyprwall mode rotate
-  hyprwall rotate-now
-  hyprwall transition --type center --fps 60 --duration 0.7
-  hyprwall settings get
-  hyprwall settings set --mode rotate --rotation-interval-sec 600
-  hyprwall history --limit 100
-  hyprwall history clear
-  hyprwall logs --source wallhaven --limit 200
-  hyprwall logs clear
-  hyprwall check --json
+  kitowall init --namespace kitowall --apply
+  kitowall install-systemd --every 5m
+  kitowall next --pack sao
+  kitowall outputs
+  kitowall mode rotate
+  kitowall rotate-now
+  kitowall transition --type center --fps 60 --duration 0.7
+  kitowall settings get
+  kitowall settings set --mode rotate --rotation-interval-sec 600
+  kitowall history --limit 100
+  kitowall history clear
+  kitowall logs --source wallhaven --limit 200
+  kitowall logs clear
+  kitowall check --json
 `);
 }
 
@@ -150,16 +150,16 @@ function formatError(err: unknown): {message: string; hint?: string; code?: stri
 
   if (message.startsWith('No images found for pack:')) {
     const pack = message.split(':').slice(1).join(':').trim();
-    hint = `Try: hyprwall hydrate-pack ${pack} --count 10`;
+    hint = `Try: kitowall hydrate-pack ${pack} --count 10`;
     code = 'NO_IMAGES';
   } else if (message.startsWith('No images could be selected for outputs')) {
     hint = 'Check pack content, selection cooldowns, or hydrate the pack.';
     code = 'NO_SELECTION';
   } else if (message.startsWith('Pool is not enabled')) {
-    hint = 'Enable pool: hyprwall pool enable';
+    hint = 'Enable pool: kitowall pool enable';
     code = 'POOL_DISABLED';
   } else if (message.startsWith('Pack not found:')) {
-    hint = 'List packs: hyprwall pack list';
+    hint = 'List packs: kitowall pack list';
     code = 'PACK_NOT_FOUND';
   } else if (message.startsWith('No outputs detected')) {
     hint = 'Ensure Hyprland is running and hyprctl works.';
@@ -190,10 +190,10 @@ async function main(): Promise<void> {
 
   // init: instala daemon + watcher + next.service y valida dependencias
   if (cmd === 'init') {
-    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'hyprwall';
+    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
     const apply = args.includes('--apply');
     const force = args.includes('--force');
-    await initHyprwall({namespace, apply, force});
+    await initKitowall({namespace, apply, force});
     console.log(JSON.stringify({ok: true, init: true, namespace, apply}, null, 2));
     return;
   }
@@ -234,13 +234,13 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'doctor') {
-    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'hyprwall';
+    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
     await printDoctor(namespace);
     return;
   }
 
   if (cmd === 'health') {
-    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'hyprwall';
+    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
     const report = await getHealth(namespace);
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.ok ? 0 : 2; // útil para scripts
@@ -248,7 +248,7 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'check') {
-    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'hyprwall';
+    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
     const report = await getHealth(namespace);
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.ok ? 0 : 2;
@@ -982,7 +982,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'next' || cmd === 'rotate-now') {
     const pack = cleanOpt(getOptionValue(args, '--pack'));
-    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'hyprwall';
+    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
     const force = cmd === 'rotate-now' || args.includes('--force');
 
     if (state.mode === 'manual' && !force) {
@@ -991,7 +991,7 @@ async function main(): Promise<void> {
             ok: true,
             skipped: true,
             reason: 'mode=manual',
-            hint: 'Use: hyprwall rotate-now  OR  hyprwall next --force  OR  hyprwall mode rotate',
+            hint: 'Use: kitowall rotate-now  OR  kitowall next --force  OR  kitowall mode rotate',
             namespace
           },
           null,

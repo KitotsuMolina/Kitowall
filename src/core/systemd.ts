@@ -36,9 +36,9 @@ export async function installSystemd(opts: {
 
     const every = systemdInterval(opts.every);
 
-    const hyprwallTimer = `
+    const kitowallTimer = `
         [Unit]
-        Description=Run hyprwall-next periodically
+        Description=Run kitowall-next periodically
         
         [Timer]
         OnBootSec=2s
@@ -46,24 +46,24 @@ export async function installSystemd(opts: {
         AccuracySec=1s
         RandomizedDelaySec=0
         OnUnitActiveSec=${every}
-        Unit=hyprwall-next.service
+        Unit=kitowall-next.service
         Persistent=true
         
         [Install]
         WantedBy=timers.target
     `.trimStart();
 
-    writeFileSync(join(userDir, 'hyprwall-next.timer'), hyprwallTimer, 'utf8');
+    writeFileSync(join(userDir, 'kitowall-next.timer'), kitowallTimer, 'utf8');
 
     await run('systemctl', ['--user', 'daemon-reload']);
-    await run('systemctl', ['--user', 'enable', '--now', 'hyprwall-next.timer']);
+    await run('systemctl', ['--user', 'enable', '--now', 'kitowall-next.timer']);
 }
 
 export async function uninstallSystemd(): Promise<void> {
-    await run('systemctl', ['--user', 'disable', '--now', 'hyprwall-next.timer']).catch(() => {});
+    await run('systemctl', ['--user', 'disable', '--now', 'kitowall-next.timer']).catch(() => {});
     await run('systemctl', ['--user', 'daemon-reload']).catch(() => {});
 }
 
 export async function systemdStatus(): Promise<void> {
-    await run('systemctl', ['--user', 'status', 'hyprwall-next.timer']);
+    await run('systemctl', ['--user', 'status', 'kitowall-next.timer']);
 }

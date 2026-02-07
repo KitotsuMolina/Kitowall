@@ -159,9 +159,9 @@ export async function getHealth(namespace: string): Promise<HealthReport> {
 
     const units = {
         swwwDaemonNs: await unitStatus(`swww-daemon@${namespace}.service`),
-        watch: await unitStatus('hyprwall-watch.service'),
-        nextService: await unitStatus('hyprwall-next.service'),
-        nextTimer: await unitStatus('hyprwall-next.timer'),
+        watch: await unitStatus('kitowall-watch.service'),
+        nextService: await unitStatus('kitowall-next.service'),
+        nextTimer: await unitStatus('kitowall-next.timer'),
     };
 
     for (const u of Object.values(units)) {
@@ -220,7 +220,7 @@ export async function printDoctor(namespace: string): Promise<void> {
     const line = (s: string) => console.log(s);
     const badge = (b: boolean) => (b ? '✅' : '❌');
 
-    line(`hyprwall doctor (namespace="${namespace}")`);
+    line(`kitowall doctor (namespace="${namespace}")`);
     line('');
 
     line('Dependencies:');
@@ -241,7 +241,7 @@ export async function printDoctor(namespace: string): Promise<void> {
         // next.service puede ser static: no la marcamos mal si "disabled"
         const isOk =
             u.exists &&
-            (u.name === 'hyprwall-next.service' ? act !== 'failed' : (act !== 'failed' && u.active !== false));
+            (u.name === 'kitowall-next.service' ? act !== 'failed' : (act !== 'failed' && u.active !== false));
 
         line(`  ${badge(isOk)} ${u.name}  (${ex}, ${act}/${sub}, ${en}, ${ac})`);
     }
@@ -260,6 +260,6 @@ export async function printDoctor(namespace: string): Promise<void> {
         for (const h of r.hints) line(`  - ${h}`);
         line('');
         line('Suggested fix:');
-        line(`  hyprwall init --namespace ${namespace} --apply --force`);
+        line(`  kitowall init --namespace ${namespace} --apply --force`);
     }
 }

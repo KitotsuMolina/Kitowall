@@ -320,7 +320,7 @@ export class Controller {
 
   async applyNext(
       requestedPack?: string,
-      namespace: string = 'hyprwall'
+      namespace: string = 'kitowall'
   ): Promise<{pack: string; outputs: string[]; images: OutputImageMap[]}> {
     const outputs = await this.getOutputs();
     if (outputs.length === 0) throw new Error('No outputs detected');

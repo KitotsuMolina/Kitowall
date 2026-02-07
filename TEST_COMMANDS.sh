@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Simple smoke test runner for hyprwall CLI.
+# Simple smoke test runner for Kitowall CLI.
 # It runs commands in a logical order and skips remote tests if keys are missing.
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
@@ -57,9 +57,9 @@ log "Cache config (set default dir)"
 $CLI cache-config --download-dir "${CACHE_DOWNLOAD_DIR:-~/Pictures/Wallpapers}"
 
 log "Favorites add/remove (demo path)"
-$CLI favorite add "/tmp/hyprwall_demo.jpg" || true
+$CLI favorite add "/tmp/kitowall_demo.jpg" || true
 $CLI favorites
-$CLI favorite remove "/tmp/hyprwall_demo.jpg" || true
+$CLI favorite remove "/tmp/kitowall_demo.jpg" || true
 
 log "List packs (refresh disabled)"
 $CLI list-packs

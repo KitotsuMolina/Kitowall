@@ -15,8 +15,8 @@ enum UiError {
     InvalidJson(String),
 }
 
-fn resolve_hyprwall_cmd() -> Vec<String> {
-    // Prefer local project CLI (absolute path) to avoid mismatches with globally installed hyprwall.
+fn resolve_kitowall_cmd() -> Vec<String> {
+    // Prefer local project CLI (absolute path) to avoid mismatches with globally installed kitowall.
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let local_cli_abs = manifest_dir.join("../../dist/cli.js");
     if local_cli_abs.exists() {
@@ -30,15 +30,15 @@ fn resolve_hyprwall_cmd() -> Vec<String> {
     }
 
     // Optional override for advanced users.
-    if let Ok(cmd) = std::env::var("HYPRWALL_CMD") {
+    if let Ok(cmd) = std::env::var("KITOWALL_CMD") {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
-    vec!["hyprwall".to_string()]
+    vec!["kitowall".to_string()]
 }
 
-fn run_hyprwall(args: &[&str]) -> Result<Json, UiError> {
-    let mut cmd_parts = resolve_hyprwall_cmd();
+fn run_kitowall(args: &[&str]) -> Result<Json, UiError> {
+    let mut cmd_parts = resolve_kitowall_cmd();
     let base = cmd_parts.remove(0);
     let mut command = Command::new(base);
     if !cmd_parts.is_empty() {
@@ -68,8 +68,8 @@ fn run_hyprwall(args: &[&str]) -> Result<Json, UiError> {
     Err(UiError::InvalidJson(stdout))
 }
 
-fn run_hyprwall_raw(args: &[&str]) -> Result<String, UiError> {
-    let mut cmd_parts = resolve_hyprwall_cmd();
+fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
+    let mut cmd_parts = resolve_kitowall_cmd();
     let base = cmd_parts.remove(0);
     let mut command = Command::new(base);
     if !cmd_parts.is_empty() {
@@ -114,19 +114,19 @@ fn systemctl_show(unit: &str, props: &[&str]) -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn hyprwall_check(namespace: Option<String>) -> Result<Json, String> {
-    let ns = namespace.unwrap_or_else(|| "hyprwall".to_string());
-    run_hyprwall(&["check", "--namespace", &ns, "--json"]).map_err(|e| e.to_string())
+fn kitowall_check(namespace: Option<String>) -> Result<Json, String> {
+    let ns = namespace.unwrap_or_else(|| "kitowall".to_string());
+    run_kitowall(&["check", "--namespace", &ns, "--json"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_status() -> Result<Json, String> {
-    run_hyprwall(&["status"]).map_err(|e| e.to_string())
+fn kitowall_status() -> Result<Json, String> {
+    run_kitowall(&["status"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_next(namespace: Option<String>, force: Option<bool>, pack: Option<String>) -> Result<Json, String> {
-    let ns = namespace.unwrap_or_else(|| "hyprwall".to_string());
+fn kitowall_next(namespace: Option<String>, force: Option<bool>, pack: Option<String>) -> Result<Json, String> {
+    let ns = namespace.unwrap_or_else(|| "kitowall".to_string());
     let mut args: Vec<String> = vec![
         "next".to_string(),
         "--namespace".to_string(),
@@ -143,38 +143,38 @@ fn hyprwall_next(namespace: Option<String>, force: Option<bool>, pack: Option<St
         }
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&arg_refs).map_err(|e| e.to_string())
+    run_kitowall(&arg_refs).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_init_apply(namespace: Option<String>) -> Result<Json, String> {
-    let ns = namespace.unwrap_or_else(|| "hyprwall".to_string());
-    run_hyprwall(&["init", "--namespace", &ns, "--apply", "--force", "--json"]).map_err(|e| e.to_string())
+fn kitowall_init_apply(namespace: Option<String>) -> Result<Json, String> {
+    let ns = namespace.unwrap_or_else(|| "kitowall".to_string());
+    run_kitowall(&["init", "--namespace", &ns, "--apply", "--force", "--json"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_hydrate_pack(name: String, count: u32) -> Result<Json, String> {
+fn kitowall_hydrate_pack(name: String, count: u32) -> Result<Json, String> {
     let count_str = count.to_string();
-    run_hyprwall(&["hydrate-pack", &name, "--count", &count_str]).map_err(|e| e.to_string())
+    run_kitowall(&["hydrate-pack", &name, "--count", &count_str]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_cache_prune() -> Result<Json, String> {
-    run_hyprwall(&["cache-prune-hard"]).map_err(|e| e.to_string())
+fn kitowall_cache_prune() -> Result<Json, String> {
+    run_kitowall(&["cache-prune-hard"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_cache_prune_pack(name: String) -> Result<Json, String> {
-    run_hyprwall(&["cache-prune-pack-hard", &name]).map_err(|e| e.to_string())
+fn kitowall_cache_prune_pack(name: String) -> Result<Json, String> {
+    run_kitowall(&["cache-prune-pack-hard", &name]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_list_packs() -> Result<Json, String> {
-    run_hyprwall(&["list-packs"]).map_err(|e| e.to_string())
+fn kitowall_list_packs() -> Result<Json, String> {
+    run_kitowall(&["list-packs"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_list_pack_folders() -> Result<Json, String> {
+fn kitowall_list_pack_folders() -> Result<Json, String> {
     let dir = resolve_download_root()?;
     let mut names: Vec<String> = vec![];
     if dir.exists() {
@@ -203,7 +203,7 @@ fn is_image_ext(path: &PathBuf) -> bool {
 fn resolve_download_root() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let default_root = PathBuf::from(&home).join("Pictures").join("Wallpapers");
-    let config_path = PathBuf::from(&home).join(".config").join("hyprwall").join("config.json");
+    let config_path = PathBuf::from(&home).join(".config").join("kitowall").join("config.json");
     if !config_path.exists() {
         return Ok(default_root);
     }
@@ -238,7 +238,7 @@ fn expand_tilde_path(input: &str) -> Result<PathBuf, String> {
 
 fn resolve_local_pack_roots() -> Result<Vec<(PathBuf, String)>, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let config_path = PathBuf::from(&home).join(".config").join("hyprwall").join("config.json");
+    let config_path = PathBuf::from(&home).join(".config").join("kitowall").join("config.json");
     if !config_path.exists() {
         return Ok(vec![]);
     }
@@ -275,7 +275,7 @@ fn resolve_local_pack_roots() -> Result<Vec<(PathBuf, String)>, String> {
 }
 
 #[tauri::command]
-fn hyprwall_wallpapers_list() -> Result<Json, String> {
+fn kitowall_wallpapers_list() -> Result<Json, String> {
     let root = resolve_download_root()?;
     let local_roots = resolve_local_pack_roots()?;
     let mut items: Vec<Json> = vec![];
@@ -381,7 +381,7 @@ fn hyprwall_wallpapers_list() -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn hyprwall_open_pack_folder(name: String) -> Result<Json, String> {
+fn kitowall_open_pack_folder(name: String) -> Result<Json, String> {
     let root = resolve_download_root()?;
     if !root.exists() {
         return Err(format!("Wallpaper root not found: {}", root.display()));
@@ -421,12 +421,12 @@ fn hyprwall_open_pack_folder(name: String) -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn hyprwall_settings_get() -> Result<Json, String> {
-    run_hyprwall(&["settings", "get"]).map_err(|e| e.to_string())
+fn kitowall_settings_get() -> Result<Json, String> {
+    run_kitowall(&["settings", "get"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_settings_set(
+fn kitowall_settings_set(
     mode: Option<String>,
     rotation_interval_sec: Option<u32>,
     transition_type: Option<String>,
@@ -444,42 +444,42 @@ fn hyprwall_settings_set(
     if let Some(v) = transition_angle { args.push("--transition-angle".into()); args.push(v.to_string()); }
     if let Some(v) = transition_pos { args.push("--transition-pos".into()); args.push(v); }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())
+    run_kitowall(&refs).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_history_list(limit: Option<u32>) -> Result<Json, String> {
+fn kitowall_history_list(limit: Option<u32>) -> Result<Json, String> {
     let mut args: Vec<String> = vec!["history".into()];
     if let Some(v) = limit {
         args.push("--limit".into());
         args.push(v.to_string());
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())
+    run_kitowall(&refs).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_history_clear() -> Result<Json, String> {
-    run_hyprwall(&["history", "clear"]).map_err(|e| e.to_string())
+fn kitowall_history_clear() -> Result<Json, String> {
+    run_kitowall(&["history", "clear"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_favorites_list() -> Result<Json, String> {
-    run_hyprwall(&["favorites"]).map_err(|e| e.to_string())
+fn kitowall_favorites_list() -> Result<Json, String> {
+    run_kitowall(&["favorites"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_favorite_add(path: String) -> Result<Json, String> {
-    run_hyprwall(&["favorite", "add", &path]).map_err(|e| e.to_string())
+fn kitowall_favorite_add(path: String) -> Result<Json, String> {
+    run_kitowall(&["favorite", "add", &path]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_favorite_remove(path: String) -> Result<Json, String> {
-    run_hyprwall(&["favorite", "remove", &path]).map_err(|e| e.to_string())
+fn kitowall_favorite_remove(path: String) -> Result<Json, String> {
+    run_kitowall(&["favorite", "remove", &path]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_logs(
+fn kitowall_logs(
     limit: Option<u32>,
     source: Option<String>,
     pack: Option<String>,
@@ -520,21 +520,21 @@ fn hyprwall_logs(
         }
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())
+    run_kitowall(&refs).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_logs_clear() -> Result<Json, String> {
-    run_hyprwall(&["logs", "clear"]).map_err(|e| e.to_string())
+fn kitowall_logs_clear() -> Result<Json, String> {
+    run_kitowall(&["logs", "clear"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_install_timer(every: String) -> Result<Json, String> {
+fn kitowall_install_timer(every: String) -> Result<Json, String> {
     let every_clean = every.trim();
     if every_clean.is_empty() {
         return Err("every is required".to_string());
     }
-    let out = run_hyprwall_raw(&["install-systemd", "--every", every_clean]).map_err(|e| e.to_string())?;
+    let out = run_kitowall_raw(&["install-systemd", "--every", every_clean]).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
       "ok": true,
       "every": every_clean,
@@ -543,8 +543,8 @@ fn hyprwall_install_timer(every: String) -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn hyprwall_source_keys_get() -> Result<Json, String> {
-    let packs = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+fn kitowall_source_keys_get() -> Result<Json, String> {
+    let packs = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let mut wallhaven = serde_json::json!({"value": null, "apiKeyEnv": null, "pack": null});
     let mut unsplash = serde_json::json!({"value": null, "apiKeyEnv": null, "pack": null});
 
@@ -576,7 +576,7 @@ fn hyprwall_source_keys_get() -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn hyprwall_source_keys_set(
+fn kitowall_source_keys_set(
     wallhaven_key: Option<String>,
     unsplash_key: Option<String>,
     wallhaven_env: Option<String>,
@@ -593,7 +593,7 @@ fn hyprwall_source_keys_set(
         return Err("No API key provided".to_string());
     }
 
-    let packs = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let packs = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let mut wallhaven_updated: Vec<String> = vec![];
     let mut unsplash_updated: Vec<String> = vec![];
 
@@ -602,17 +602,17 @@ fn hyprwall_source_keys_set(
             let t = pack.get("type").and_then(|v| v.as_str()).unwrap_or("");
             if t == "wallhaven" {
                 if use_env {
-                    run_hyprwall(&["pack", "set-key", name, "--api-key-env", &wallhaven_env]).map_err(|e| e.to_string())?;
+                    run_kitowall(&["pack", "set-key", name, "--api-key-env", &wallhaven_env]).map_err(|e| e.to_string())?;
                 } else if !wallhaven_key.is_empty() {
-                    run_hyprwall(&["pack", "set-key", name, "--api-key", &wallhaven_key]).map_err(|e| e.to_string())?;
+                    run_kitowall(&["pack", "set-key", name, "--api-key", &wallhaven_key]).map_err(|e| e.to_string())?;
                 }
                 wallhaven_updated.push(name.to_string());
             }
             if t == "unsplash" {
                 if use_env {
-                    run_hyprwall(&["pack", "set-key", name, "--api-key-env", &unsplash_env]).map_err(|e| e.to_string())?;
+                    run_kitowall(&["pack", "set-key", name, "--api-key-env", &unsplash_env]).map_err(|e| e.to_string())?;
                 } else if !unsplash_key.is_empty() {
-                    run_hyprwall(&["pack", "set-key", name, "--api-key", &unsplash_key]).map_err(|e| e.to_string())?;
+                    run_kitowall(&["pack", "set-key", name, "--api-key", &unsplash_key]).map_err(|e| e.to_string())?;
                 }
                 unsplash_updated.push(name.to_string());
             }
@@ -629,9 +629,9 @@ fn hyprwall_source_keys_set(
 }
 
 #[tauri::command]
-fn hyprwall_timer_status() -> Result<Json, String> {
+fn kitowall_timer_status() -> Result<Json, String> {
     let timer = systemctl_show(
-        "hyprwall-next.timer",
+        "kitowall-next.timer",
         &[
             "Id",
             "UnitFileState",
@@ -642,7 +642,7 @@ fn hyprwall_timer_status() -> Result<Json, String> {
         ],
     )?;
     let service = systemctl_show(
-        "hyprwall-next.service",
+        "kitowall-next.service",
         &["Id", "UnitFileState", "ActiveState", "SubState"],
     )?;
 
@@ -654,17 +654,17 @@ fn hyprwall_timer_status() -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn hyprwall_pack_list_raw() -> Result<Json, String> {
-    run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())
+fn kitowall_pack_list_raw() -> Result<Json, String> {
+    run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_pack_remove(name: String) -> Result<Json, String> {
-    run_hyprwall(&["pack", "remove", &name]).map_err(|e| e.to_string())
+fn kitowall_pack_remove(name: String) -> Result<Json, String> {
+    run_kitowall(&["pack", "remove", &name]).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn hyprwall_pack_upsert_wallhaven(
+fn kitowall_pack_upsert_wallhaven(
     name: String,
     keyword: String,
     subthemes: Option<String>,
@@ -691,7 +691,7 @@ fn hyprwall_pack_upsert_wallhaven(
     }
 
     // Decide add/update based on current config.
-    let raw = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let raw = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let exists = raw
         .get("packs")
         .and_then(|v| v.as_object())
@@ -792,12 +792,12 @@ fn hyprwall_pack_upsert_wallhaven(
     }
 
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())?;
+    run_kitowall(&refs).map_err(|e| e.to_string())?;
 
     if let Some(api) = api_key {
         let api_clean = api.trim();
         if !api_clean.is_empty() {
-            run_hyprwall(&["pack", "set-key", &pack_name, "--api-key", api_clean]).map_err(|e| e.to_string())?;
+            run_kitowall(&["pack", "set-key", &pack_name, "--api-key", api_clean]).map_err(|e| e.to_string())?;
         }
     }
 
@@ -805,7 +805,7 @@ fn hyprwall_pack_upsert_wallhaven(
 }
 
 #[tauri::command]
-fn hyprwall_pack_upsert_unsplash(
+fn kitowall_pack_upsert_unsplash(
     name: String,
     query: String,
     subthemes: Option<String>,
@@ -827,7 +827,7 @@ fn hyprwall_pack_upsert_unsplash(
         return Err("name and query are required".to_string());
     }
 
-    let raw = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let raw = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let exists = raw
         .get("packs")
         .and_then(|v| v.as_object())
@@ -912,12 +912,12 @@ fn hyprwall_pack_upsert_unsplash(
     }
 
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())?;
+    run_kitowall(&refs).map_err(|e| e.to_string())?;
 
     if let Some(api) = api_key {
         let api_clean = api.trim();
         if !api_clean.is_empty() {
-            run_hyprwall(&["pack", "set-key", &pack_name, "--api-key", api_clean]).map_err(|e| e.to_string())?;
+            run_kitowall(&["pack", "set-key", &pack_name, "--api-key", api_clean]).map_err(|e| e.to_string())?;
         }
     }
 
@@ -925,7 +925,7 @@ fn hyprwall_pack_upsert_unsplash(
 }
 
 #[tauri::command]
-fn hyprwall_pack_upsert_reddit(
+fn kitowall_pack_upsert_reddit(
     name: String,
     subreddits: Option<String>,
     subthemes: Option<String>,
@@ -946,7 +946,7 @@ fn hyprwall_pack_upsert_reddit(
         return Err("subreddits is required".to_string());
     }
 
-    let raw = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let raw = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let exists = raw
         .get("packs")
         .and_then(|v| v.as_object())
@@ -997,13 +997,13 @@ fn hyprwall_pack_upsert_reddit(
     }
 
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())?;
+    run_kitowall(&refs).map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({"ok": true, "name": pack_name, "action": action, "type": "reddit"}))
 }
 
 #[tauri::command]
-fn hyprwall_pack_upsert_generic_json(
+fn kitowall_pack_upsert_generic_json(
     name: String,
     endpoint: String,
     image_path: String,
@@ -1023,7 +1023,7 @@ fn hyprwall_pack_upsert_generic_json(
         return Err("name, endpoint and imagePath are required".to_string());
     }
 
-    let raw = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let raw = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let exists = raw
         .get("packs")
         .and_then(|v| v.as_object())
@@ -1098,13 +1098,13 @@ fn hyprwall_pack_upsert_generic_json(
     }
 
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())?;
+    run_kitowall(&refs).map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({"ok": true, "name": pack_name, "action": action, "type": "generic_json"}))
 }
 
 #[tauri::command]
-fn hyprwall_pack_upsert_static_url(
+fn kitowall_pack_upsert_static_url(
     name: String,
     url: Option<String>,
     urls: Option<String>,
@@ -1127,7 +1127,7 @@ fn hyprwall_pack_upsert_static_url(
         return Err("url or urls is required".to_string());
     }
 
-    let raw = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let raw = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let exists = raw
         .get("packs")
         .and_then(|v| v.as_object())
@@ -1193,13 +1193,13 @@ fn hyprwall_pack_upsert_static_url(
     }
 
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())?;
+    run_kitowall(&refs).map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({"ok": true, "name": pack_name, "action": action, "type": "static_url"}))
 }
 
 #[tauri::command]
-fn hyprwall_pack_upsert_local(
+fn kitowall_pack_upsert_local(
     name: String,
     paths: String,
 ) -> Result<Json, String> {
@@ -1212,7 +1212,7 @@ fn hyprwall_pack_upsert_local(
         return Err("paths is required".to_string());
     }
 
-    let raw = run_hyprwall(&["pack", "list"]).map_err(|e| e.to_string())?;
+    let raw = run_kitowall(&["pack", "list"]).map_err(|e| e.to_string())?;
     let exists = raw
         .get("packs")
         .and_then(|v| v.as_object())
@@ -1230,13 +1230,13 @@ fn hyprwall_pack_upsert_local(
         paths_clean,
     ];
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_hyprwall(&refs).map_err(|e| e.to_string())?;
+    run_kitowall(&refs).map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({"ok": true, "name": pack_name, "action": action, "type": "local"}))
 }
 
 #[tauri::command]
-fn hyprwall_pick_folder() -> Result<Json, String> {
+fn kitowall_pick_folder() -> Result<Json, String> {
     let selected = rfd::FileDialog::new().pick_folder();
     let path = selected.map(|p| p.to_string_lossy().to_string());
     Ok(serde_json::json!({ "path": path }))
@@ -1245,39 +1245,39 @@ fn hyprwall_pick_folder() -> Result<Json, String> {
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            hyprwall_check,
-            hyprwall_status,
-            hyprwall_next,
-            hyprwall_init_apply,
-            hyprwall_hydrate_pack,
-            hyprwall_cache_prune,
-            hyprwall_cache_prune_pack,
-            hyprwall_list_packs,
-            hyprwall_list_pack_folders,
-            hyprwall_wallpapers_list,
-            hyprwall_open_pack_folder,
-            hyprwall_settings_get,
-            hyprwall_settings_set,
-            hyprwall_history_list,
-            hyprwall_history_clear,
-            hyprwall_logs,
-            hyprwall_logs_clear,
-            hyprwall_favorites_list,
-            hyprwall_favorite_add,
-            hyprwall_favorite_remove,
-            hyprwall_install_timer,
-            hyprwall_timer_status,
-            hyprwall_source_keys_get,
-            hyprwall_source_keys_set,
-            hyprwall_pack_list_raw,
-            hyprwall_pack_remove,
-            hyprwall_pack_upsert_wallhaven,
-            hyprwall_pack_upsert_unsplash,
-            hyprwall_pack_upsert_reddit,
-            hyprwall_pack_upsert_generic_json,
-            hyprwall_pack_upsert_static_url,
-            hyprwall_pack_upsert_local,
-            hyprwall_pick_folder
+            kitowall_check,
+            kitowall_status,
+            kitowall_next,
+            kitowall_init_apply,
+            kitowall_hydrate_pack,
+            kitowall_cache_prune,
+            kitowall_cache_prune_pack,
+            kitowall_list_packs,
+            kitowall_list_pack_folders,
+            kitowall_wallpapers_list,
+            kitowall_open_pack_folder,
+            kitowall_settings_get,
+            kitowall_settings_set,
+            kitowall_history_list,
+            kitowall_history_clear,
+            kitowall_logs,
+            kitowall_logs_clear,
+            kitowall_favorites_list,
+            kitowall_favorite_add,
+            kitowall_favorite_remove,
+            kitowall_install_timer,
+            kitowall_timer_status,
+            kitowall_source_keys_get,
+            kitowall_source_keys_set,
+            kitowall_pack_list_raw,
+            kitowall_pack_remove,
+            kitowall_pack_upsert_wallhaven,
+            kitowall_pack_upsert_unsplash,
+            kitowall_pack_upsert_reddit,
+            kitowall_pack_upsert_generic_json,
+            kitowall_pack_upsert_static_url,
+            kitowall_pack_upsert_local,
+            kitowall_pick_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
