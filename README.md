@@ -1,3 +1,5 @@
+<img src="https://github.com/KitotsuMolina/Kitowall/blob/master/assets/kitowall.png?raw=true" alt="Kitowall" width="420" />
+
 # Kitowall
 
 `Kitowall` is a wallpaper manager for Hyprland/Wayland using `swww`.
