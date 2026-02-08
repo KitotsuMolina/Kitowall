@@ -157,10 +157,34 @@ WantedBy=graphical-session.target
 
     writeFileSync(join(userDir, 'kitowall-watch.service'), kitowallWatchService, 'utf8');
 
+    // 4) kitowall-login-apply.service (apply once on login to avoid gray background)
+    const loginApplyExec = `/bin/sh -lc ${esc(`sleep 2; ${nodePath} ${esc(cliPath)} ${esc('rotate-now')} ${esc('--namespace')} ${esc(ns)} ${esc('--force')}`)}`;
+
+    const kitowallLoginApplyService = `
+[Unit]
+Description=Kitowall apply wallpapers on session start
+After=graphical-session.target swww-daemon@${ns}.service
+Requires=swww-daemon@${ns}.service
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+Environment=PATH=${pathEnv}
+Environment=WAYLAND_DISPLAY=${waylandDisplay}
+Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
+ExecStart=${loginApplyExec}
+
+[Install]
+WantedBy=graphical-session.target
+`.trimStart();
+
+    writeFileSync(join(userDir, 'kitowall-login-apply.service'), kitowallLoginApplyService, 'utf8');
+
     // Activación
     await run('systemctl', ['--user', 'daemon-reload']);
     await run('systemctl', ['--user', 'enable', '--now', `swww-daemon@${ns}.service`]);
     await run('systemctl', ['--user', 'enable', '--now', 'kitowall-watch.service']);
+    await run('systemctl', ['--user', 'enable', '--now', 'kitowall-login-apply.service']);
 
     // Si quieres: aplicar una vez ahora mismo
     if (opts.apply) {

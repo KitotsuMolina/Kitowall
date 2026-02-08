@@ -1,6 +1,6 @@
 {
   "name": "kitowall",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "CLI/daemon for Hyprland wallpapers using swww with pack-based rotation.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",
