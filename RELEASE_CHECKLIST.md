@@ -1,6 +1,6 @@
 # Kitowall Release Checklist
 
-Version target: `1.0.0`
+Version target: `1.0.5`
 
 ## 1) Technical Validation
 - `npm install`
@@ -25,7 +25,7 @@ Version target: `1.0.0`
 ## 3) Package Artifacts
 - CLI package:
   - `npm run package:cli`
-  - Expected output: `kitowall-1.0.0.tgz` in project root
+  - Expected output: `kitowall-1.0.5.tgz` in project root
 - Desktop package:
   - `npm run package:ui`
   - Expected output: `ui/src-tauri/target/release/bundle/*`
@@ -50,7 +50,7 @@ Version target: `1.0.0`
   - known constraints
 
 ## 7) Suggested Release Notes Template
-- Version: `1.0.0`
+- Version: `1.0.5`
 - Highlights
 - Supported environments
 - Breaking changes (if any)

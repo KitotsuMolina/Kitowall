@@ -4,7 +4,7 @@
 
 `Kitowall` is a wallpaper manager for Hyprland/Wayland using `swww`.
 
-Current version: `1.0.0`.
+Current version: `1.0.5`.
 
 ## What You Can Do
 - Rotate wallpapers with transitions.

@@ -1,5 +1,5 @@
 # Kitowall Dependencies
-Version scope: `1.0.0`.
+Version scope: `1.0.5`.
 
 Este documento lista todas las dependencias necesarias para correr y desarrollar `kitowall` (CLI + UI Tauri/Svelte) en Arch Linux.
 

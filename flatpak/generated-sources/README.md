@@ -9,7 +9,7 @@ This folder contains vendored dependency descriptors required for offline/reprod
 Generate/update them with:
 
 ```bash
-./GENERATE_FLATHUB_SOURCES.sh v1.0.1
+./GENERATE_FLATHUB_SOURCES.sh v1.0.5
 ```
 
 Then build:
