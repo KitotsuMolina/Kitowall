@@ -1,5 +1,5 @@
 # Kitowall Config Examples
-Version scope: `1.0.6`.
+Version scope: `1.0.7`.
 
 This file documents strict validation expectations and API key priority for pack types.
 

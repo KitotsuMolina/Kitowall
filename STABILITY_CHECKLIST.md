@@ -1,5 +1,5 @@
 # Stability Checklist (Phase 1)
-Version scope: `1.0.6`.
+Version scope: `1.0.7`.
 
 ## Goal
 Lock core behavior and prevent regressions while we move to polish and release.

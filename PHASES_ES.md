@@ -1,5 +1,5 @@
 # Fases de Kitowall (Estado Actual)
-Release objetivo: `v1.0.6`.
+Release objetivo: `v1.0.7`.
 
 ## Fase 0 — CLI base
 Estado: `completada`

@@ -74,11 +74,6 @@ export async function initKitowall(opts: {
     const nodePath = process.execPath;
     const cliPath = resolve(process.argv[1]); // dist/cli.js absoluto
 
-    // Entorno Wayland (defaults seguros)
-    const waylandDisplay = (process.env.WAYLAND_DISPLAY && process.env.WAYLAND_DISPLAY.trim())
-        ? process.env.WAYLAND_DISPLAY.trim()
-        : 'wayland-1';
-
     const xdgRuntimeDir = (process.env.XDG_RUNTIME_DIR && process.env.XDG_RUNTIME_DIR.trim())
         ? process.env.XDG_RUNTIME_DIR.trim()
         : `/run/user/${process.getuid?.() ?? 1000}`;
@@ -90,6 +85,13 @@ export async function initKitowall(opts: {
         '/bin'
     ].join(':');
 
+    // Resolve WAYLAND_DISPLAY at runtime for every service start. This avoids
+    // stale values across relogin (e.g. wayland-0 vs wayland-1).
+    const waylandBootstrap =
+        'WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-$(ls \\"$XDG_RUNTIME_DIR\\"/wayland-* 2>/dev/null | xargs -r -n1 basename | sort | tail -n1)}"; ' +
+        'if [ -z "$WAYLAND_DISPLAY" ]; then WAYLAND_DISPLAY=wayland-1; fi; ' +
+        'export WAYLAND_DISPLAY;';
+
     // 1) swww-daemon template
     const swwwDaemonTemplate = `
 [Unit]
@@ -100,9 +102,8 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 Environment=PATH=${pathEnv}
-Environment=WAYLAND_DISPLAY=${waylandDisplay}
 Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
-ExecStart=swww-daemon --no-cache --namespace %i
+ExecStart=/bin/sh -lc ${esc(`${waylandBootstrap} exec swww-daemon --no-cache --namespace %i`)}
 Restart=on-failure
 RestartSec=1
 
@@ -114,7 +115,7 @@ WantedBy=graphical-session.target
 
     // 2) kitowall-next.service (oneshot)
     // OJO: aunque CLI ignore --namespace en algunos comandos, aquí lo dejamos por compatibilidad.
-    const nextExec = `${nodePath} ${esc(cliPath)} ${esc('next')} ${esc('--namespace')} ${esc(ns)}`;
+    const nextExec = `/bin/sh -lc ${esc(`${waylandBootstrap} exec ${nodePath} ${esc(cliPath)} ${esc('next')} ${esc('--namespace')} ${esc(ns)}`)}`;
 
     const kitowallNextService = `
 [Unit]
@@ -125,7 +126,6 @@ Requires=swww-daemon@${ns}.service
 [Service]
 Type=oneshot
 Environment=PATH=${pathEnv}
-Environment=WAYLAND_DISPLAY=${waylandDisplay}
 Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
 ExecStart=${nextExec}
 `.trimStart();
@@ -133,7 +133,7 @@ ExecStart=${nextExec}
     writeFileSync(join(userDir, 'kitowall-next.service'), kitowallNextService, 'utf8');
 
     // 3) kitowall-watch.service (hotplug watcher)
-    const watchExec = `${nodePath} ${esc(cliPath)} ${esc('watch')} ${esc('--namespace')} ${esc(ns)}`;
+    const watchExec = `/bin/sh -lc ${esc(`${waylandBootstrap} exec ${nodePath} ${esc(cliPath)} ${esc('watch')} ${esc('--namespace')} ${esc(ns)}`)}`;
 
     const kitowallWatchService = `
 [Unit]
@@ -145,7 +145,6 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 Environment=PATH=${pathEnv}
-Environment=WAYLAND_DISPLAY=${waylandDisplay}
 Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
 ExecStart=${watchExec}
 Restart=on-failure
@@ -158,7 +157,7 @@ WantedBy=graphical-session.target
     writeFileSync(join(userDir, 'kitowall-watch.service'), kitowallWatchService, 'utf8');
 
     // 4) kitowall-login-apply.service (apply once on login to avoid gray background)
-    const loginApplyExec = `/bin/sh -lc ${esc(`sleep 2; ${nodePath} ${esc(cliPath)} ${esc('rotate-now')} ${esc('--namespace')} ${esc(ns)} ${esc('--force')}`)}`;
+    const loginApplyExec = `/bin/sh -lc ${esc(`sleep 2; ${waylandBootstrap} exec ${nodePath} ${esc(cliPath)} ${esc('rotate-now')} ${esc('--namespace')} ${esc(ns)} ${esc('--force')}`)}`;
 
     const kitowallLoginApplyService = `
 [Unit]
@@ -170,7 +169,6 @@ PartOf=graphical-session.target
 [Service]
 Type=oneshot
 Environment=PATH=${pathEnv}
-Environment=WAYLAND_DISPLAY=${waylandDisplay}
 Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
 ExecStart=${loginApplyExec}
 

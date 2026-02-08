@@ -35,7 +35,7 @@ Helper scripts:
 Run:
 ```bash
 cd /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall
-./GENERATE_FLATHUB_SOURCES.sh v1.0.6
+./GENERATE_FLATHUB_SOURCES.sh v1.0.7
 ./BUILD_FLATPAK_FROMSOURCE.sh
 ```
 

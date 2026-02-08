@@ -6,7 +6,7 @@ FLATPAK_DIR="$ROOT_DIR/flatpak"
 GEN_DIR="$FLATPAK_DIR/generated-sources"
 TOOLS_DIR="/tmp/flatpak-builder-tools-kitowall"
 NODEGEN_VENV="/tmp/flatpak-nodegen-venv-kitowall"
-TAG="${1:-v1.0.6}"
+TAG="${1:-v1.0.7}"
 ARCHIVE_URL="https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/${TAG}.tar.gz"
 TMP_UI_DIR=""
 
