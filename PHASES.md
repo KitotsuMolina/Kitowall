@@ -1,5 +1,5 @@
 # Kitowall Phases (Current Snapshot)
-Release target: `v1.0.5`.
+Release target: `v1.0.6`.
 
 ## Phase 0 — CLI Base
 Status: `done`

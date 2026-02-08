@@ -6,7 +6,7 @@ command: kitowall-ui
 
 # Flathub-oriented manifest (source build, no host binary copy).
 # Before building, generate vendored sources:
-#   ./GENERATE_FLATHUB_SOURCES.sh v1.0.5
+#   ./GENERATE_FLATHUB_SOURCES.sh v1.0.6
 
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -55,8 +55,8 @@ modules:
       - install -Dm644 io.kitotsu.KitoWall-256.png /app/share/icons/hicolor/256x256/apps/io.kitotsu.KitoWall.png
     sources:
       - type: archive
-        url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/v1.0.5.tar.gz
-        sha256: 96a8187ac24453d882b179fd084be144842f9b8b1313b50ed927dbe4e5491a35
+        url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/v1.0.6.tar.gz
+        sha256: 33a62877af73134b5195baa411ce1ad90a0cdbb86943208a58a21cd38b947d2e
         strip-components: 1
       - type: file
         path: io.kitotsu.KitoWall.desktop

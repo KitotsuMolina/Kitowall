@@ -28,6 +28,19 @@ import {UnsplashAdapter} from './adapters/unsplash';
 import {LocalFolderAdapter} from './adapters/localFolder';
 import {StaticUrlAdapter} from './adapters/staticUrl';
 import {listSystemLogs, clearSystemLogs} from './core/logs';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+
+function getCliVersion(): string {
+  try {
+    const pkgPath = join(__dirname, '..', 'package.json');
+    const raw = readFileSync(pkgPath, 'utf8');
+    const parsed = JSON.parse(raw) as {version?: string};
+    return parsed.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 function printUsage(): void {
   console.log(`kitowall <command> [options]
@@ -176,6 +189,11 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   outputJsonOnError = args.includes('--json');
   const cmd = args[0];
+
+  if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+    console.log(getCliVersion());
+    return;
+  }
 
   if (!cmd || cmd === '--help' || cmd === '-h') {
     printUsage();

@@ -2,7 +2,7 @@
 
 Desktop app for `Kitowall` built with `Tauri + Svelte`.
 
-Version: `1.0.5`.
+Version: `1.0.6`.
 
 ## Requirements
 - Root CLI built: `../dist/cli.js`

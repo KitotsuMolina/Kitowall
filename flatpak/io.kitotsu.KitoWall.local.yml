@@ -6,7 +6,7 @@ command: kitowall-ui
 
 # Flathub-oriented manifest (source build, no host binary copy).
 # Before building, generate vendored sources:
-#   ./GENERATE_FLATHUB_SOURCES.sh v1.0.5
+#   ./GENERATE_FLATHUB_SOURCES.sh v1.0.6
 
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable

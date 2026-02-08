@@ -50,7 +50,7 @@ export async function initKitowall(opts: {
     if (process.env.FLATPAK_ID) {
         throw new Error(
             'init/repair cannot be executed from Flatpak UI because it would generate host systemd units with sandbox paths. ' +
-            'Run on host shell: node dist/cli.js init --namespace kitowall --apply --force'
+            'Run on host shell: kitowall init --namespace kitowall --apply --force (or, in local dev, node dist/cli.js init --namespace kitowall --apply --force)'
         );
     }
 

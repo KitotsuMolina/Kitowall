@@ -1,5 +1,5 @@
 # Kitowall Status
-Versión: `1.0.5`.
+Versión: `1.0.6`.
 
 ## Estado actual (snapshot)
 `kitowall` está en estado **base funcional completa** para uso diario en Hyprland + Wayland + `swww`.
@@ -48,5 +48,5 @@ Versión: `1.0.5`.
 La base del producto ya está lista. Lo siguiente es estabilización final y empaquetado.
 
 ## Empaquetado (realizado)
-- CLI empaquetado: `kitowall-1.0.5.tgz`
+- CLI empaquetado: `kitowall-1.0.6.tgz`
 - UI release compilada: `ui/src-tauri/target/release/kitowall-ui`

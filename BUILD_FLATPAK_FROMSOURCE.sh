@@ -13,7 +13,7 @@ fi
 for f in node-deps-root.json node-deps-ui.json cargo-deps.json ui-package-lock.json; do
   if [[ ! -f "$GEN_DIR/$f" ]]; then
     echo "Missing generated source file: $GEN_DIR/$f"
-    echo "Run first: ./GENERATE_FLATHUB_SOURCES.sh v1.0.5"
+    echo "Run first: ./GENERATE_FLATHUB_SOURCES.sh v1.0.6"
     exit 1
   fi
 done
