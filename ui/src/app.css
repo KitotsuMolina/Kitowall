@@ -733,6 +733,70 @@ label {
   animation: fadeInLift 180ms ease-out;
 }
 
+.kitsune-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.kitsune-tab {
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.kitsune-tab.active {
+  border-color: var(--primary);
+  background: rgba(165, 14, 219, 0.2);
+}
+
+.kitsune-grid {
+  margin-top: 10px;
+}
+
+.kitsune-grid .card .row + .row {
+  margin-top: 10px;
+}
+
+.kitsune-console {
+  margin-top: 12px;
+}
+
+.group-layers-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.group-layers-list {
+  display: grid;
+  gap: 8px;
+}
+
+.group-layer-item {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.kitsune-output {
+  margin: 10px 0 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-main);
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+}
+
 @keyframes fadeInLift {
   from {
     opacity: 0;
@@ -787,6 +851,12 @@ label {
     max-width: 100%;
     width: 100%;
     flex: 1 1 auto;
+  }
+
+  .kitsune-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 6px;
   }
 }
 

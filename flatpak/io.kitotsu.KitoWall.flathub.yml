@@ -56,7 +56,7 @@ modules:
     sources:
       - type: archive
         url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/v1.0.7.tar.gz
-        sha256: f99465ddd719823e42eb7c357e38642cd6598e87434c8af9b66e080eb4af3919
+        sha256: ce45bbe5e5a4b0f29f0d2d8bd2975ba4ca840116354f14664b0ca5964af7f55c
         strip-components: 1
       - type: file
         path: io.kitotsu.KitoWall.desktop

@@ -194,6 +194,50 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
     Ok(stdout)
 }
 
+fn resolve_kitsune_cmd() -> Vec<String> {
+    if let Ok(cmd) = std::env::var("KITSUNE_CMD") {
+        return cmd.split_whitespace().map(|s| s.to_string()).collect();
+    }
+
+    if is_flatpak() {
+        if let Ok(home) = std::env::var("HOME") {
+            let host_candidates = [
+                PathBuf::from(&home).join("Programacion/Personal/Wallpaper/Kitsune/scripts/kitsune.sh"),
+                PathBuf::from(&home).join(".local/share/kitsune/scripts/kitsune.sh"),
+            ];
+            for candidate in host_candidates {
+                if candidate.exists() {
+                    return vec![candidate.to_string_lossy().to_string()];
+                }
+            }
+        }
+
+        let host_cli = {
+            let mut cmd = Command::new("flatpak-spawn");
+            cmd.args(["--host", "sh", "-lc", "command -v kitsune || true"]);
+            match cmd.output() {
+                Ok(out) if out.status.success() => {
+                    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if p.is_empty() { None } else { Some(p) }
+                }
+                _ => None,
+            }
+        };
+        if let Some(cli_bin) = host_cli {
+            return vec![cli_bin];
+        }
+        return vec!["__missing_kitsune_cli__".to_string()];
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let local_kitsune = manifest_dir.join("../../../Kitsune/scripts/kitsune.sh");
+    if local_kitsune.exists() {
+        return vec![local_kitsune.to_string_lossy().to_string()];
+    }
+
+    vec!["kitsune".to_string()]
+}
+
 fn is_flatpak() -> bool {
     std::env::var("FLATPAK_ID").is_ok() || PathBuf::from("/.flatpak-info").exists()
 }
@@ -1357,6 +1401,115 @@ fn kitowall_pick_folder() -> Result<Json, String> {
     Ok(serde_json::json!({ "path": path }))
 }
 
+#[tauri::command]
+fn kitowall_kitsune_status() -> Result<Json, String> {
+    let mut cmd_parts = resolve_kitsune_cmd();
+    let base = cmd_parts.remove(0);
+    if base == "__missing_kitsune_cli__" {
+        return Ok(serde_json::json!({
+            "ok": true,
+            "installed": false,
+            "error": "kitsune CLI not found on host",
+            "commands": [],
+            "sections": []
+        }));
+    }
+
+    let mut command = host_aware_command(&base);
+    if !cmd_parts.is_empty() {
+        command.args(cmd_parts);
+    }
+    command.arg("help");
+    let output = command.output().map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if !stderr.is_empty() { stderr } else { stdout };
+        return Ok(serde_json::json!({
+            "ok": true,
+            "installed": false,
+            "error": if message.is_empty() { "kitsune help failed".to_string() } else { message },
+            "commands": [],
+            "sections": []
+        }));
+    }
+
+    let help_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let mut commands: Vec<String> = vec![];
+    let mut sections: Vec<String> = vec![];
+    let mut command_seen: HashSet<String> = HashSet::new();
+    let mut section_seen: HashSet<String> = HashSet::new();
+
+    for line in help_text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if !line.starts_with("  ") && trimmed.ends_with(':') {
+            let section = trimmed.trim_end_matches(':').to_string();
+            if section_seen.insert(section.clone()) {
+                sections.push(section);
+            }
+            continue;
+        }
+
+        if line.starts_with("  ") {
+            let token = trimmed.split_whitespace().next().unwrap_or("");
+            if token.is_empty() || token == "kitsune" {
+                continue;
+            }
+            let name = token.to_string();
+            if command_seen.insert(name.clone()) {
+                commands.push(name);
+            }
+        }
+    }
+
+    commands.sort();
+    sections.sort();
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "installed": true,
+        "commands": commands,
+        "sections": sections
+    }))
+}
+
+#[tauri::command]
+fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
+    if args.is_empty() {
+        return Err("kitsune args are required".to_string());
+    }
+
+    let mut cmd_parts = resolve_kitsune_cmd();
+    let base = cmd_parts.remove(0);
+    if base == "__missing_kitsune_cli__" {
+        return Err("kitsune CLI not found on host".to_string());
+    }
+
+    let mut command = host_aware_command(&base);
+    if !cmd_parts.is_empty() {
+        command.args(cmd_parts);
+    }
+    command.args(&args);
+    let output = command.output().map_err(|e| e.to_string())?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(serde_json::json!({
+        "ok": output.status.success(),
+        "exitCode": exit_code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "args": args
+    }))
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -1392,7 +1545,9 @@ fn main() {
             kitowall_pack_upsert_generic_json,
             kitowall_pack_upsert_static_url,
             kitowall_pack_upsert_local,
-            kitowall_pick_folder
+            kitowall_pick_folder,
+            kitowall_kitsune_status,
+            kitowall_kitsune_run
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

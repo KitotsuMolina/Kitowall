@@ -117,8 +117,46 @@ import {onDestroy, onMount, tick} from 'svelte';
     entries: UiSystemLogEntry[];
   };
 
-  type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs';
+  type KitsuneStatusReport = {
+    ok: boolean;
+    installed: boolean;
+    error?: string;
+    commands: string[];
+    sections: string[];
+  };
+
+  type KitsuneRunResult = {
+    ok: boolean;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    args: string[];
+  };
+
+  type GroupLayerEntry = {
+    index: number;
+    enabled: string;
+    mode: string;
+    style: string;
+    profile: string;
+    color: string;
+    alpha: string;
+    runtime?: string;
+    rotate?: string;
+    profilesPipe?: string;
+  };
+
+  type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune';
   type UiLanguage = 'en' | 'es';
+  type KitsuneTabId =
+    | 'core'
+    | 'profiles'
+    | 'group'
+    | 'visual'
+    | 'render'
+    | 'monitors'
+    | 'system'
+    | 'logs';
 
   let namespace = 'kitowall';
   let health: HealthReport | null = null;
@@ -189,6 +227,96 @@ import {onDestroy, onMount, tick} from 'svelte';
   let logsPack = '';
   let logsLevel = 'all';
   let logsQuery = '';
+  let kitsuneBusy = false;
+  let kitsuneStatus: KitsuneStatusReport | null = null;
+  let kitsuneTab: KitsuneTabId = 'core';
+  let kitsuneOutput = '';
+  let kitsuneLastCommand = '';
+  let kitsuneStartMonitor = '';
+  let kitsuneMonitorOptions: string[] = [];
+  let kitsuneStartMonitorOpen = false;
+  let kitsuneStartMonitorFilter = '';
+  let kitsuneVisibleMonitorOptions: string[] = [];
+  let kitsuneStartProfile = '';
+  let kitsuneProfileOptions: string[] = [];
+  let kitsuneStartProfileOpen = false;
+  let kitsuneStartProfileFilter = '';
+  let kitsuneVisibleProfileOptions: string[] = [];
+  let kitsuneStartProfilesSelected: string[] = [];
+  let kitsuneStartProfilesOpen = false;
+  let kitsuneStartTarget: 'mpvpaper' | 'layer-shell' = 'mpvpaper';
+  let kitsuneStartMode: 'bars' | 'ring' = 'bars';
+  let kitsuneInstallPackages = false;
+  let kitsuneProfilesMode: 'bars' | 'ring' | 'all' = 'all';
+  let kitsuneProfileName = '';
+  let kitsuneProfileBase = '';
+  let kitsuneProfileNew = '';
+  let kitsuneProfileKey = '';
+  let kitsuneProfileValue = '';
+  let kitsuneProfileListMode: 'bars' | 'ring' = 'bars';
+  let kitsuneProfileListValue = '';
+  let kitsuneRotationSeconds = 10;
+  let kitsuneTunePreset = 'balanced';
+  let kitsuneTuneMode: 'bars' | 'ring' = 'bars';
+  let kitsuneGroupFile = './config/groups/default.group';
+  let kitsuneGroupOptions: string[] = [];
+  let kitsuneGroupPickerOpen = false;
+  let kitsuneGroupPickerFilter = '';
+  let kitsuneVisibleGroupOptions: string[] = [];
+  let kitsuneGroupCreateCandidate = '';
+  let kitsuneGroupLayers: GroupLayerEntry[] = [];
+  let kitsuneGroupLayersBusy = false;
+  let kitsuneGroupLayerIndex = 1;
+  let kitsuneGroupLayerEnabled: '1' | '0' = '1';
+  let kitsuneGroupLayerEnabledOpen = false;
+  let kitsuneGroupLayerMode: 'bars' | 'ring' = 'bars';
+  let kitsuneGroupLayerModeOpen = false;
+  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' = 'bars';
+  let kitsuneGroupLayerStyleOpen = false;
+  let kitsuneGroupLayerProfile = 'bars_balanced';
+  let kitsuneGroupLayerProfileOpen = false;
+  let kitsuneGroupLayerProfileFilter = '';
+  let kitsuneVisibleGroupLayerProfiles: string[] = [];
+  let kitsuneGroupLayerColor = '#ffffff';
+  let kitsuneGroupLayerAlpha = 0.35;
+  let kitsuneGroupAddLayerOpen = false;
+  let kitsuneGroupAddLayerSelected: string[] = [];
+  let kitsuneGroupAddLayerOptions: Array<{id: string; label: string; spec: string}> = [];
+  let kitsuneVisualMode: 'bars' | 'ring' = 'bars';
+  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' = 'waves_fill';
+  let kitsunePostfxEnable = 1;
+  let kitsunePostfxBlurPasses = 1;
+  let kitsunePostfxBlurMix = 0.18;
+  let kitsunePostfxGlowStrength = 1.35;
+  let kitsunePostfxGlowMix = 0.24;
+  let kitsunePostfxScope: 'final' | 'layer' | 'mixed' = 'mixed';
+  let kitsuneParticlesPreset: 'off' | 'low' | 'balanced' | 'high' = 'balanced';
+  let kitsuneBackend: 'cpu' | 'gpu' = 'gpu';
+  let kitsuneOutputTarget: 'mpvpaper' | 'layer-shell' = 'mpvpaper';
+  let kitsuneSpectrumMode: 'single' | 'group' = 'single';
+  let kitsuneRuntime: 'standard' | 'test' = 'standard';
+  let kitsuneMonitorName = '';
+  let kitsuneMonitorNameOpen = false;
+  let kitsuneMonitorNameFilter = '';
+  let kitsuneVisibleMonitorNameOptions: string[] = [];
+  let kitsuneMonitorFallbackEnabled = 1;
+  let kitsuneMonitorFallbackSeconds = 2;
+  let kitsuneMonitorFallbackPreferFocused = 1;
+  let kitsuneDynamicColor = 1;
+  let kitsuneColorPollSeconds = 2;
+  let kitsuneInstanceMonitor = '';
+  let kitsuneInstanceMonitorOpen = false;
+  let kitsuneInstanceMonitorFilter = '';
+  let kitsuneVisibleInstanceMonitorOptions: string[] = [];
+  let kitsuneAutostartMonitor = '';
+  let kitsuneAutostartMonitorOpen = false;
+  let kitsuneAutostartMonitorFilter = '';
+  let kitsuneVisibleAutostartMonitorOptions: string[] = [];
+  let kitsuneBenchmarkSeconds = 10;
+  let kitsuneLogSource: 'renderer' | 'cava' | 'layer' | 'mpvpaper' | 'colorwatch' | 'monitorwatch' | 'all' = 'all';
+  let kitsuneLogLines = 120;
+  let kitsuneLogAllInstances = false;
+  let kitsuneLogFollow = false;
   let packTab: 'wallhaven' | 'unsplash' | 'reddit' | 'generic_json' | 'static_url' | 'local' = 'wallhaven';
   let rawPacksByName: Record<string, Record<string, unknown>> = {};
   let wallhavenPackName = '';
@@ -360,6 +488,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
     if (id === 'logs') {
       void loadSystemLogs();
+    }
+    if (id === 'kitsune') {
+      void loadKitsuneStatus();
     }
     if (id === 'packs') {
       void loadPacksRaw();
@@ -574,6 +705,84 @@ import {onDestroy, onMount, tick} from 'svelte';
   $: wallhavenCategoriesCodeValue = `${wallhavenCategoryGeneral ? '1' : '0'}${wallhavenCategoryAnime ? '1' : '0'}${wallhavenCategoryPeople ? '1' : '0'}`;
   $: wallhavenPurityCodeValue = `${wallhavenAllowSfw ? '1' : '0'}${wallhavenAllowSketchy ? '1' : '0'}${wallhavenAllowNsfw ? '1' : '0'}`;
 
+  $: {
+    const q = kitsuneStartMonitorFilter.trim().toLowerCase();
+    kitsuneVisibleMonitorOptions = !q
+      ? kitsuneMonitorOptions
+      : kitsuneMonitorOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
+  $: {
+    const q = kitsuneMonitorNameFilter.trim().toLowerCase();
+    kitsuneVisibleMonitorNameOptions = !q
+      ? kitsuneMonitorOptions
+      : kitsuneMonitorOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
+  $: {
+    const q = kitsuneInstanceMonitorFilter.trim().toLowerCase();
+    kitsuneVisibleInstanceMonitorOptions = !q
+      ? kitsuneMonitorOptions
+      : kitsuneMonitorOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
+  $: {
+    const q = kitsuneAutostartMonitorFilter.trim().toLowerCase();
+    kitsuneVisibleAutostartMonitorOptions = !q
+      ? kitsuneMonitorOptions
+      : kitsuneMonitorOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
+  $: {
+    const q = kitsuneGroupLayerProfileFilter.trim().toLowerCase();
+    kitsuneVisibleGroupLayerProfiles = !q
+      ? kitsuneProfileOptions
+      : kitsuneProfileOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
+  $: {
+    const q = kitsuneGroupPickerFilter.trim().toLowerCase();
+    kitsuneVisibleGroupOptions = !q
+      ? kitsuneGroupOptions
+      : kitsuneGroupOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
+  $: {
+    const candidate = normalizeGroupFileName(kitsuneGroupPickerFilter);
+    kitsuneGroupCreateCandidate = candidate && !kitsuneGroupOptions.includes(candidate) ? candidate : '';
+  }
+
+  $: {
+    const barsProfile = kitsuneProfileOptions.find(p => p.startsWith('bars')) ?? 'bars_balanced';
+    const ringProfile = kitsuneProfileOptions.find(p => p.startsWith('ring')) ?? 'ring_energy';
+    kitsuneGroupAddLayerOptions = [
+      {id: 'bars-soft', label: `Bars Soft (${barsProfile})`, spec: `1,bars,bars,${barsProfile},#ffffff,0.35`},
+      {id: 'bars-fill', label: `Bars Fill (${barsProfile})`, spec: `1,bars,bars_fill,${barsProfile},#74f7ff,0.30`},
+      {id: 'waves-fill', label: `Waves Fill (${barsProfile})`, spec: `1,bars,waves_fill,${barsProfile},#ff8fd1,0.28`},
+      {id: 'ring-energy', label: `Ring Energy (${ringProfile})`, spec: `1,ring,waves_fill,${ringProfile},#aef4ff,0.36`},
+      {id: 'ring-dots', label: `Ring Dots (${ringProfile})`, spec: `1,ring,dots,${ringProfile},#ffc67a,0.26`}
+    ];
+    kitsuneGroupAddLayerSelected = kitsuneGroupAddLayerSelected.filter(id =>
+      kitsuneGroupAddLayerOptions.some(o => o.id === id)
+    );
+    if (!kitsuneProfileOptions.includes(kitsuneGroupLayerProfile)) {
+      kitsuneGroupLayerProfile = kitsuneGroupLayerMode === 'ring' ? ringProfile : barsProfile;
+    }
+  }
+
+  $: {
+    if (kitsuneGroupLayerMode === 'ring' && kitsuneGroupLayerStyle === 'bars') {
+      kitsuneGroupLayerStyle = 'waves_fill';
+    }
+  }
+
+  $: {
+    const q = kitsuneStartProfileFilter.trim().toLowerCase();
+    kitsuneVisibleProfileOptions = !q
+      ? kitsuneProfileOptions
+      : kitsuneProfileOptions.filter(o => o.toLowerCase().includes(q));
+  }
+
   function choosePack(name: string, type: string | null = null): void {
     selectedPack = name;
     selectedPackInfo = type
@@ -690,6 +899,320 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (key === 'sfw') wallhavenAllowSfw = !wallhavenAllowSfw;
     if (key === 'sketchy') wallhavenAllowSketchy = !wallhavenAllowSketchy;
     if (key === 'nsfw') wallhavenAllowNsfw = !wallhavenAllowNsfw;
+  }
+
+  function parseKitsuneMonitors(stdout: string): string[] {
+    const items = new Set<string>();
+    for (const lineRaw of stdout.split('\n')) {
+      const line = lineRaw.trim();
+      if (!line) continue;
+      const fromConfig = line.match(/monitor(?: actual en)? config:\s*([^\s]+)/i);
+      if (fromConfig?.[1]) {
+        items.add(fromConfig[1]);
+        continue;
+      }
+      if (line.startsWith('Monitor ')) {
+        const parts = line.split(/\s+/);
+        if (parts[1]) items.add(parts[1]);
+        continue;
+      }
+      const token = line.split(/\s+/)[0] ?? '';
+      if (!token || token.includes('=')) continue;
+      if (token.toLowerCase() === 'hyprctl') continue;
+      items.add(token);
+    }
+    return Array.from(items).sort((a, b) => a.localeCompare(b));
+  }
+
+  function parseKitsuneProfiles(stdout: string): string[] {
+    const items = new Set<string>();
+    for (const lineRaw of stdout.split('\n')) {
+      const line = lineRaw.trim();
+      if (!line) continue;
+      if (line.startsWith('[') || line.startsWith('Uso:')) continue;
+      if (!/^[a-zA-Z0-9._-]+$/.test(line)) continue;
+      items.add(line);
+    }
+    return Array.from(items).sort((a, b) => a.localeCompare(b));
+  }
+
+  function parseKitsuneGroupFiles(stdout: string): string[] {
+    const items = new Set<string>();
+    for (const lineRaw of stdout.split('\n')) {
+      const line = lineRaw.trim();
+      if (!line || line.startsWith('[')) continue;
+      if (!line.endsWith('.group')) continue;
+      if (!/^[a-zA-Z0-9._-]+\.group$/.test(line)) continue;
+      items.add(line);
+    }
+    return Array.from(items).sort((a, b) => a.localeCompare(b));
+  }
+
+  function parseKitsuneGroupLayers(stdout: string): GroupLayerEntry[] {
+    const rows: GroupLayerEntry[] = [];
+    for (const lineRaw of stdout.split('\n')) {
+      const line = lineRaw.trim();
+      if (!line) continue;
+      const m = line.match(/^(\d+):\s*layer=(.+)$/);
+      if (!m) continue;
+      const index = Number(m[1]);
+      const parts = m[2].split(',').map(v => v.trim());
+      rows.push({
+        index,
+        enabled: parts[0] ?? '',
+        mode: parts[1] ?? '',
+        style: parts[2] ?? '',
+        profile: parts[3] ?? '',
+        color: parts[4] ?? '',
+        alpha: parts[5] ?? '',
+        runtime: parts[6] ?? '',
+        rotate: parts[7] ?? '',
+        profilesPipe: parts[8] ?? ''
+      });
+    }
+    return rows;
+  }
+
+  function normalizeGroupFileName(value: string): string {
+    const clean = value.trim().replace(/\s+/g, '');
+    if (!clean) return '';
+    if (!/^[a-zA-Z0-9._-]+$/.test(clean)) return '';
+    return clean.endsWith('.group') ? clean : `${clean}.group`;
+  }
+
+  async function loadKitsuneRuntimeOptions(): Promise<void> {
+    try {
+      const [monitorsResult, profilesResult] = await Promise.all([
+        invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['monitors', 'list']}),
+        invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['profiles', 'list', 'all']})
+      ]);
+
+      const monitors = monitorsResult.ok ? parseKitsuneMonitors(monitorsResult.stdout ?? '') : [];
+      const profiles = profilesResult.ok ? parseKitsuneProfiles(profilesResult.stdout ?? '') : [];
+
+      kitsuneMonitorOptions = monitors;
+      kitsuneProfileOptions = profiles;
+
+      if (kitsuneStartMonitor && !monitors.includes(kitsuneStartMonitor)) kitsuneStartMonitor = '';
+      if (kitsuneMonitorName && !monitors.includes(kitsuneMonitorName)) kitsuneMonitorName = '';
+      if (kitsuneInstanceMonitor && !monitors.includes(kitsuneInstanceMonitor)) kitsuneInstanceMonitor = '';
+      if (kitsuneAutostartMonitor && !monitors.includes(kitsuneAutostartMonitor)) kitsuneAutostartMonitor = '';
+      if (kitsuneStartProfile && !profiles.includes(kitsuneStartProfile)) kitsuneStartProfile = '';
+      kitsuneStartProfilesSelected = kitsuneStartProfilesSelected.filter(p => profiles.includes(p));
+    } catch {
+      // Keep existing options if runtime probing fails.
+    }
+  }
+
+  async function loadKitsuneGroupFiles(): Promise<void> {
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['group', 'files']});
+      const groups = result.ok ? parseKitsuneGroupFiles(result.stdout ?? '') : [];
+      const current = normalizeGroupFileName(kitsuneGroupFile);
+      kitsuneGroupOptions = current && !groups.includes(current) ? [...groups, current] : groups;
+    } catch {
+      // Keep previous options on failure.
+    }
+  }
+
+  async function loadKitsuneGroupLayers(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    if (!groupFile) {
+      kitsuneGroupLayers = [];
+      return;
+    }
+    kitsuneGroupLayersBusy = true;
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
+        args: ['group', 'list-layers', groupFile]
+      });
+      kitsuneGroupLayers = result.ok ? parseKitsuneGroupLayers(result.stdout ?? '') : [];
+    } catch {
+      kitsuneGroupLayers = [];
+    } finally {
+      kitsuneGroupLayersBusy = false;
+    }
+  }
+
+  async function loadKitsuneGroupData(): Promise<void> {
+    await loadKitsuneGroupFiles();
+    await loadKitsuneGroupLayers();
+  }
+
+  function toggleKitsuneStartProfile(name: string): void {
+    if (!name) return;
+    if (kitsuneStartProfilesSelected.includes(name)) {
+      kitsuneStartProfilesSelected = kitsuneStartProfilesSelected.filter(p => p !== name);
+      return;
+    }
+    kitsuneStartProfilesSelected = [...kitsuneStartProfilesSelected, name];
+  }
+
+  function chooseKitsuneStartMonitor(name: string): void {
+    kitsuneStartMonitor = name;
+    kitsuneStartMonitorOpen = false;
+  }
+
+  function chooseKitsuneStartProfile(name: string): void {
+    kitsuneStartProfile = name;
+    kitsuneStartProfileOpen = false;
+  }
+
+  function onKitsuneStartMonitorFilterInput(e: Event): void {
+    kitsuneStartMonitorFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function onKitsuneStartProfileFilterInput(e: Event): void {
+    kitsuneStartProfileFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function chooseKitsuneMonitorName(name: string): void {
+    kitsuneMonitorName = name;
+    kitsuneMonitorNameOpen = false;
+  }
+
+  function chooseKitsuneInstanceMonitor(name: string): void {
+    kitsuneInstanceMonitor = name;
+    kitsuneInstanceMonitorOpen = false;
+  }
+
+  function chooseKitsuneAutostartMonitor(name: string): void {
+    kitsuneAutostartMonitor = name;
+    kitsuneAutostartMonitorOpen = false;
+  }
+
+  function onKitsuneMonitorNameFilterInput(e: Event): void {
+    kitsuneMonitorNameFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function onKitsuneInstanceMonitorFilterInput(e: Event): void {
+    kitsuneInstanceMonitorFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function onKitsuneAutostartMonitorFilterInput(e: Event): void {
+    kitsuneAutostartMonitorFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function chooseKitsuneGroupLayerEnabled(value: '1' | '0'): void {
+    kitsuneGroupLayerEnabled = value;
+    kitsuneGroupLayerEnabledOpen = false;
+  }
+
+  function chooseKitsuneGroupLayerMode(value: 'bars' | 'ring'): void {
+    kitsuneGroupLayerMode = value;
+    kitsuneGroupLayerModeOpen = false;
+  }
+
+  function chooseKitsuneGroupLayerStyle(value: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots'): void {
+    kitsuneGroupLayerStyle = value;
+    kitsuneGroupLayerStyleOpen = false;
+  }
+
+  function chooseKitsuneGroupLayerProfile(value: string): void {
+    kitsuneGroupLayerProfile = value;
+    kitsuneGroupLayerProfileOpen = false;
+  }
+
+  function onKitsuneGroupLayerProfileFilterInput(e: Event): void {
+    kitsuneGroupLayerProfileFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  function chooseKitsuneGroupFile(name: string): void {
+    const clean = normalizeGroupFileName(name);
+    if (!clean) return;
+    kitsuneGroupFile = clean;
+    kitsuneGroupPickerOpen = false;
+    void loadKitsuneGroupLayers();
+  }
+
+  function onKitsuneGroupPickerFilterInput(e: Event): void {
+    kitsuneGroupPickerFilter = (e.currentTarget as HTMLInputElement).value;
+  }
+
+  async function createKitsuneGroupFile(): Promise<void> {
+    const candidate = kitsuneGroupCreateCandidate;
+    if (!candidate) return;
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const args = ['group', 'create', candidate];
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {args});
+      const stderr = (result.stderr ?? '').trim();
+      const stdout = (result.stdout ?? '').trim();
+      if (!result.ok) {
+        throw new Error(stderr || stdout || `group create failed (exit ${result.exitCode})`);
+      }
+      kitsuneLastCommand = `kitsune ${args.join(' ')}`;
+      kitsuneOutput = [stdout, stderr].filter(Boolean).join('\n');
+      kitsuneGroupFile = candidate;
+      kitsuneGroupPickerFilter = '';
+      kitsuneGroupPickerOpen = false;
+      pushToast(`Group created: ${candidate}`, 'success');
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  function toggleKitsuneGroupAddLayer(id: string): void {
+    if (!id) return;
+    if (kitsuneGroupAddLayerSelected.includes(id)) {
+      kitsuneGroupAddLayerSelected = kitsuneGroupAddLayerSelected.filter(v => v !== id);
+      return;
+    }
+    kitsuneGroupAddLayerSelected = [...kitsuneGroupAddLayerSelected, id];
+  }
+
+  async function runKitsuneGroupAddSelectedLayers(): Promise<void> {
+    const groupPath = kitsuneGroupFile.trim();
+    if (!groupPath) return;
+    const selected = kitsuneGroupAddLayerOptions.filter(o => kitsuneGroupAddLayerSelected.includes(o.id));
+    if (selected.length === 0) return;
+
+    kitsuneBusy = true;
+    lastError = null;
+    const chunks: string[] = [];
+    try {
+      for (const option of selected) {
+        const args = ['group', 'add-layer', option.spec, groupPath];
+        const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {args});
+        const stdout = (result.stdout ?? '').trim();
+        const stderr = (result.stderr ?? '').trim();
+        chunks.push([`$ kitsune ${args.join(' ')}`, stdout, stderr].filter(Boolean).join('\n'));
+        if (!result.ok) {
+          throw new Error(stderr || stdout || `group add-layer failed (exit ${result.exitCode})`);
+        }
+      }
+
+      kitsuneLastCommand = `kitsune group add-layer x${selected.length}`;
+      kitsuneOutput = chunks.join('\n\n');
+      pushToast(`Added ${selected.length} layer(s)`, 'success');
+      kitsuneGroupAddLayerOpen = false;
+      kitsuneGroupAddLayerSelected = [];
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  function buildKitsuneGroupLayerSpec(): string {
+    const alpha = Math.max(0, Math.min(1, Number(kitsuneGroupLayerAlpha) || 0));
+    const color = kitsuneGroupLayerColor.trim() || '#ffffff';
+    const profile = kitsuneGroupLayerProfile.trim() || 'bars_balanced';
+    return [
+      kitsuneGroupLayerEnabled,
+      kitsuneGroupLayerMode,
+      kitsuneGroupLayerStyle,
+      profile,
+      color,
+      alpha.toFixed(2)
+    ].join(',');
   }
 
   async function runHealth() {
@@ -1376,6 +1899,72 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
   }
 
+  async function runKitsuneCommand(args: string[]): Promise<void> {
+    kitsuneBusy = true;
+    lastError = null;
+    kitsuneLastCommand = `kitsune ${args.join(' ')}`.trim();
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {args});
+      const stderr = (result.stderr ?? '').trim();
+      const stdout = (result.stdout ?? '').trim();
+      kitsuneOutput = [stdout, stderr].filter(Boolean).join('\n');
+      if (!result.ok) {
+        const msg = stderr || stdout || `kitsune command failed (exit ${result.exitCode})`;
+        lastError = msg;
+        pushToast(msg, 'error');
+        return;
+      }
+      pushToast(`Executed: ${kitsuneLastCommand}`, 'success');
+      if (args[0] === 'help') {
+        await loadKitsuneStatus();
+      } else if (kitsuneStatus?.installed) {
+        if (['install', 'monitor', 'monitors', 'profiles', 'reset', 'start'].includes(args[0])) {
+          await loadKitsuneRuntimeOptions();
+        }
+        if (args[0] === 'group' || args[0] === 'group-file') {
+          await loadKitsuneGroupData();
+        }
+      }
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  function selectKitsuneTab(id: KitsuneTabId): void {
+    kitsuneTab = id;
+    if (id === 'group' && kitsuneStatus?.installed) {
+      void loadKitsuneGroupData();
+    }
+  }
+
+  async function loadKitsuneStatus(): Promise<void> {
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const data = await invoke<KitsuneStatusReport>('kitowall_kitsune_status');
+      kitsuneStatus = data;
+      if (data.installed) {
+        await loadKitsuneRuntimeOptions();
+        await loadKitsuneGroupData();
+      } else {
+        kitsuneMonitorOptions = [];
+        kitsuneProfileOptions = [];
+        kitsuneStartProfilesSelected = [];
+        kitsuneGroupOptions = [];
+        kitsuneGroupLayers = [];
+      }
+    } catch (e) {
+      lastError = String(e);
+      kitsuneStatus = null;
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
   async function clearHistorySection(): Promise<void> {
     busyHistory = true;
     lastError = null;
@@ -1703,6 +2292,16 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!(target instanceof Element)) return;
       if (!target.closest('.pack-select')) {
         packDropdownOpen = false;
+        kitsuneStartMonitorOpen = false;
+        kitsuneStartProfileOpen = false;
+        kitsuneMonitorNameOpen = false;
+        kitsuneInstanceMonitorOpen = false;
+        kitsuneAutostartMonitorOpen = false;
+        kitsuneGroupLayerEnabledOpen = false;
+        kitsuneGroupLayerModeOpen = false;
+        kitsuneGroupLayerStyleOpen = false;
+        kitsuneGroupLayerProfileOpen = false;
+        kitsuneGroupPickerOpen = false;
       }
       if (!target.closest('.gs-select')) {
         gsSelectOpen = null;
@@ -1710,6 +2309,8 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!target.closest('.multi-select')) {
         wallhavenCategoriesOpen = false;
         wallhavenPurityOpen = false;
+        kitsuneStartProfilesOpen = false;
+        kitsuneGroupAddLayerOpen = false;
       }
     };
 
@@ -1755,6 +2356,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     </button>
     <button class={`menu-item ${activeSection === 'logs' ? 'active' : ''}`} on:click={() => selectSection('logs')}>
       {tr('Logs', 'Logs')}
+    </button>
+    <button class={`menu-item ${activeSection === 'kitsune' ? 'active' : ''}`} on:click={() => selectSection('kitsune')}>
+      Kitsune
     </button>
     </div>
     <div class="sidebar-footer">
@@ -3073,6 +3677,701 @@ import {onDestroy, onMount, tick} from 'svelte';
               <button class="secondary" on:click={loadMoreGallery}>{tr('Load More', 'Cargar Mas')}</button>
             </div>
           {/if}
+        {/if}
+      </div>
+    {:else if activeSection === 'kitsune'}
+      <h2>Kitsune</h2>
+      <div class="card">
+        <div class="row actions-buttons-row">
+          <button class="secondary" on:click={loadKitsuneStatus} disabled={kitsuneBusy}>
+            {tr('Check Installation', 'Validar Instalacion')}
+          </button>
+          <button class="secondary" on:click={() => runKitsuneCommand(['help'])} disabled={kitsuneBusy}>
+            {tr('Reload Commands', 'Recargar Comandos')}
+          </button>
+        </div>
+        {#if kitsuneBusy}
+          <p class="muted">{tr('Checking Kitsune installation...', 'Validando instalacion de Kitsune...')}</p>
+        {:else if kitsuneStatus}
+          <div class="row">
+            <span class={`badge status ${kitsuneStatus.installed ? 'ok' : 'bad'}`}>
+              {tr('installed', 'instalado')}: {kitsuneStatus.installed ? 'true' : 'false'}
+            </span>
+            <span class="badge">{tr('commands detected', 'comandos detectados')}: {kitsuneStatus.commands.length}</span>
+          </div>
+          {#if !kitsuneStatus.installed}
+            <p class="muted">{kitsuneStatus.error ?? tr('Kitsune is not available in PATH.', 'Kitsune no esta disponible en PATH.')}</p>
+          {:else}
+            <p class="muted">{tr('Kitsune is installed. Use top tabs to access each submodule.', 'Kitsune esta instalado. Usa las tabs de arriba para entrar a cada submodulo.')}</p>
+            <div class="kitsune-tabs">
+              <button class={`kitsune-tab ${kitsuneTab === 'core' ? 'active' : ''}`} on:click={() => selectKitsuneTab('core')}>Core</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'profiles' ? 'active' : ''}`} on:click={() => selectKitsuneTab('profiles')}>Profiles Lab</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'group' ? 'active' : ''}`} on:click={() => selectKitsuneTab('group')}>Group Composer</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'visual' ? 'active' : ''}`} on:click={() => selectKitsuneTab('visual')}>Visual FX</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'render' ? 'active' : ''}`} on:click={() => selectKitsuneTab('render')}>Render</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'monitors' ? 'active' : ''}`} on:click={() => selectKitsuneTab('monitors')}>Monitors & Color</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'system' ? 'active' : ''}`} on:click={() => selectKitsuneTab('system')}>System & Instances</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'logs' ? 'active' : ''}`} on:click={() => selectKitsuneTab('logs')}>Logs & Diagnostics</button>
+            </div>
+
+            {#if kitsuneTab === 'core'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Lifecycle</h3>
+                  <div class="row">
+                    <button on:click={() => runKitsuneCommand(['install', ...(kitsuneInstallPackages ? ['--install-packages'] : [])])} disabled={kitsuneBusy}>Install</button>
+                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneInstallPackages} /> install packages</label>
+                  </div>
+                  <div class="row">
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneStartMonitorOpen = !kitsuneStartMonitorOpen)}
+                        aria-expanded={kitsuneStartMonitorOpen}
+                      >
+                        <span>{kitsuneStartMonitor || 'monitor (optional)'}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneStartMonitorOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter monitors..."
+                            value={kitsuneStartMonitorFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneStartMonitorFilterInput}
+                          />
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneStartMonitor('')}>monitor (optional)</button>
+                          {#each kitsuneVisibleMonitorOptions as monitorName}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneStartMonitor(monitorName)}>
+                              {monitorName}
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneStartProfileOpen = !kitsuneStartProfileOpen)}
+                        aria-expanded={kitsuneStartProfileOpen}
+                      >
+                        <span>{kitsuneStartProfile || '--profile (optional)'}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneStartProfileOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter profiles..."
+                            value={kitsuneStartProfileFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneStartProfileFilterInput}
+                          />
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneStartProfile('')}>--profile (optional)</button>
+                          {#each kitsuneVisibleProfileOptions as profileName}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneStartProfile(profileName)}>
+                              {profileName}
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="multi-select">
+                      <button type="button" class="multi-select-trigger" on:click|stopPropagation={() => (kitsuneStartProfilesOpen = !kitsuneStartProfilesOpen)}>
+                        <div class="multi-select-badges">
+                          {#if kitsuneStartProfilesSelected.length === 0}
+                            <span class="muted">--profiles (optional)</span>
+                          {:else}
+                            {#each kitsuneStartProfilesSelected as profileName}
+                              <span class="badge">{profileName}</span>
+                            {/each}
+                          {/if}
+                        </div>
+                        <span class="badge">{kitsuneStartProfilesSelected.length}</span>
+                      </button>
+                      {#if kitsuneStartProfilesOpen}
+                        <div class="multi-select-menu">
+                          {#if kitsuneProfileOptions.length === 0}
+                            <div class="muted">No profiles detected</div>
+                          {:else}
+                            {#each kitsuneProfileOptions as profileName}
+                              <button
+                                type="button"
+                                class="multi-option"
+                                on:click|stopPropagation={() => toggleKitsuneStartProfile(profileName)}
+                              >
+                                <span>{profileName}</span>
+                                <span class={`badge status ${kitsuneStartProfilesSelected.includes(profileName) ? 'ok' : 'bad'}`}>
+                                  {kitsuneStartProfilesSelected.includes(profileName) ? 'on' : 'off'}
+                                </span>
+                              </button>
+                            {/each}
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                    <span class="field-label">target</span>
+                    <select bind:value={kitsuneStartTarget}><option value="mpvpaper">mpvpaper</option><option value="layer-shell">layer-shell</option></select>
+                    <span class="field-label">mode</span>
+                    <select bind:value={kitsuneStartMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => {
+                      const args = ['start'];
+                      if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
+                      if (kitsuneStartProfile.trim()) { args.push('--profile', kitsuneStartProfile.trim()); }
+                      if (kitsuneStartProfilesSelected.length > 0) { args.push('--profiles', kitsuneStartProfilesSelected.join(',')); }
+                      args.push('--target', kitsuneStartTarget, '--mode', kitsuneStartMode);
+                      void runKitsuneCommand(args);
+                    }} disabled={kitsuneBusy}>Start</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Stop</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['restart'])} disabled={kitsuneBusy}>Restart</button>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>Status</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>Doctor</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--fix'])} disabled={kitsuneBusy}>Doctor --fix</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'profiles'}
+              <div class="grid kitsune-grid kitsune-profiles-grid">
+                <div class="card">
+                  <h3>Profiles</h3>
+                  <div class="row">
+                    <select bind:value={kitsuneProfilesMode}><option value="all">all</option><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'list', ...(kitsuneProfilesMode === 'all' ? [] : [kitsuneProfilesMode])])} disabled={kitsuneBusy}>List</button>
+                    <select bind:value={kitsuneProfileName}>
+                      <option value="">profile name</option>
+                      {#each kitsuneProfileOptions as profileName}
+                        <option value={profileName}>{profileName}</option>
+                      {/each}
+                    </select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'show', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>Show</button>
+                  </div>
+                  <div class="row">
+                    <select bind:value={kitsuneProfileBase}>
+                      <option value="">clone base</option>
+                      {#each kitsuneProfileOptions as profileName}
+                        <option value={profileName}>{profileName}</option>
+                      {/each}
+                    </select>
+                    <input bind:value={kitsuneProfileNew} placeholder="clone new" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'clone', kitsuneProfileBase.trim(), kitsuneProfileNew.trim()])} disabled={kitsuneBusy || !kitsuneProfileBase.trim() || !kitsuneProfileNew.trim()}>Clone</button>
+                  </div>
+                  <div class="row">
+                    <input bind:value={kitsuneProfileKey} placeholder="key" />
+                    <input bind:value={kitsuneProfileValue} placeholder="value" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set', kitsuneProfileName.trim(), kitsuneProfileKey.trim(), kitsuneProfileValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim() || !kitsuneProfileKey.trim() || !kitsuneProfileValue.trim()}>Set</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['test-load', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>Test Load</button>
+                  </div>
+                </div>
+                <div class="card">
+                  <h3>Spectrum Lab</h3>
+                  <p class="muted">{tr('Use runtime test + test-load to validate profile changes before standard run.', 'Usa runtime test + test-load para validar cambios antes de usar modo standard.')}</p>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy}>Runtime Test</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy}>Runtime Standard</button>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy}>Rotate Next</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'prev', '--apply'])} disabled={kitsuneBusy}>Rotate Prev</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'shuffle'])} disabled={kitsuneBusy}>Rotate Shuffle</button>
+                  </div>
+                  <div class="row">
+                    <input type="number" bind:value={kitsuneRotationSeconds} min="1" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotation', String(Math.max(1, Math.floor(Number(kitsuneRotationSeconds) || 1)))])} disabled={kitsuneBusy}>Set Rotation Seconds</button>
+                  </div>
+                  <div class="row">
+                    <input bind:value={kitsuneProfileListValue} placeholder="p1,p2,p3" />
+                    <select bind:value={kitsuneProfileListMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set-list', kitsuneProfileListMode, kitsuneProfileListValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileListValue.trim()}>Set Profile List</button>
+                  </div>
+                  <div class="row">
+                    <select bind:value={kitsuneTuneMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <input bind:value={kitsuneTunePreset} placeholder="preset" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['tune', kitsuneTunePreset.trim(), kitsuneTuneMode])} disabled={kitsuneBusy || !kitsuneTunePreset.trim()}>Tune</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'group'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Group Composer</h3>
+                  <div class="row">
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneGroupPickerOpen = !kitsuneGroupPickerOpen)}
+                        aria-expanded={kitsuneGroupPickerOpen}
+                      >
+                        <span>{kitsuneGroupFile || 'select group'}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneGroupPickerOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter or type new group..."
+                            value={kitsuneGroupPickerFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneGroupPickerFilterInput}
+                          />
+                          {#if kitsuneVisibleGroupOptions.length === 0}
+                            <div class="muted">No groups detected</div>
+                          {:else}
+                            {#each kitsuneVisibleGroupOptions as groupName}
+                              <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupFile(groupName)}>
+                                {groupName}
+                              </button>
+                            {/each}
+                          {/if}
+                          {#if kitsuneGroupCreateCandidate}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => void createKitsuneGroupFile()}>
+                              + create {kitsuneGroupCreateCandidate}
+                            </button>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                    <button class="secondary" on:click={() => void createKitsuneGroupFile()} disabled={kitsuneBusy || !kitsuneGroupCreateCandidate}>Create Group</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['spectrum-mode', 'group'])} disabled={kitsuneBusy}>Enable Group Mode</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['group-file', kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>Set Group File</button>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['group', 'validate', kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>Validate</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['group', 'list-layers', kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>List Layers</button>
+                  </div>
+                  <div class="row">
+                    <div class="multi-select">
+                      <button type="button" class="multi-select-trigger" on:click|stopPropagation={() => (kitsuneGroupAddLayerOpen = !kitsuneGroupAddLayerOpen)}>
+                        <div class="multi-select-badges">
+                          {#if kitsuneGroupAddLayerSelected.length === 0}
+                            <span class="muted">Select layers to add</span>
+                          {:else}
+                            {#each kitsuneGroupAddLayerOptions.filter(o => kitsuneGroupAddLayerSelected.includes(o.id)) as selectedOption}
+                              <span class="badge">{selectedOption.label}</span>
+                            {/each}
+                          {/if}
+                        </div>
+                        <span class="badge">{kitsuneGroupAddLayerSelected.length}</span>
+                      </button>
+                      {#if kitsuneGroupAddLayerOpen}
+                        <div class="multi-select-menu">
+                          {#each kitsuneGroupAddLayerOptions as option}
+                            <button
+                              type="button"
+                              class="multi-option"
+                              on:click|stopPropagation={() => toggleKitsuneGroupAddLayer(option.id)}
+                            >
+                              <span>{option.label}</span>
+                              <span class={`badge status ${kitsuneGroupAddLayerSelected.includes(option.id) ? 'ok' : 'bad'}`}>
+                                {kitsuneGroupAddLayerSelected.includes(option.id) ? 'on' : 'off'}
+                              </span>
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <button class="secondary" on:click={() => void runKitsuneGroupAddSelectedLayers()} disabled={kitsuneBusy || kitsuneGroupAddLayerSelected.length === 0 || !kitsuneGroupFile.trim()}>Add Layer</button>
+                  </div>
+                  <div class="row">
+                    <input type="number" bind:value={kitsuneGroupLayerIndex} min="1" />
+                    <span class="field-label">enabled</span>
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneGroupLayerEnabledOpen = !kitsuneGroupLayerEnabledOpen)}
+                        aria-expanded={kitsuneGroupLayerEnabledOpen}
+                      >
+                        <span>{kitsuneGroupLayerEnabled}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneGroupLayerEnabledOpen}
+                        <div class="pack-select-menu">
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerEnabled('1')}>1</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerEnabled('0')}>0</button>
+                        </div>
+                      {/if}
+                    </div>
+                    <span class="field-label">mode</span>
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneGroupLayerModeOpen = !kitsuneGroupLayerModeOpen)}
+                        aria-expanded={kitsuneGroupLayerModeOpen}
+                      >
+                        <span>{kitsuneGroupLayerMode}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneGroupLayerModeOpen}
+                        <div class="pack-select-menu">
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerMode('bars')}>bars</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerMode('ring')}>ring</button>
+                        </div>
+                      {/if}
+                    </div>
+                    <span class="field-label">style</span>
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneGroupLayerStyleOpen = !kitsuneGroupLayerStyleOpen)}
+                        aria-expanded={kitsuneGroupLayerStyleOpen}
+                      >
+                        <span>{kitsuneGroupLayerStyle}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneGroupLayerStyleOpen}
+                        <div class="pack-select-menu">
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('bars')}>bars</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('bars_fill')}>bars_fill</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves')}>waves</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_fill')}>waves_fill</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('dots')}>dots</button>
+                        </div>
+                      {/if}
+                    </div>
+                    <span class="field-label">profile</span>
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneGroupLayerProfileOpen = !kitsuneGroupLayerProfileOpen)}
+                        aria-expanded={kitsuneGroupLayerProfileOpen}
+                      >
+                        <span>{kitsuneGroupLayerProfile}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneGroupLayerProfileOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter profiles..."
+                            value={kitsuneGroupLayerProfileFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneGroupLayerProfileFilterInput}
+                          />
+                          {#if kitsuneVisibleGroupLayerProfiles.length === 0}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerProfile(kitsuneGroupLayerProfile)}>
+                              {kitsuneGroupLayerProfile}
+                            </button>
+                          {:else}
+                            {#each kitsuneVisibleGroupLayerProfiles as profileName}
+                              <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerProfile(profileName)}>
+                                {profileName}
+                              </button>
+                            {/each}
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                    <span class="field-label">color</span>
+                    <input bind:value={kitsuneGroupLayerColor} placeholder="#RRGGBB" />
+                    <span class="field-label">alpha</span>
+                    <input type="number" step="0.01" min="0" max="1" bind:value={kitsuneGroupLayerAlpha} />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['group', 'update-layer', String(Math.max(1, Math.floor(Number(kitsuneGroupLayerIndex) || 1))), buildKitsuneGroupLayerSpec(), kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>Update Layer</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['group', 'remove-layer', String(Math.max(1, Math.floor(Number(kitsuneGroupLayerIndex) || 1))), kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>Remove Layer</button>
+                  </div>
+                  <div class="group-layers-section">
+                    <h4>Layers in {kitsuneGroupFile || '-'}</h4>
+                    {#if kitsuneGroupLayersBusy}
+                      <p class="muted">Loading layers...</p>
+                    {:else if kitsuneGroupLayers.length === 0}
+                      <p class="muted">No layers found in this group file.</p>
+                    {:else}
+                      <div class="group-layers-list">
+                        {#each kitsuneGroupLayers as layer}
+                          <div class="group-layer-item">
+                            <div class="row">
+                              <span class="badge">Layer #{layer.index}</span>
+                              <span class="badge">enabled: {layer.enabled || '-'}</span>
+                              <span class="badge">mode: {layer.mode || '-'}</span>
+                              <span class="badge">style: {layer.style || '-'}</span>
+                              <span class="badge">profile: {layer.profile || '-'}</span>
+                              <span class="badge">color: {layer.color || '-'}</span>
+                              <span class="badge">alpha: {layer.alpha || '-'}</span>
+                              {#if layer.runtime}<span class="badge">runtime: {layer.runtime}</span>{/if}
+                              {#if layer.rotate}<span class="badge">rotate: {layer.rotate}</span>{/if}
+                              {#if layer.profilesPipe}<span class="badge">profiles: {layer.profilesPipe}</span>{/if}
+                            </div>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'visual'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Visual Controls</h3>
+                  <div class="row">
+                    <select bind:value={kitsuneVisualMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <select bind:value={kitsuneVisualStyle}>
+                      <option value="bars">bars</option>
+                      <option value="bars_fill">bars_fill</option>
+                      <option value="waves">waves</option>
+                      <option value="waves_fill">waves_fill</option>
+                      <option value="dots">dots</option>
+                    </select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['visual', kitsuneVisualMode, kitsuneVisualStyle])} disabled={kitsuneBusy}>Apply Visual</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['style', kitsuneVisualMode, kitsuneVisualStyle])} disabled={kitsuneBusy}>Apply Style</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['mode', kitsuneVisualMode])} disabled={kitsuneBusy}>Apply Mode</button>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['particles-preset', kitsuneParticlesPreset])} disabled={kitsuneBusy}>Particles Preset</button>
+                    <select bind:value={kitsuneParticlesPreset}>
+                      <option value="off">off</option>
+                      <option value="low">low</option>
+                      <option value="balanced">balanced</option>
+                      <option value="high">high</option>
+                    </select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['debug', 'overlay', '1', '--apply'])} disabled={kitsuneBusy}>Overlay On</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['debug', 'overlay', '0', '--apply'])} disabled={kitsuneBusy}>Overlay Off</button>
+                  </div>
+                </div>
+                <div class="card">
+                  <h3>PostFX</h3>
+                  <div class="row">
+                    <span class="field-label">enable</span>
+                    <input type="number" bind:value={kitsunePostfxEnable} min="0" max="1" />
+                    <span class="field-label">blur passes</span>
+                    <input type="number" bind:value={kitsunePostfxBlurPasses} min="0" max="4" />
+                    <span class="field-label">blur mix</span>
+                    <input type="number" step="0.01" bind:value={kitsunePostfxBlurMix} />
+                    <span class="field-label">glow strength</span>
+                    <input type="number" step="0.01" bind:value={kitsunePostfxGlowStrength} />
+                    <span class="field-label">glow mix</span>
+                    <input type="number" step="0.01" bind:value={kitsunePostfxGlowMix} />
+                    <span class="field-label">scope</span>
+                    <select bind:value={kitsunePostfxScope}><option value="final">final</option><option value="layer">layer</option><option value="mixed">mixed</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['postfx', String(kitsunePostfxEnable), String(kitsunePostfxBlurPasses), String(kitsunePostfxBlurMix), String(kitsunePostfxGlowStrength), String(kitsunePostfxGlowMix), kitsunePostfxScope])} disabled={kitsuneBusy}>Apply PostFX</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'render'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Render & Runtime</h3>
+                  <div class="row">
+                    <select bind:value={kitsuneBackend}><option value="cpu">cpu</option><option value="gpu">gpu</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['backend', kitsuneBackend])} disabled={kitsuneBusy}>Set Backend</button>
+                    <select bind:value={kitsuneOutputTarget}><option value="mpvpaper">mpvpaper</option><option value="layer-shell">layer-shell</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['output-target', kitsuneOutputTarget])} disabled={kitsuneBusy}>Set Output Target</button>
+                  </div>
+                  <div class="row">
+                    <select bind:value={kitsuneSpectrumMode}><option value="single">single</option><option value="group">group</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['spectrum-mode', kitsuneSpectrumMode])} disabled={kitsuneBusy}>Set Spectrum Mode</button>
+                    <select bind:value={kitsuneRuntime}><option value="standard">standard</option><option value="test">test</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', kitsuneRuntime])} disabled={kitsuneBusy}>Set Runtime</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'monitors'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Monitors</h3>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['monitors', 'list'])} disabled={kitsuneBusy}>List Monitors</button>
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneMonitorNameOpen = !kitsuneMonitorNameOpen)}
+                        aria-expanded={kitsuneMonitorNameOpen}
+                      >
+                        <span>{kitsuneMonitorName || 'monitor name'}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneMonitorNameOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter monitors..."
+                            value={kitsuneMonitorNameFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneMonitorNameFilterInput}
+                          />
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneMonitorName('')}>monitor name</button>
+                          {#each kitsuneVisibleMonitorNameOptions as monitorName}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneMonitorName(monitorName)}>
+                              {monitorName}
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['monitor', 'set', kitsuneMonitorName.trim()])} disabled={kitsuneBusy || !kitsuneMonitorName.trim()}>Set Monitor</button>
+                  </div>
+                  <div class="row">
+                    <input type="number" bind:value={kitsuneMonitorFallbackEnabled} min="0" max="1" />
+                    <input type="number" bind:value={kitsuneMonitorFallbackSeconds} min="1" />
+                    <input type="number" bind:value={kitsuneMonitorFallbackPreferFocused} min="0" max="1" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['monitor-fallback', String(kitsuneMonitorFallbackEnabled), String(Math.max(1, Math.floor(Number(kitsuneMonitorFallbackSeconds) || 1))), String(kitsuneMonitorFallbackPreferFocused)])} disabled={kitsuneBusy}>Apply Fallback</button>
+                  </div>
+                </div>
+                <div class="card">
+                  <h3>Dynamic Color</h3>
+                  <div class="row">
+                    <input type="number" bind:value={kitsuneDynamicColor} min="0" max="1" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['dynamic-color', String(kitsuneDynamicColor)])} disabled={kitsuneBusy}>Set Dynamic Color</button>
+                    <input type="number" bind:value={kitsuneColorPollSeconds} min="1" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['color-poll', String(Math.max(1, Math.floor(Number(kitsuneColorPollSeconds) || 1)))])} disabled={kitsuneBusy}>Set Color Poll</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['colorwatch', ...(kitsuneMonitorName.trim() ? [kitsuneMonitorName.trim()] : []), '--once'])} disabled={kitsuneBusy}>Run Colorwatch Once</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'system'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Instances</h3>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['instances', 'list'])} disabled={kitsuneBusy}>List Instances</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['status', '--all-instances'])} disabled={kitsuneBusy}>Status All</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--all-instances'])} disabled={kitsuneBusy}>Doctor All</button>
+                  </div>
+                  <div class="row">
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneInstanceMonitorOpen = !kitsuneInstanceMonitorOpen)}
+                        aria-expanded={kitsuneInstanceMonitorOpen}
+                      >
+                        <span>{kitsuneInstanceMonitor || 'monitor instance'}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneInstanceMonitorOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter monitors..."
+                            value={kitsuneInstanceMonitorFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneInstanceMonitorFilterInput}
+                          />
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneInstanceMonitor('')}>monitor instance</button>
+                          {#each kitsuneVisibleInstanceMonitorOptions as monitorName}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneInstanceMonitor(monitorName)}>
+                              {monitorName}
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['instances', 'status', kitsuneInstanceMonitor.trim()])} disabled={kitsuneBusy || !kitsuneInstanceMonitor.trim()}>Instance Status</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['instance-status', kitsuneInstanceMonitor.trim()])} disabled={kitsuneBusy || !kitsuneInstanceMonitor.trim()}>Instance Status (alias)</button>
+                  </div>
+                </div>
+                <div class="card">
+                  <h3>System</h3>
+                  <div class="row">
+                    <div class="pack-select">
+                      <button
+                        type="button"
+                        class="pack-select-trigger"
+                        on:click|stopPropagation={() => (kitsuneAutostartMonitorOpen = !kitsuneAutostartMonitorOpen)}
+                        aria-expanded={kitsuneAutostartMonitorOpen}
+                      >
+                        <span>{kitsuneAutostartMonitor || 'monitor (optional)'}</span>
+                        <span class="caret">▾</span>
+                      </button>
+                      {#if kitsuneAutostartMonitorOpen}
+                        <div class="pack-select-menu">
+                          <input
+                            class="pack-filter"
+                            placeholder="filter monitors..."
+                            value={kitsuneAutostartMonitorFilter}
+                            on:click|stopPropagation
+                            on:input={onKitsuneAutostartMonitorFilterInput}
+                          />
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneAutostartMonitor('')}>monitor (optional)</button>
+                          {#each kitsuneVisibleAutostartMonitorOptions as monitorName}
+                            <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneAutostartMonitor(monitorName)}>
+                              {monitorName}
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'enable', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Autostart Enable</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'disable', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Autostart Disable</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'status', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Autostart Status</button>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'list'])} disabled={kitsuneBusy}>Autostart List</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['clean', '--force'])} disabled={kitsuneBusy}>Clean --force</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['reset', '--restart'])} disabled={kitsuneBusy}>Reset --restart</button>
+                    <input type="number" bind:value={kitsuneBenchmarkSeconds} min="1" />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['benchmark', String(Math.max(1, Math.floor(Number(kitsuneBenchmarkSeconds) || 1)))])} disabled={kitsuneBusy}>Benchmark</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'logs'}
+              <div class="grid kitsune-grid">
+                <div class="card">
+                  <h3>Logs & Diagnostics</h3>
+                  <div class="row">
+                    <select bind:value={kitsuneLogSource}>
+                      <option value="all">all</option>
+                      <option value="renderer">renderer</option>
+                      <option value="cava">cava</option>
+                      <option value="layer">layer</option>
+                      <option value="mpvpaper">mpvpaper</option>
+                      <option value="colorwatch">colorwatch</option>
+                      <option value="monitorwatch">monitorwatch</option>
+                    </select>
+                    <input type="number" bind:value={kitsuneLogLines} min="1" />
+                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogAllInstances} /> all instances</label>
+                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogFollow} /> follow</label>
+                    <button class="secondary" on:click={() => {
+                      const args = ['logs', kitsuneLogSource, '--lines', String(Math.max(1, Math.floor(Number(kitsuneLogLines) || 1)))];
+                      if (kitsuneLogAllInstances) args.push('--all-instances');
+                      if (kitsuneLogFollow) args.push('-f');
+                      void runKitsuneCommand(args);
+                    }} disabled={kitsuneBusy}>View Logs</button>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['layer-status'])} disabled={kitsuneBusy}>Layer Status</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>Status</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>Doctor</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--fix'])} disabled={kitsuneBusy}>Doctor --fix</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            <div class="card kitsune-console">
+              <h3>{tr('Command Output', 'Salida de Comando')}</h3>
+              <div class="row">
+                <span class="badge">{tr('last command', 'ultimo comando')}: {kitsuneLastCommand || '-'}</span>
+              </div>
+              <pre class="kitsune-output">{kitsuneOutput || tr('No command output yet.', 'Aun no hay salida de comandos.')}</pre>
+            </div>
+          {/if}
+        {:else}
+          <p class="muted">{tr('Press "Check Installation" to validate Kitsune and load options.', 'Presiona "Validar Instalacion" para validar Kitsune y cargar opciones.')}</p>
         {/if}
       </div>
     {/if}
