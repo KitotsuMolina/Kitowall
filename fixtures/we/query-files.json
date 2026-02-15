@@ -1,0 +1,33 @@
+{
+  "response": {
+    "total": 2,
+    "publishedfiledetails": [
+      {
+        "publishedfileid": "3000000001",
+        "title": "Neon Tokyo Rain",
+        "creator": "76561198000000001",
+        "preview_url": "https://cdn.example.com/we/3000000001/thumb.jpg",
+        "time_updated": 1739000000,
+        "score": 0.94,
+        "tags": [
+          {"tag": "Anime"},
+          {"tag": "Cyberpunk"}
+        ]
+      },
+      {
+        "publishedfileid": "3000000002",
+        "title": "City Night Drive",
+        "creator": "76561198000000002",
+        "preview_url": "https://cdn.example.com/we/3000000002/thumb.jpg",
+        "time_updated": 1738800000,
+        "vote_data": {
+          "score": 0.9
+        },
+        "tags": [
+          {"tag": "Cars"},
+          {"tag": "Rain"}
+        ]
+      }
+    ]
+  }
+}

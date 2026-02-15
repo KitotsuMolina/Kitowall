@@ -30,6 +30,19 @@ import {StaticUrlAdapter} from './adapters/staticUrl';
 import {listSystemLogs, clearSystemLogs} from './core/logs';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {
+  workshopSearch,
+  workshopDetails,
+  workshopQueueDownload,
+  workshopGetJob,
+  workshopListJobs,
+  workshopLibrary,
+  workshopRunJob,
+  workshopCoexistenceEnter,
+  workshopCoexistenceExit,
+  workshopCoexistenceStatus,
+  setWorkshopApiKey
+} from './core/workshop';
 
 function getCliVersion(): string {
   try {
@@ -92,6 +105,17 @@ Commands:
   logs [--limit <n>] [--source <name>] [--pack <name>] [--level <info|warn|error>] [--q <text>]
                                          Show system logs (requests/downloads/errors)
   logs clear                             Clear system logs
+  we config set-api-key <key>            Save Steam Web API key (~/.config/kitowall/we.json)
+  we search [--text <q>] [--tags <a,b>] [--sort <top|newest|trend|subscribed|updated>] [--page <n>] [--page-size <n>] [--days <n>] [--fixtures]
+                                         Search Wallpaper Engine workshop items (appid 431960)
+  we details <publishedfileid> [--fixtures]
+                                         Fetch workshop item details and additional previews
+  we download <publishedfileid> [--target-dir <path>] [--steam-user <user>] [--steam-pass-env <ENV>] [--steam-guard <code>] [--coexist]
+                                         Queue steamcmd download job (async)
+  we job <job_id>                        Show one download job
+  we jobs [--limit <n>]                  List recent download jobs
+  we library                             List downloaded workshop items
+  we coexist enter|exit|status           Temporarily stop/restore wallpaper rotation services
   check [--namespace <ns>] [--json]        Quick system check (no changes)
 
   init [--namespace <ns>] [--apply] [--force]       Setup kitowall (install daemon + watcher + next.service), validate deps
@@ -271,6 +295,127 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.ok ? 0 : 2;
     return;
+  }
+
+  if (cmd === 'we') {
+    const action = cleanOpt(args[1] ?? null);
+    if (!action) {
+      throw new Error('Usage: we <config|search|details|download|job|jobs|library|run-job|coexist> ...');
+    }
+
+    if (action === 'config') {
+      const sub = cleanOpt(args[2] ?? null);
+      if (sub !== 'set-api-key') throw new Error('Usage: we config set-api-key <key>');
+      const key = cleanOpt(args[3] ?? null);
+      if (!key) throw new Error('Usage: we config set-api-key <key>');
+      setWorkshopApiKey(key);
+      console.log(JSON.stringify({ok: true, updated: 'steamWebApiKey'}, null, 2));
+      return;
+    }
+
+    if (action === 'search') {
+      const text = cleanOpt(getOptionValue(args, '--text'));
+      const tags = parseList(getOptionValue(args, '--tags'));
+      const sort = cleanOpt(getOptionValue(args, '--sort')) as
+        | 'top'
+        | 'newest'
+        | 'trend'
+        | 'subscribed'
+        | 'updated'
+        | undefined;
+      const pageRaw = cleanOpt(getOptionValue(args, '--page'));
+      const pageSizeRaw = cleanOpt(getOptionValue(args, '--page-size'));
+      const daysRaw = cleanOpt(getOptionValue(args, '--days'));
+      const fixtures = args.includes('--fixtures');
+      const out = await workshopSearch({
+        text,
+        tags,
+        sort,
+        page: pageRaw ? Number(pageRaw) : undefined,
+        pageSize: pageSizeRaw ? Number(pageSizeRaw) : undefined,
+        days: daysRaw ? Number(daysRaw) : undefined,
+        fixtures
+      });
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'details') {
+      const id = cleanOpt(args[2] ?? null);
+      if (!id) throw new Error('Usage: we details <publishedfileid> [--fixtures]');
+      const fixtures = args.includes('--fixtures');
+      const out = await workshopDetails(id, fixtures);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'download') {
+      const id = cleanOpt(args[2] ?? null);
+      if (!id) throw new Error('Usage: we download <publishedfileid> [--target-dir <path>] [--steam-user <user>] [--steam-pass-env <ENV>] [--steam-guard <code>] [--coexist]');
+      const out = workshopQueueDownload({
+        publishedfileid: id,
+        targetDir: cleanOpt(getOptionValue(args, '--target-dir')),
+        steamUser: cleanOpt(getOptionValue(args, '--steam-user')),
+        steamPasswordEnv: cleanOpt(getOptionValue(args, '--steam-pass-env')),
+        steamGuardCode: cleanOpt(getOptionValue(args, '--steam-guard')),
+        useCoexistence: args.includes('--coexist')
+      });
+      console.log(JSON.stringify({ok: true, ...out}, null, 2));
+      return;
+    }
+
+    if (action === 'run-job') {
+      const jobId = cleanOpt(args[2] ?? null);
+      if (!jobId) throw new Error('Usage: we run-job <job_id>');
+      const out = await workshopRunJob(jobId);
+      console.log(JSON.stringify({ok: true, job: out}, null, 2));
+      return;
+    }
+
+    if (action === 'job') {
+      const jobId = cleanOpt(args[2] ?? null);
+      if (!jobId) throw new Error('Usage: we job <job_id>');
+      const out = workshopGetJob(jobId);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'jobs') {
+      const limitRaw = cleanOpt(getOptionValue(args, '--limit'));
+      const limit = limitRaw ? Number(limitRaw) : 40;
+      if (!Number.isFinite(limit) || limit <= 0) throw new Error(`Invalid --limit value: ${limitRaw}`);
+      const out = workshopListJobs(Math.floor(limit));
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'library') {
+      const out = workshopLibrary();
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'coexist') {
+      const sub = cleanOpt(args[2] ?? null);
+      if (sub === 'enter') {
+        const out = await workshopCoexistenceEnter();
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      if (sub === 'exit') {
+        const out = await workshopCoexistenceExit();
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      if (sub === 'status') {
+        const out = await workshopCoexistenceStatus();
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      throw new Error('Usage: we coexist <enter|exit|status>');
+    }
+
+    throw new Error('Usage: we <config|search|details|download|job|jobs|library|run-job|coexist> ...');
   }
 
   // Regular commands (need config/state)

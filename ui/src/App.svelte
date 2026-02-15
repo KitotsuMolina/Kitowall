@@ -133,6 +133,70 @@ import {onDestroy, onMount, tick} from 'svelte';
     args: string[];
   };
 
+  type LiveDepsStatus = {
+    ok: boolean;
+    required: string[];
+    optional: string[];
+    deps: Record<string, boolean>;
+    missing: string[];
+    install?: string;
+  };
+
+  type LiveWorkshopItem = {
+    id: string;
+    title: string;
+    preview_url_remote?: string;
+    preview_motion_remote?: string;
+    preview_thumb_local?: string;
+    author_name?: string;
+    tags: string[];
+    score?: number;
+    time_updated?: number;
+  };
+
+  type LiveWorkshopDetails = LiveWorkshopItem & {
+    additional_previews: string[];
+    description_short?: string;
+    file_size?: number;
+    item_url?: string;
+  };
+
+  type LiveSearchResponse = {
+    items: LiveWorkshopItem[];
+    page: number;
+    page_size: number;
+    total?: number;
+    cached?: boolean;
+  };
+
+  type LiveDownloadResponse = {
+    ok: boolean;
+    job_id: string;
+    status: 'queued' | 'downloading' | 'moving' | 'done' | 'error';
+  };
+
+  type LiveJob = {
+    id: string;
+    status: 'queued' | 'downloading' | 'moving' | 'done' | 'error';
+    publishedfileid: string;
+    targetDir: string;
+    outputDir?: string;
+    error?: string;
+    logs: string[];
+  };
+
+  type LiveLibraryItem = {
+    id: string;
+    path: string;
+    metadata?: string;
+    meta?: LiveWorkshopDetails | LiveWorkshopItem;
+  };
+
+  type LiveLibraryResponse = {
+    root: string;
+    items: LiveLibraryItem[];
+  };
+
   type GroupLayerEntry = {
     index: number;
     enabled: string;
@@ -146,7 +210,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     profilesPipe?: string;
   };
 
-  type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune';
+  type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
   type UiLanguage = 'en' | 'es';
   type KitsuneTabId =
     | 'core'
@@ -317,6 +381,26 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneLogLines = 120;
   let kitsuneLogAllInstances = false;
   let kitsuneLogFollow = false;
+  let liveBusy = false;
+  let liveDepsBusy = false;
+  let liveDepsStatus: LiveDepsStatus | null = null;
+  let liveSort: 'top' | 'newest' | 'trend' | 'subscribed' | 'updated' = 'top';
+  let liveSearchText = '';
+  let liveTags = '';
+  let livePage = 1;
+  let livePageSize = 24;
+  let liveSearchItems: LiveWorkshopItem[] = [];
+  let liveSearchTotal: number | null = null;
+  let liveSearchCached = false;
+  let liveView: 'search' | 'library' = 'search';
+  let liveLibraryRoot = '';
+  let liveLibraryItems: LiveLibraryItem[] = [];
+  let liveSelected: LiveWorkshopDetails | LiveWorkshopItem | null = null;
+  let liveSelectedSource: 'search' | 'library' | null = null;
+  let liveSideOpen = false;
+  let liveDownloadTargetDir = '~/.local/share/kitsune/we/downloads';
+  let liveCurrentJob: LiveJob | null = null;
+  let liveJobPollTimer: ReturnType<typeof setInterval> | null = null;
   let packTab: 'wallhaven' | 'unsplash' | 'reddit' | 'generic_json' | 'static_url' | 'local' = 'wallhaven';
   let rawPacksByName: Record<string, Record<string, unknown>> = {};
   let wallhavenPackName = '';
@@ -492,6 +576,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (id === 'kitsune') {
       void loadKitsuneStatus();
     }
+    if (id === 'kitsune-live') {
+      void loadLiveDepsStatus();
+      void loadLiveSearch(false);
+      void loadLiveLibrary();
+    }
     if (id === 'packs') {
       void loadPacksRaw();
     }
@@ -563,6 +652,219 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (!fallback) return;
     img.dataset.fallbackApplied = '1';
     img.src = fallback;
+  }
+
+  function isMotionPreview(url?: string): boolean {
+    if (!url) return false;
+    const v = url.toLowerCase();
+    return v.includes('.mp4') || v.includes('.webm') || v.includes('.mov') || v.includes('.mkv') || v.includes('.gif');
+  }
+
+  function livePreviewPrimary(item: LiveWorkshopItem | LiveWorkshopDetails | null): string | null {
+    if (!item) return null;
+    if (item.preview_motion_remote && isMotionPreview(item.preview_motion_remote)) return item.preview_motion_remote;
+    if (item.preview_thumb_local) return imageSrc(item.preview_thumb_local);
+    if (item.preview_url_remote) return item.preview_url_remote;
+    return null;
+  }
+
+  function livePreviewFallback(item: LiveWorkshopItem | LiveWorkshopDetails | null): string | null {
+    if (!item) return null;
+    if (item.preview_thumb_local) return imageSrc(item.preview_thumb_local);
+    return item.preview_url_remote ?? null;
+  }
+
+  function isLiveSelectionMotion(): boolean {
+    const src = livePreviewPrimary(liveSelected);
+    return !!src && isMotionPreview(src);
+  }
+
+  function parseLiveDepsJson(stdout: string): LiveDepsStatus {
+    const data = JSON.parse(stdout || '{}') as LiveDepsStatus;
+    return {
+      ok: !!data.ok,
+      required: Array.isArray(data.required) ? data.required : [],
+      optional: Array.isArray(data.optional) ? data.optional : [],
+      deps: data.deps && typeof data.deps === 'object' ? data.deps : {},
+      missing: Array.isArray(data.missing) ? data.missing : [],
+      install: data.install
+    };
+  }
+
+  async function loadLiveDepsStatus(): Promise<void> {
+    liveDepsBusy = true;
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
+        args: ['livewallpapers', 'status', '--json']
+      });
+      const raw = (result.stdout ?? '').trim();
+      if (!raw) throw new Error('Empty livewallpapers status output');
+      liveDepsStatus = parseLiveDepsJson(raw);
+    } catch (e) {
+      liveDepsStatus = null;
+      lastError = String(e);
+    } finally {
+      liveDepsBusy = false;
+    }
+  }
+
+  async function installLiveDeps(): Promise<void> {
+    liveDepsBusy = true;
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
+        args: ['livewallpapers', 'install']
+      });
+      const stderr = (result.stderr ?? '').trim();
+      const stdout = (result.stdout ?? '').trim();
+      if (!result.ok) {
+        throw new Error(stderr || stdout || `install failed (exit ${result.exitCode})`);
+      }
+      pushToast('LiveWallpaper dependencies installation command executed', 'success');
+      await loadLiveDepsStatus();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveDepsBusy = false;
+    }
+  }
+
+  async function printLiveDepsInstallCommand(): Promise<void> {
+    liveDepsBusy = true;
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
+        args: ['livewallpapers', 'install', '--print']
+      });
+      const cmd = (result.stdout ?? '').trim();
+      if (!cmd) throw new Error('No install command returned');
+      kitsuneLastCommand = 'kitsune livewallpapers install --print';
+      kitsuneOutput = cmd;
+      pushToast('Manual install command generated in command output panel', 'info');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveDepsBusy = false;
+    }
+  }
+
+  async function loadLiveSearch(resetPage = false): Promise<void> {
+    liveBusy = true;
+    if (resetPage) livePage = 1;
+    try {
+      const data = await invoke<LiveSearchResponse>('kitowall_we_search', {
+        text: liveSearchText.trim() || null,
+        tags: liveTags.trim() || null,
+        sort: liveSort,
+        page: Math.max(1, Math.floor(Number(livePage) || 1)),
+        pageSize: Math.max(1, Math.floor(Number(livePageSize) || 24))
+      });
+      liveSearchItems = Array.isArray(data?.items) ? data.items : [];
+      liveSearchTotal = typeof data?.total === 'number' ? data.total : null;
+      liveSearchCached = !!data?.cached;
+      liveView = 'search';
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function loadLiveLibrary(): Promise<void> {
+    liveBusy = true;
+    try {
+      const data = await invoke<LiveLibraryResponse>('kitowall_we_library');
+      liveLibraryRoot = String(data?.root ?? '');
+      liveLibraryItems = Array.isArray(data?.items) ? data.items : [];
+      liveView = 'library';
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function openLiveFromSearch(item: LiveWorkshopItem): Promise<void> {
+    liveSelected = item;
+    liveSelectedSource = 'search';
+    liveSideOpen = true;
+    try {
+      const details = await invoke<LiveWorkshopDetails>('kitowall_we_details', {
+        publishedfileid: item.id
+      });
+      liveSelected = details;
+    } catch {
+      // Keep search item as fallback.
+    }
+  }
+
+  async function openLiveFromLibrary(item: LiveLibraryItem): Promise<void> {
+    liveSelected = item.meta ?? {
+      id: item.id,
+      title: item.id,
+      tags: []
+    };
+    liveSelectedSource = 'library';
+    liveSideOpen = true;
+    try {
+      const details = await invoke<LiveWorkshopDetails>('kitowall_we_details', {
+        publishedfileid: item.id
+      });
+      liveSelected = details;
+    } catch {
+      // Metadata fallback is already set.
+    }
+  }
+
+  async function pollLiveJob(jobId: string): Promise<void> {
+    try {
+      const status = await invoke<LiveJob>('kitowall_we_job', {jobId});
+      liveCurrentJob = status;
+      if (status.status === 'done' || status.status === 'error') {
+        if (liveJobPollTimer) {
+          clearInterval(liveJobPollTimer);
+          liveJobPollTimer = null;
+        }
+        if (status.status === 'done') {
+          pushToast(`Download completed: ${status.publishedfileid}`, 'success');
+          await loadLiveLibrary();
+        } else if (status.error) {
+          pushToast(status.error, 'error');
+        }
+      }
+    } catch (e) {
+      if (liveJobPollTimer) {
+        clearInterval(liveJobPollTimer);
+        liveJobPollTimer = null;
+      }
+      lastError = String(e);
+    }
+  }
+
+  async function downloadLiveItem(item: LiveWorkshopItem | LiveWorkshopDetails | null): Promise<void> {
+    if (!item) return;
+    liveBusy = true;
+    try {
+      const out = await invoke<LiveDownloadResponse>('kitowall_we_download', {
+        publishedfileid: item.id,
+        targetDir: liveDownloadTargetDir.trim() || null,
+        coexist: true
+      });
+      if (!out?.job_id) throw new Error('Download job was not created');
+      pushToast(`Download queued: ${item.title}`, 'success');
+      await pollLiveJob(out.job_id);
+      if (liveJobPollTimer) clearInterval(liveJobPollTimer);
+      liveJobPollTimer = setInterval(() => {
+        void pollLiveJob(out.job_id);
+      }, 2000);
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
   }
 
   function normalizeName(input: string): string {
@@ -2328,6 +2630,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   onDestroy(() => {
     if (statusPollTimer) clearInterval(statusPollTimer);
+    if (liveJobPollTimer) clearInterval(liveJobPollTimer);
   });
 </script>
 
@@ -2359,6 +2662,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     </button>
     <button class={`menu-item ${activeSection === 'kitsune' ? 'active' : ''}`} on:click={() => selectSection('kitsune')}>
       Kitsune
+    </button>
+    <button class={`menu-item ${activeSection === 'kitsune-live' ? 'active' : ''}`} on:click={() => selectSection('kitsune-live')}>
+      Kitsune LiveWallpapers
     </button>
     </div>
     <div class="sidebar-footer">
@@ -4374,6 +4680,190 @@ import {onDestroy, onMount, tick} from 'svelte';
           <p class="muted">{tr('Press "Check Installation" to validate Kitsune and load options.', 'Presiona "Validar Instalacion" para validar Kitsune y cargar opciones.')}</p>
         {/if}
       </div>
+    {:else if activeSection === 'kitsune-live'}
+      <h2>Kitsune LiveWallpapers</h2>
+      <div class="card">
+        <div class="row actions-buttons-row">
+          <button class="secondary" on:click={loadLiveDepsStatus} disabled={liveDepsBusy}>{tr('Check Dependencies', 'Validar Dependencias')}</button>
+          <button class="secondary" on:click={installLiveDeps} disabled={liveDepsBusy}>{tr('Install Dependencies', 'Instalar Dependencias')}</button>
+          <button class="secondary" on:click={printLiveDepsInstallCommand} disabled={liveDepsBusy}>{tr('Show Manual Install', 'Ver Instalacion Manual')}</button>
+        </div>
+        {#if liveDepsStatus}
+          <div class="row">
+            <span class={`badge status ${liveDepsStatus.ok ? 'ok' : 'bad'}`}>ready: {liveDepsStatus.ok ? 'true' : 'false'}</span>
+            <span class="badge">required: {liveDepsStatus.required.length}</span>
+            <span class="badge">missing: {liveDepsStatus.missing.length}</span>
+          </div>
+          {#if !liveDepsStatus.ok}
+            <div class="banner error">
+              {tr('Missing dependencies for live wallpapers. Install with the button above, or manually:', 'Faltan dependencias para live wallpapers. Instala con el boton de arriba o manualmente:')}
+              <code>{liveDepsStatus.install ?? 'sudo pacman -S --needed steamcmd'}</code>
+            </div>
+          {/if}
+          <div class="row">
+            {#each Object.entries(liveDepsStatus.deps) as [dep, ok]}
+              <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <div class="card">
+        <div class="row actions-buttons-row">
+          <button class={`secondary ${liveView === 'search' ? 'active' : ''}`} on:click={() => (liveView = 'search')} disabled={liveBusy}>{tr('Workshop Search', 'Busqueda Workshop')}</button>
+          <button class={`secondary ${liveView === 'library' ? 'active' : ''}`} on:click={() => (liveView = 'library')} disabled={liveBusy}>{tr('Downloaded', 'Descargados')}</button>
+          <button class="secondary" on:click={loadLiveLibrary} disabled={liveBusy}>{tr('Refresh Library', 'Actualizar Biblioteca')}</button>
+        </div>
+
+        {#if liveView === 'search'}
+          <div class="row actions-input-row">
+            <label for="live-search">{tr('Search', 'Buscar')}</label>
+            <input id="live-search" bind:value={liveSearchText} placeholder={tr('e.g. neon city', 'ej. neon city')} />
+            <label for="live-tags">{tr('Tags', 'Tags')}</label>
+            <input id="live-tags" bind:value={liveTags} placeholder={tr('anime, cyberpunk', 'anime, cyberpunk')} />
+            <label for="live-sort">{tr('Sort', 'Orden')}</label>
+            <select id="live-sort" bind:value={liveSort}>
+              <option value="top">top</option>
+              <option value="trend">trend</option>
+              <option value="newest">newest</option>
+              <option value="subscribed">subscribed</option>
+              <option value="updated">updated</option>
+            </select>
+            <label for="live-page">{tr('Page', 'Pagina')}</label>
+            <input id="live-page" type="number" min="1" bind:value={livePage} />
+            <button class="secondary" on:click={() => loadLiveSearch(false)} disabled={liveBusy}>{tr('Search', 'Buscar')}</button>
+          </div>
+          <div class="row">
+            <span class="badge">items: {liveSearchItems.length}</span>
+            <span class="badge">total: {liveSearchTotal ?? 'n/a'}</span>
+            <span class="badge">cache: {liveSearchCached ? 'hit' : 'fresh'}</span>
+          </div>
+          {#if liveSearchItems.length === 0}
+            <p class="muted">{tr('No workshop results yet.', 'Aun no hay resultados del workshop.')}</p>
+          {:else}
+            <div class="live-grid">
+              {#each liveSearchItems as item (item.id)}
+                <article class="live-card">
+                  <button class="live-media-button" on:click={() => openLiveFromSearch(item)}>
+                    {#if isMotionPreview(livePreviewPrimary(item) ?? undefined)}
+                      <video class="live-thumb" src={livePreviewPrimary(item) ?? ''} autoplay loop muted playsinline></video>
+                    {:else if livePreviewPrimary(item)}
+                      <img class="live-thumb" src={livePreviewPrimary(item) ?? ''} alt={item.title} />
+                    {:else}
+                      <div class="monitor-placeholder">No preview</div>
+                    {/if}
+                  </button>
+                  <div class="live-meta">
+                    <div class="live-title">{item.title}</div>
+                    <div class="row">
+                      <span class="badge">{item.id}</span>
+                      {#if item.score}<span class="badge">score: {item.score.toFixed(2)}</span>{/if}
+                    </div>
+                    <div class="row">
+                      <button class="secondary" on:click={() => openLiveFromSearch(item)} disabled={liveBusy}>{tr('Details', 'Detalles')}</button>
+                      <button on:click={() => downloadLiveItem(item)} disabled={liveBusy}>{tr('Download', 'Descargar')}</button>
+                    </div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {/if}
+        {:else}
+          <div class="row">
+            <span class="badge">root: {liveLibraryRoot || '-'}</span>
+            <span class="badge">items: {liveLibraryItems.length}</span>
+          </div>
+          {#if liveLibraryItems.length === 0}
+            <p class="muted">{tr('No downloaded live wallpapers yet.', 'Aun no hay live wallpapers descargados.')}</p>
+          {:else}
+            <div class="live-grid">
+              {#each liveLibraryItems as entry (entry.id)}
+                <article class="live-card">
+                  <button class="live-media-button" on:click={() => openLiveFromLibrary(entry)}>
+                    {#if isMotionPreview(livePreviewPrimary(entry.meta ?? null) ?? undefined)}
+                      <video class="live-thumb" src={livePreviewPrimary(entry.meta ?? null) ?? ''} autoplay loop muted playsinline></video>
+                    {:else if livePreviewPrimary(entry.meta ?? null)}
+                      <img class="live-thumb" src={livePreviewPrimary(entry.meta ?? null) ?? ''} alt={entry.id} />
+                    {:else}
+                      <div class="monitor-placeholder">No preview</div>
+                    {/if}
+                  </button>
+                  <div class="live-meta">
+                    <div class="live-title">{entry.meta?.title ?? entry.id}</div>
+                    <div class="row">
+                      <span class="badge">{entry.id}</span>
+                      <span class="badge">{entry.path}</span>
+                    </div>
+                    <div class="row">
+                      <button class="secondary" on:click={() => openLiveFromLibrary(entry)} disabled={liveBusy}>{tr('Open Panel', 'Abrir Panel')}</button>
+                    </div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {/if}
+        {/if}
+      </div>
+
+      {#if liveCurrentJob}
+        <div class="card">
+          <h3>{tr('Download Progress', 'Progreso de Descarga')}</h3>
+          <div class="row">
+            <span class={`badge status ${liveCurrentJob.status === 'done' ? 'ok' : liveCurrentJob.status === 'error' ? 'bad' : 'warn'}`}>
+              {liveCurrentJob.status}
+            </span>
+            <span class="badge">{liveCurrentJob.publishedfileid}</span>
+          </div>
+          {#if liveCurrentJob.error}
+            <div class="banner error">{liveCurrentJob.error}</div>
+          {/if}
+        </div>
+      {/if}
+
+      {#if liveSideOpen}
+        <aside class="live-sidepanel">
+          <div class="row">
+            <h3>{liveSelected?.title ?? 'LiveWallpaper'}</h3>
+            <button class="secondary" on:click={() => (liveSideOpen = false)}>{tr('Close', 'Cerrar')}</button>
+          </div>
+          <div class="live-monitor-skeleton">
+            <div class="live-monitor-screen">
+              {#if isLiveSelectionMotion() && livePreviewPrimary(liveSelected)}
+                <video class="live-monitor-media" src={livePreviewPrimary(liveSelected) ?? ''} autoplay loop muted playsinline></video>
+              {:else if livePreviewPrimary(liveSelected)}
+                <img class="live-monitor-media" src={livePreviewPrimary(liveSelected) ?? ''} alt={liveSelected?.title ?? 'preview'} />
+              {:else if livePreviewFallback(liveSelected)}
+                <img class="live-monitor-media" src={livePreviewFallback(liveSelected) ?? ''} alt={liveSelected?.title ?? 'preview'} />
+              {:else}
+                <div class="monitor-placeholder">No preview</div>
+              {/if}
+            </div>
+          </div>
+          <div class="live-details">
+            <div class="row"><span class="badge">id: {liveSelected?.id ?? '-'}</span></div>
+            <div class="row"><span class="badge">author: {liveSelected?.author_name ?? '-'}</span></div>
+            <div class="row"><span class="badge">updated: {liveSelected?.time_updated ? formatTimestamp(liveSelected.time_updated * 1000) : '-'}</span></div>
+            {#if liveSelected && 'file_size' in liveSelected && liveSelected.file_size}
+              <div class="row"><span class="badge">size: {(liveSelected.file_size / (1024 * 1024)).toFixed(1)} MB</span></div>
+            {/if}
+            <div class="row">
+              {#each liveSelected?.tags ?? [] as tag}
+                <span class="badge">{tag}</span>
+              {/each}
+            </div>
+            {#if liveSelected && 'description_short' in liveSelected && liveSelected.description_short}
+              <p class="muted">{liveSelected.description_short}</p>
+            {/if}
+            <div class="row">
+              <button on:click={() => downloadLiveItem(liveSelected)} disabled={liveBusy}>{tr('Download', 'Descargar')}</button>
+              {#if liveSelected && 'item_url' in liveSelected && liveSelected.item_url}
+                <a class="secondary live-link" href={liveSelected.item_url} target="_blank" rel="noreferrer">Steam</a>
+              {/if}
+              <span class="badge">source: {liveSelectedSource ?? '-'}</span>
+            </div>
+          </div>
+        </aside>
+      {/if}
     {/if}
 
     {#if showResolutionModal}

@@ -16,7 +16,7 @@ export interface ExecOptions {
 export function run(cmd: string, args: string[] = [], options: ExecOptions = {}): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const isFlatpak = Boolean(process.env.FLATPAK_ID);
-    const hostCommands = new Set(['swww', 'swww-daemon', 'hyprctl', 'systemctl', 'which', 'xdg-open']);
+    const hostCommands = new Set(['swww', 'swww-daemon', 'hyprctl', 'systemctl', 'which', 'xdg-open', 'steamcmd']);
     const useHost = isFlatpak && hostCommands.has(cmd);
     const finalCmd = useHost ? 'flatpak-spawn' : cmd;
     const finalArgs = useHost ? ['--host', cmd, ...args] : args;

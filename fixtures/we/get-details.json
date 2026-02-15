@@ -1,0 +1,28 @@
+{
+  "response": {
+    "publishedfiledetails": [
+      {
+        "publishedfileid": "3000000001",
+        "title": "Neon Tokyo Rain",
+        "creator": "76561198000000001",
+        "preview_url": "https://cdn.example.com/we/3000000001/thumb.jpg",
+        "short_description": "Rainy cyberpunk avenue with animated signs.",
+        "time_updated": 1739000000,
+        "file_size": 524288000,
+        "score": 0.94,
+        "tags": [
+          {"tag": "Anime"},
+          {"tag": "Cyberpunk"}
+        ],
+        "additional_previews": [
+          {
+            "preview_url": "https://cdn.example.com/we/3000000001/preview-1.jpg"
+          },
+          {
+            "preview_url": "https://cdn.example.com/we/3000000001/preview-2.jpg"
+          }
+        ]
+      }
+    ]
+  }
+}

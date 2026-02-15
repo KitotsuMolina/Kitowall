@@ -1510,6 +1510,157 @@ fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
     }))
 }
 
+#[tauri::command]
+fn kitowall_we_search(
+    text: Option<String>,
+    tags: Option<String>,
+    sort: Option<String>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+    days: Option<u32>,
+    fixtures: Option<bool>
+) -> Result<Json, String> {
+    let mut args: Vec<String> = vec!["we".into(), "search".into()];
+    if let Some(v) = text {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--text".into());
+            args.push(s);
+        }
+    }
+    if let Some(v) = tags {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--tags".into());
+            args.push(s);
+        }
+    }
+    if let Some(v) = sort {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--sort".into());
+            args.push(s);
+        }
+    }
+    if let Some(v) = page {
+        args.push("--page".into());
+        args.push(v.to_string());
+    }
+    if let Some(v) = page_size {
+        args.push("--page-size".into());
+        args.push(v.to_string());
+    }
+    if let Some(v) = days {
+        args.push("--days".into());
+        args.push(v.to_string());
+    }
+    if fixtures.unwrap_or(false) {
+        args.push("--fixtures".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_kitowall(&refs).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_details(publishedfileid: String, fixtures: Option<bool>) -> Result<Json, String> {
+    if publishedfileid.trim().is_empty() {
+        return Err("publishedfileid is required".to_string());
+    }
+    let mut args: Vec<String> = vec!["we".into(), "details".into(), publishedfileid.trim().to_string()];
+    if fixtures.unwrap_or(false) {
+        args.push("--fixtures".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_kitowall(&refs).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_download(
+    publishedfileid: String,
+    target_dir: Option<String>,
+    steam_user: Option<String>,
+    steam_password_env: Option<String>,
+    steam_guard: Option<String>,
+    coexist: Option<bool>
+) -> Result<Json, String> {
+    if publishedfileid.trim().is_empty() {
+        return Err("publishedfileid is required".to_string());
+    }
+    let mut args: Vec<String> = vec!["we".into(), "download".into(), publishedfileid.trim().to_string()];
+    if let Some(v) = target_dir {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--target-dir".into());
+            args.push(s);
+        }
+    }
+    if let Some(v) = steam_user {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--steam-user".into());
+            args.push(s);
+        }
+    }
+    if let Some(v) = steam_password_env {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--steam-pass-env".into());
+            args.push(s);
+        }
+    }
+    if let Some(v) = steam_guard {
+        let s = v.trim().to_string();
+        if !s.is_empty() {
+            args.push("--steam-guard".into());
+            args.push(s);
+        }
+    }
+    if coexist.unwrap_or(false) {
+        args.push("--coexist".into());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_kitowall(&refs).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_job(job_id: String) -> Result<Json, String> {
+    if job_id.trim().is_empty() {
+        return Err("job_id is required".to_string());
+    }
+    run_kitowall(&["we", "job", job_id.trim()]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_jobs(limit: Option<u32>) -> Result<Json, String> {
+    let mut args: Vec<String> = vec!["we".into(), "jobs".into()];
+    if let Some(v) = limit {
+        args.push("--limit".into());
+        args.push(v.to_string());
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_kitowall(&refs).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_library() -> Result<Json, String> {
+    run_kitowall(&["we", "library"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_coexist_enter() -> Result<Json, String> {
+    run_kitowall(&["we", "coexist", "enter"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_coexist_exit() -> Result<Json, String> {
+    run_kitowall(&["we", "coexist", "exit"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_coexist_status() -> Result<Json, String> {
+    run_kitowall(&["we", "coexist", "status"]).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -1547,7 +1698,16 @@ fn main() {
             kitowall_pack_upsert_local,
             kitowall_pick_folder,
             kitowall_kitsune_status,
-            kitowall_kitsune_run
+            kitowall_kitsune_run,
+            kitowall_we_search,
+            kitowall_we_details,
+            kitowall_we_download,
+            kitowall_we_job,
+            kitowall_we_jobs,
+            kitowall_we_library,
+            kitowall_we_coexist_enter,
+            kitowall_we_coexist_exit,
+            kitowall_we_coexist_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
