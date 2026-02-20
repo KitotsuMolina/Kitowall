@@ -253,6 +253,21 @@ import {onDestroy, onMount, tick} from 'svelte';
   type LiveProvider = 'moewalls' | 'motionbgs';
   type LiveVariant = 'hd' | '4k';
   type LiveQuality = 'auto' | 'hd' | '4k';
+  type LiveProfile = 'performance' | 'balanced' | 'quality';
+
+  type LiveVideoPlayConfig = {
+    keep_services: boolean;
+    mute_audio: boolean;
+    profile: LiveProfile;
+    display_fps: number | null;
+    seamless_loop: boolean;
+    loop_crossfade: boolean;
+    loop_crossfade_seconds: number;
+    optimize: boolean;
+    proxy_width: number;
+    proxy_fps: number;
+    proxy_crf: number;
+  };
 
   type LiveIndexItem = {
     id: string;
@@ -268,6 +283,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     favorite: boolean;
     added_at: number;
     last_applied_at: number;
+    video_config?: LiveVideoPlayConfig;
   };
 
   type LiveBrowseItemV2 = {
@@ -541,18 +557,34 @@ import {onDestroy, onMount, tick} from 'svelte';
   let liveV2Quality: LiveQuality = 'auto';
   let liveV2Monitor = '';
   let liveV2Doctor: {ok: boolean; deps: Record<string, boolean>; fix: string[]} | null = null;
-  let liveV2RunnerMode: 'cargo' | 'bin' = 'cargo';
-  let liveV2RunnerCargoDir = '';
   let liveV2RunnerBin = 'kitsune-livewallpaper';
   let liveV2ApplyDefaults = {
+    keep_services: false,
+    mute_audio: false,
     profile: 'quality',
+    display_fps: null as number | null,
     seamless_loop: true,
     loop_crossfade: true,
     loop_crossfade_seconds: 0.35,
     optimize: true,
+    proxy_width_hd: 1920,
+    proxy_width_4k: 3840,
     proxy_fps: 60,
     proxy_crf_hd: 18,
     proxy_crf_4k: 16
+  };
+  let liveV2DetailConfig: LiveVideoPlayConfig = {
+    keep_services: false,
+    mute_audio: false,
+    profile: 'quality',
+    display_fps: null,
+    seamless_loop: true,
+    loop_crossfade: true,
+    loop_crossfade_seconds: 0.35,
+    optimize: true,
+    proxy_width: 1920,
+    proxy_fps: 60,
+    proxy_crf: 18
   };
   let packTab: 'wallhaven' | 'unsplash' | 'reddit' | 'generic_json' | 'static_url' | 'local' = 'wallhaven';
   let rawPacksByName: Record<string, Record<string, unknown>> = {};
@@ -754,6 +786,34 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function tr(en: string, es: string): string {
     return uiLanguage === 'es' ? es : en;
+  }
+
+  function isLiveServicesLocked(): boolean {
+    return !!liveAuthority?.active;
+  }
+
+  function liveServicesLockMessage(): string {
+    return tr(
+      'LiveWallpapers is active. Rotation/timer/system service actions are disabled in this module.',
+      'LiveWallpapers esta activo. Las acciones de rotacion/timer/servicios del sistema estan deshabilitadas en este modulo.'
+    );
+  }
+
+  function isKitsuneCommandBlockedByLive(args: string[]): boolean {
+    if (!isLiveServicesLocked()) return false;
+    const cmd = String(args[0] ?? '').trim();
+    const sub = String(args[1] ?? '').trim();
+    if (!cmd) return false;
+
+    if (cmd === 'help' || cmd === 'status' || cmd === 'layer-status' || cmd === 'logs') return false;
+    if (cmd === 'doctor') return args.includes('--fix');
+    if (cmd === 'monitors' && sub === 'list') return false;
+    if (cmd === 'instances' && (sub === 'list' || sub === 'status')) return false;
+    if (cmd === 'profiles' && (sub === 'list' || sub === 'show')) return false;
+    if (cmd === 'group' && (sub === 'validate' || sub === 'list-layers')) return false;
+    if (cmd === 'autostart' && (sub === 'status' || sub === 'list')) return false;
+
+    return true;
   }
 
   function setUiLanguage(value: string): void {
@@ -1313,21 +1373,25 @@ import {onDestroy, onMount, tick} from 'svelte';
       }
     }
     liveV2ThumbDataStatus = nextStatus;
-
-    for (const item of slice) {
-      if (String(livePreviewDataUrlById[item.id] ?? '').trim()) continue;
-      void (async () => {
-        const candidates = liveV2LibraryPreviewCandidates(item);
-        for (const c of candidates) {
-          const dataUrl = await readLocalDataUrl(c);
-          if (!dataUrl) continue;
-          livePreviewDataUrlById = {...livePreviewDataUrlById, [item.id]: dataUrl};
-          liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'ready'};
-          return;
-        }
-        liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'failed'};
-      })();
+    const queue = slice.filter((item) => !String(livePreviewDataUrlById[item.id] ?? '').trim());
+    const concurrency = 6;
+    const workers: Promise<void>[] = [];
+    const runOne = async (item: LiveIndexItem): Promise<void> => {
+      const candidates = liveV2LibraryPreviewCandidates(item);
+      for (const c of candidates) {
+        const dataUrl = await readLocalDataUrl(c);
+        if (!dataUrl) continue;
+        livePreviewDataUrlById = {...livePreviewDataUrlById, [item.id]: dataUrl};
+        liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'ready'};
+        return;
+      }
+      liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'failed'};
+    };
+    for (let i = 0; i < queue.length; i += concurrency) {
+      const batch = queue.slice(i, i + concurrency);
+      workers.push(Promise.all(batch.map(runOne)).then(() => {}));
     }
+    void Promise.all(workers);
   }
 
   function activeMonitorsForWallpaper(id: string): string[] {
@@ -1880,7 +1944,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         ok: boolean;
         index?: {
           apply_defaults?: typeof liveV2ApplyDefaults;
-          runner?: {mode?: 'cargo' | 'bin'; cargo_project_dir?: string; bin_name?: string};
+          runner?: {bin_name?: string};
         };
       };
       const index = out?.index;
@@ -1888,8 +1952,6 @@ import {onDestroy, onMount, tick} from 'svelte';
         liveV2ApplyDefaults = {...liveV2ApplyDefaults, ...index.apply_defaults};
       }
       if (index?.runner) {
-        liveV2RunnerMode = index.runner.mode ?? 'cargo';
-        liveV2RunnerCargoDir = index.runner.cargo_project_dir ?? '';
         liveV2RunnerBin = index.runner.bin_name ?? 'kitsune-livewallpaper';
       }
     } catch (e) {
@@ -1901,7 +1963,8 @@ import {onDestroy, onMount, tick} from 'svelte';
     try {
       await liveV2Run(['init']);
       await loadLiveV2Config();
-      if (liveV2Tab === 'library' && !liveV2LibraryLoaded) {
+      await loadLiveV2Doctor();
+      if (!liveV2LibraryLoaded && !liveV2Busy) {
         void loadLiveV2Library();
       }
     } catch (e) {
@@ -1961,6 +2024,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (liveV2SelectedLibrary) {
         liveV2SelectedLibrary = liveV2Items.find(v => v.id === liveV2SelectedLibrary?.id) ?? null;
         if (!liveV2SelectedLibrary) liveV2LibrarySideOpen = false;
+        else syncLiveV2DetailConfig(liveV2SelectedLibrary);
       }
       liveV2LibraryLoaded = true;
       if (!liveV2Monitor && liveMonitorOptions().length > 0) {
@@ -1974,14 +2038,118 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
   }
 
+  function liveV2DefaultConfigForItem(item: LiveIndexItem): LiveVideoPlayConfig {
+    return {
+      keep_services: !!liveV2ApplyDefaults.keep_services,
+      mute_audio: !!liveV2ApplyDefaults.mute_audio,
+      profile: liveV2ApplyDefaults.profile,
+      display_fps: liveV2ApplyDefaults.display_fps,
+      seamless_loop: !!liveV2ApplyDefaults.seamless_loop,
+      loop_crossfade: !!liveV2ApplyDefaults.loop_crossfade,
+      loop_crossfade_seconds: Number(liveV2ApplyDefaults.loop_crossfade_seconds) || 0.35,
+      optimize: !!liveV2ApplyDefaults.optimize,
+      proxy_width: item.variant === '4k'
+        ? (Number(liveV2ApplyDefaults.proxy_width_4k) || 3840)
+        : (Number(liveV2ApplyDefaults.proxy_width_hd) || 1920),
+      proxy_fps: Number(liveV2ApplyDefaults.proxy_fps) || 60,
+      proxy_crf: item.variant === '4k'
+        ? (Number(liveV2ApplyDefaults.proxy_crf_4k) || 16)
+        : (Number(liveV2ApplyDefaults.proxy_crf_hd) || 18)
+    };
+  }
+
+  function syncLiveV2DetailConfig(item: LiveIndexItem): void {
+    const fallback = liveV2DefaultConfigForItem(item);
+    const cfg = item.video_config;
+    liveV2DetailConfig = {
+      keep_services: cfg?.keep_services ?? fallback.keep_services,
+      mute_audio: cfg?.mute_audio ?? fallback.mute_audio,
+      profile: cfg?.profile ?? fallback.profile,
+      display_fps: cfg?.display_fps ?? fallback.display_fps,
+      seamless_loop: cfg?.seamless_loop ?? fallback.seamless_loop,
+      loop_crossfade: cfg?.loop_crossfade ?? fallback.loop_crossfade,
+      loop_crossfade_seconds: Number(cfg?.loop_crossfade_seconds ?? fallback.loop_crossfade_seconds) || 0.35,
+      optimize: cfg?.optimize ?? fallback.optimize,
+      proxy_width: Number(cfg?.proxy_width ?? fallback.proxy_width) || fallback.proxy_width,
+      proxy_fps: Number(cfg?.proxy_fps ?? fallback.proxy_fps) || fallback.proxy_fps,
+      proxy_crf: Number(cfg?.proxy_crf ?? fallback.proxy_crf) || fallback.proxy_crf
+    };
+  }
+
   function openLiveV2LibraryDetails(item: LiveIndexItem): void {
     liveV2SelectedLibrary = item;
+    syncLiveV2DetailConfig(item);
     liveV2LibrarySideOpen = true;
+    if (!liveV2LibraryDataUrl(item.id)) {
+      liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'pending'};
+      void preloadLiveV2LibraryPreviewData([item]);
+    }
   }
 
   function closeLiveV2LibraryDetails(): void {
     liveV2LibrarySideOpen = false;
     liveV2SelectedLibrary = null;
+  }
+
+  async function saveLiveV2WallpaperConfig(id: string): Promise<void> {
+    const displayFpsArg = liveV2DetailConfig.display_fps === null ? 'off' : String(Math.max(1, Math.floor(Number(liveV2DetailConfig.display_fps) || 1)));
+    await liveV2Run([
+      'config',
+      'wallpaper',
+      '--id', id,
+      '--keep-services', String(!!liveV2DetailConfig.keep_services),
+      '--mute-audio', String(!!liveV2DetailConfig.mute_audio),
+      '--profile', liveV2DetailConfig.profile,
+      '--display-fps', displayFpsArg,
+      '--seamless-loop', String(!!liveV2DetailConfig.seamless_loop),
+      '--loop-crossfade', String(!!liveV2DetailConfig.loop_crossfade),
+      '--loop-crossfade-seconds', String(Math.max(0, Number(liveV2DetailConfig.loop_crossfade_seconds) || 0.35)),
+      '--optimize', String(!!liveV2DetailConfig.optimize),
+      '--proxy-width', String(Math.max(320, Math.floor(Number(liveV2DetailConfig.proxy_width) || 1920))),
+      '--proxy-fps', String(Math.max(1, Math.floor(Number(liveV2DetailConfig.proxy_fps) || 60))),
+      '--proxy-crf', String(Math.min(51, Math.max(1, Math.floor(Number(liveV2DetailConfig.proxy_crf) || 18))))
+    ]);
+  }
+
+  async function saveSelectedLiveV2Config(): Promise<void> {
+    if (!liveV2SelectedLibrary) return;
+    liveV2Busy = true;
+    try {
+      await saveLiveV2WallpaperConfig(liveV2SelectedLibrary.id);
+      await loadLiveV2Library();
+      pushToast(tr('Wallpaper config saved', 'Configuracion del wallpaper guardada'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function applySelectedLiveV2Wallpaper(updateConfig = false): Promise<void> {
+    if (!liveV2SelectedLibrary) return;
+    const monitor = liveV2Monitor.trim();
+    if (!monitor) {
+      pushToast(tr('Select a monitor first', 'Selecciona un monitor primero'), 'error');
+      return;
+    }
+    liveV2Busy = true;
+    try {
+      await saveLiveV2WallpaperConfig(liveV2SelectedLibrary.id);
+      await liveV2Run(['apply', liveV2SelectedLibrary.id, '--monitor', monitor, '--quality', liveV2Quality]);
+      await loadLiveV2Library();
+      pushToast(
+        updateConfig
+          ? tr(`Config updated on ${monitor}`, `Configuracion actualizada en ${monitor}`)
+          : tr(`Applied on ${monitor}`, `Aplicado en ${monitor}`),
+        'success'
+      );
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
   }
 
   async function browseLiveV2(): Promise<void> {
@@ -2270,13 +2438,25 @@ import {onDestroy, onMount, tick} from 'svelte';
       await liveV2Run([
         'config',
         'runner',
-        '--mode', liveV2RunnerMode,
-        '--cargo-project-dir', liveV2RunnerCargoDir.trim(),
         '--bin-name', liveV2RunnerBin.trim()
       ]);
       await loadLiveV2Config();
       await loadLiveV2Doctor();
       pushToast(tr('Runner config saved', 'Configuracion de runner guardada'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function installLiveV2Dependencies(): Promise<void> {
+    liveV2Busy = true;
+    try {
+      const out = await liveV2Run(['doctor', '--fix']) as {ok: boolean; deps: Record<string, boolean>; fix: string[]};
+      liveV2Doctor = out;
+      pushToast(tr('Dependencies install command executed', 'Comando de instalacion de dependencias ejecutado'), 'success');
     } catch (e) {
       lastError = String(e);
       pushToast(String(e), 'error');
@@ -2291,11 +2471,16 @@ import {onDestroy, onMount, tick} from 'svelte';
       await liveV2Run([
         'config',
         'apply-defaults',
+        '--keep-services', String(!!liveV2ApplyDefaults.keep_services),
+        '--mute-audio', String(!!liveV2ApplyDefaults.mute_audio),
         '--profile', liveV2ApplyDefaults.profile,
+        '--display-fps', liveV2ApplyDefaults.display_fps === null ? 'off' : String(Math.max(1, Math.floor(Number(liveV2ApplyDefaults.display_fps) || 1))),
         '--seamless-loop', String(!!liveV2ApplyDefaults.seamless_loop),
         '--loop-crossfade', String(!!liveV2ApplyDefaults.loop_crossfade),
         '--loop-crossfade-seconds', String(liveV2ApplyDefaults.loop_crossfade_seconds),
         '--optimize', String(!!liveV2ApplyDefaults.optimize),
+        '--proxy-width-hd', String(Math.max(320, Math.floor(Number(liveV2ApplyDefaults.proxy_width_hd) || 1920))),
+        '--proxy-width-4k', String(Math.max(320, Math.floor(Number(liveV2ApplyDefaults.proxy_width_4k) || 3840))),
         '--proxy-fps', String(liveV2ApplyDefaults.proxy_fps),
         '--proxy-crf-hd', String(liveV2ApplyDefaults.proxy_crf_hd),
         '--proxy-crf-4k', String(liveV2ApplyDefaults.proxy_crf_4k)
@@ -3488,6 +3673,10 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function saveSettings(): Promise<void> {
+    if (isLiveServicesLocked()) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
     busySettings = true;
     lastError = null;
     try {
@@ -3525,6 +3714,10 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function applyTimerInterval(): Promise<void> {
+    if (isLiveServicesLocked()) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
     busySettings = true;
     lastError = null;
     try {
@@ -3645,6 +3838,10 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function runKitsuneCommand(args: string[]): Promise<void> {
+    if (isKitsuneCommandBlockedByLive(args)) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
     kitsuneBusy = true;
     lastError = null;
     kitsuneLastCommand = `kitsune ${args.join(' ')}`.trim();
@@ -3838,6 +4035,10 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function runNext(force = false) {
+    if (isLiveServicesLocked()) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
     busy = true;
     lastError = null;
     try {
@@ -3856,6 +4057,10 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function runNextForSelectedPack() {
+    if (isLiveServicesLocked()) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
     if (selectedPack === 'all') return;
     busy = true;
     lastError = null;
@@ -3879,6 +4084,10 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function runRepair() {
+    if (isLiveServicesLocked()) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
     busy = true;
     lastError = null;
     try {
@@ -4171,6 +4380,9 @@ import {onDestroy, onMount, tick} from 'svelte';
           <input id="namespace-input" bind:value={namespace} placeholder="kitowall" />
           <button class="secondary" on:click={runHealth} disabled={busy}>{tr('Refresh Health', 'Actualizar Health')}</button>
         </div>
+        {#if isLiveServicesLocked()}
+          <div class="banner warn">{liveServicesLockMessage()}</div>
+        {/if}
       </div>
 
       <h2>{tr('Health', 'Health')}</h2>
@@ -4241,7 +4453,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                 </span>
                 <code>kitowall init --namespace kitowall --apply --force</code>
               </div>
-              <button on:click={runRepair} disabled={busy}>{tr('Repair (init --apply)', 'Reparar (init --apply)')}</button>
+              <button on:click={runRepair} disabled={busy || isLiveServicesLocked()}>{tr('Repair (init --apply)', 'Reparar (init --apply)')}</button>
             </div>
           {/if}
         {:else}
@@ -4252,8 +4464,8 @@ import {onDestroy, onMount, tick} from 'svelte';
       <h2>{tr('Actions', 'Acciones')}</h2>
       <div class="card">
         <div class="row">
-          <button on:click={() => runNext(false)} disabled={busy}>{tr('Next', 'Siguiente')}</button>
-          <button class="secondary" on:click={() => runNext(true)} disabled={busy}>{tr('Rotate Now', 'Rotar Ahora')}</button>
+          <button on:click={() => runNext(false)} disabled={busy || isLiveServicesLocked()}>{tr('Next', 'Siguiente')}</button>
+          <button class="secondary" on:click={() => runNext(true)} disabled={busy || isLiveServicesLocked()}>{tr('Rotate Now', 'Rotar Ahora')}</button>
           <button class="secondary" on:click={runStatus} disabled={busy}>{tr('Refresh Status', 'Actualizar Estado')}</button>
         </div>
         <h3>{tr('Download', 'Descarga')}</h3>
@@ -4297,7 +4509,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         </div>
         <div class="row actions-buttons-row">
           {#if selectedPack !== 'all'}
-            <button class="secondary next-pack-btn" on:click={runNextForSelectedPack} disabled={busy}>
+            <button class="secondary next-pack-btn" on:click={runNextForSelectedPack} disabled={busy || isLiveServicesLocked()}>
               {tr('Next', 'Siguiente')} ({selectedPack})
             </button>
             <button class="secondary" on:click={runOpenPackFolder} disabled={busy}>{tr('Open Folder', 'Abrir Carpeta')}</button>
@@ -4375,6 +4587,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     {:else if activeSection === 'settings'}
       <h2>{tr('General Settings', 'Configuracion General')}</h2>
       <div class="card">
+        {#if isLiveServicesLocked()}
+          <div class="banner warn">{liveServicesLockMessage()}</div>
+        {/if}
         <div class="row actions-input-row language-row">
           <span class="field-label">{tr('Language', 'Idioma')}</span>
           <div class="gs-select language-select">
@@ -4517,8 +4732,8 @@ import {onDestroy, onMount, tick} from 'svelte';
         </div>
         <div class="row actions-buttons-row settings-actions-row">
           <button class="secondary" on:click={loadSettings} disabled={busySettings}>{tr('Reload', 'Recargar')}</button>
-          <button on:click={saveSettings} disabled={busySettings}>{tr('Save Settings', 'Guardar Configuracion')}</button>
-          <button class="secondary" on:click={applyTimerInterval} disabled={busySettings}>{tr('Apply Timer', 'Aplicar Timer')}</button>
+          <button on:click={saveSettings} disabled={busySettings || isLiveServicesLocked()}>{tr('Save Settings', 'Guardar Configuracion')}</button>
+          <button class="secondary" on:click={applyTimerInterval} disabled={busySettings || isLiveServicesLocked()}>{tr('Apply Timer', 'Aplicar Timer')}</button>
           <button class="secondary" on:click={loadTimerStatus} disabled={busySettings}>{tr('Refresh Timer Status', 'Actualizar Estado del Timer')}</button>
         </div>
         {#if timerStatus}
@@ -5474,6 +5689,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     {:else if activeSection === 'kitsune'}
       <h2>Kitsune</h2>
       <div class="card">
+        {#if isLiveServicesLocked()}
+          <div class="banner warn">{liveServicesLockMessage()}</div>
+        {/if}
         <div class="row actions-buttons-row">
           <button class="secondary" on:click={loadKitsuneStatus} disabled={kitsuneBusy}>
             {tr('Check Installation', 'Validar Instalacion')}
@@ -5511,7 +5729,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <div class="card">
                   <h3>Lifecycle</h3>
                   <div class="row">
-                    <button on:click={() => runKitsuneCommand(['install', ...(kitsuneInstallPackages ? ['--install-packages'] : [])])} disabled={kitsuneBusy}>Install</button>
+                    <button on:click={() => runKitsuneCommand(['install', ...(kitsuneInstallPackages ? ['--install-packages'] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>Install</button>
                     <label class="inline-check"><input type="checkbox" bind:checked={kitsuneInstallPackages} /> install packages</label>
                   </div>
                   <div class="row">
@@ -5618,14 +5836,14 @@ import {onDestroy, onMount, tick} from 'svelte';
                       if (kitsuneStartProfilesSelected.length > 0) { args.push('--profiles', kitsuneStartProfilesSelected.join(',')); }
                       args.push('--target', kitsuneStartTarget, '--mode', kitsuneStartMode);
                       void runKitsuneCommand(args);
-                    }} disabled={kitsuneBusy}>Start</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Stop</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['restart'])} disabled={kitsuneBusy}>Restart</button>
+                    }} disabled={kitsuneBusy || isLiveServicesLocked()}>Start</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>Stop</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['restart'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Restart</button>
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>Status</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>Doctor</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--fix'])} disabled={kitsuneBusy}>Doctor --fix</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--fix'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Doctor --fix</button>
                   </div>
                 </div>
               </div>
@@ -5667,17 +5885,17 @@ import {onDestroy, onMount, tick} from 'svelte';
                   <h3>Spectrum Lab</h3>
                   <p class="muted">{tr('Use runtime test + test-load to validate profile changes before standard run.', 'Usa runtime test + test-load para validar cambios antes de usar modo standard.')}</p>
                   <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy}>Runtime Test</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy}>Runtime Standard</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Runtime Test</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Runtime Standard</button>
                   </div>
                   <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy}>Rotate Next</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'prev', '--apply'])} disabled={kitsuneBusy}>Rotate Prev</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'shuffle'])} disabled={kitsuneBusy}>Rotate Shuffle</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Rotate Next</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'prev', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Rotate Prev</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'shuffle'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Rotate Shuffle</button>
                   </div>
                   <div class="row">
                     <input type="number" bind:value={kitsuneRotationSeconds} min="1" />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotation', String(Math.max(1, Math.floor(Number(kitsuneRotationSeconds) || 1)))])} disabled={kitsuneBusy}>Set Rotation Seconds</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotation', String(Math.max(1, Math.floor(Number(kitsuneRotationSeconds) || 1)))])} disabled={kitsuneBusy || isLiveServicesLocked()}>Set Rotation Seconds</button>
                   </div>
                   <div class="row">
                     <input bind:value={kitsuneProfileListValue} placeholder="p1,p2,p3" />
@@ -6105,16 +6323,16 @@ import {onDestroy, onMount, tick} from 'svelte';
                         </div>
                       {/if}
                     </div>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'enable', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Autostart Enable</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'disable', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Autostart Disable</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'enable', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>Autostart Enable</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'disable', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>Autostart Disable</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'status', ...(kitsuneAutostartMonitor.trim() ? ['--monitor', kitsuneAutostartMonitor.trim()] : [])])} disabled={kitsuneBusy}>Autostart Status</button>
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => runKitsuneCommand(['autostart', 'list'])} disabled={kitsuneBusy}>Autostart List</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['clean', '--force'])} disabled={kitsuneBusy}>Clean --force</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['reset', '--restart'])} disabled={kitsuneBusy}>Reset --restart</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['clean', '--force'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Clean --force</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['reset', '--restart'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Reset --restart</button>
                     <input type="number" bind:value={kitsuneBenchmarkSeconds} min="1" />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['benchmark', String(Math.max(1, Math.floor(Number(kitsuneBenchmarkSeconds) || 1)))])} disabled={kitsuneBusy}>Benchmark</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['benchmark', String(Math.max(1, Math.floor(Number(kitsuneBenchmarkSeconds) || 1)))])} disabled={kitsuneBusy || isLiveServicesLocked()}>Benchmark</button>
                   </div>
                 </div>
               </div>
@@ -6169,6 +6387,31 @@ import {onDestroy, onMount, tick} from 'svelte';
     {:else if activeSection === 'kitsune-live'}
       <section class="live-module">
       <h2>LiveWallpapers</h2>
+      <div class="card">
+        <h3>{tr('Runtime Status', 'Estado del Runtime')}</h3>
+        <div class="row">
+          <span class={`badge status ${liveV2Doctor?.ok ? 'ok' : 'bad'}`}>{tr('ready', 'listo')}: {liveV2Doctor?.ok ? 'true' : 'false'}</span>
+          <span class="badge">bin: {liveV2RunnerBin || 'kitsune-livewallpaper'}</span>
+        </div>
+        <div class="row actions-buttons-row">
+          <button class="secondary" on:click={loadLiveV2Doctor} disabled={liveV2Busy}>{tr('Check Status', 'Validar Estado')}</button>
+          <button class="secondary" on:click={installLiveV2Dependencies} disabled={liveV2Busy}>{tr('Install Dependencies', 'Instalar Dependencias')}</button>
+        </div>
+        {#if liveV2Doctor}
+          <div class="row">
+            {#each Object.entries(liveV2Doctor.deps || {}) as [dep, ok]}
+              <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
+            {/each}
+          </div>
+        {/if}
+        {#if liveV2Doctor && (liveV2Doctor.fix?.length ?? 0) > 0}
+          <div class="banner warn">
+            {#each liveV2Doctor.fix as line}
+              <div>{line}</div>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <div class="card">
         <div class="row actions-buttons-row">
           <button class={`secondary ${liveV2Tab === 'library' ? 'active' : ''}`} on:click={() => selectLiveV2Tab('library')}>{tr('Library', 'Biblioteca')}</button>
@@ -6275,15 +6518,31 @@ import {onDestroy, onMount, tick} from 'svelte';
             </div>
             <div class="live-monitor-skeleton">
               <div class="live-monitor-screen">
-                <img
-                  class="live-monitor-media"
-                  src={liveV2LibraryPreviewSrc(liveV2SelectedLibrary)}
-                  alt={liveV2SelectedLibrary.title}
-                  data-local-path={liveV2SelectedLibrary.thumb_path}
-                  data-fallbacks={JSON.stringify(liveV2LibraryPreviewCandidates(liveV2SelectedLibrary))}
-                  data-fallback-index="1"
-                  on:error={onLiveLibraryPreviewError}
-                />
+                {#if liveV2LibraryDataUrl(liveV2SelectedLibrary.id)}
+                  <img
+                    class="live-monitor-media"
+                    src={liveV2LibraryDataUrl(liveV2SelectedLibrary.id)}
+                    alt={liveV2SelectedLibrary.title}
+                    data-local-path={liveV2SelectedLibrary.thumb_path}
+                    data-fallbacks={JSON.stringify(liveV2LibraryPreviewCandidates(liveV2SelectedLibrary))}
+                    data-fallback-index="1"
+                    on:error={onLiveLibraryPreviewError}
+                  />
+                {:else if liveV2ThumbDataStatus[liveV2SelectedLibrary.id] !== 'failed'}
+                  <div class="live-skeleton-block" style="width:100%;height:100%;"></div>
+                {:else if liveV2LibraryPreviewSrc(liveV2SelectedLibrary)}
+                  <img
+                    class="live-monitor-media"
+                    src={liveV2LibraryPreviewSrc(liveV2SelectedLibrary)}
+                    alt={liveV2SelectedLibrary.title}
+                    data-local-path={liveV2SelectedLibrary.thumb_path}
+                    data-fallbacks={JSON.stringify(liveV2LibraryPreviewCandidates(liveV2SelectedLibrary))}
+                    data-fallback-index="1"
+                    on:error={onLiveLibraryPreviewError}
+                  />
+                {:else}
+                  <div class="monitor-placeholder">No preview</div>
+                {/if}
               </div>
             </div>
             <div class="live-details">
@@ -6317,13 +6576,70 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <span class="badge">{tr('Added', 'Agregado')}: {formatTimestamp(liveV2SelectedLibrary.added_at ? liveV2SelectedLibrary.added_at * 1000 : null)}</span>
                 <span class="badge">{tr('Last apply', 'Ultimo apply')}: {formatTimestamp(liveV2SelectedLibrary.last_applied_at ? liveV2SelectedLibrary.last_applied_at * 1000 : null)}</span>
               </div>
+              <div class="live-form-grid">
+                <div class="live-field">
+                  <label for="livev2-detail-monitor">{tr('Monitor', 'Monitor')}</label>
+                  <select id="livev2-detail-monitor" bind:value={liveV2Monitor}>
+                    {#if liveMonitorOptions().length === 0}
+                      <option value="">{tr('no outputs', 'sin salidas')}</option>
+                    {:else}
+                      {#each liveMonitorOptions() as mon}
+                        <option value={mon}>{mon}</option>
+                      {/each}
+                    {/if}
+                  </select>
+                </div>
+              </div>
               <div class="row">
-                <button on:click={() => applyLiveV2(liveV2SelectedLibrary.id)} disabled={liveV2Busy}>{tr('Apply', 'Aplicar')}</button>
+                <button on:click={saveSelectedLiveV2Config} disabled={liveV2Busy}>{tr('Save Config', 'Guardar Config')}</button>
+                <button on:click={() => applySelectedLiveV2Wallpaper(false)} disabled={liveV2Busy}>{tr('Apply Wallpaper', 'Aplicar Wallpaper')}</button>
+                {#if activeMonitorsForWallpaper(liveV2SelectedLibrary.id).length > 0 || liveV2SelectedLibrary.last_applied_at > 0}
+                  <button class="secondary" on:click={() => applySelectedLiveV2Wallpaper(true)} disabled={liveV2Busy}>{tr('Update Config', 'Actualizar Config')}</button>
+                {/if}
+              </div>
+              <div class="row">
                 <button class="secondary" on:click={() => toggleFavoriteLiveV2(liveV2SelectedLibrary)} disabled={liveV2Busy}>
                   {liveV2SelectedLibrary.favorite ? tr('Unfavorite', 'Quitar Favorito') : tr('Favorite', 'Favorito')}
                 </button>
                 <button class="secondary danger-outline" on:click={() => removeLiveV2(liveV2SelectedLibrary)} disabled={liveV2Busy}>{tr('Delete', 'Eliminar')}</button>
                 <button class="secondary" on:click={() => openLiveV2Folder(liveV2SelectedLibrary.id)} disabled={liveV2Busy}>{tr('Open Folder', 'Abrir Carpeta')}</button>
+              </div>
+              <div class="live-form-grid">
+                <div class="live-field">
+                  <label for="livev2-item-profile">profile</label>
+                  <select id="livev2-item-profile" bind:value={liveV2DetailConfig.profile}>
+                    <option value="performance">performance</option>
+                    <option value="balanced">balanced</option>
+                    <option value="quality">quality</option>
+                  </select>
+                </div>
+                <div class="live-field">
+                  <label for="livev2-item-display-fps">display_fps</label>
+                  <input id="livev2-item-display-fps" type="number" min="1" bind:value={liveV2DetailConfig.display_fps} />
+                </div>
+                <div class="live-field">
+                  <label for="livev2-item-crossfade">crossfade_s</label>
+                  <input id="livev2-item-crossfade" type="number" min="0" step="0.05" bind:value={liveV2DetailConfig.loop_crossfade_seconds} />
+                </div>
+                <div class="live-field">
+                  <label for="livev2-item-width">proxy_width</label>
+                  <input id="livev2-item-width" type="number" min="320" bind:value={liveV2DetailConfig.proxy_width} />
+                </div>
+                <div class="live-field">
+                  <label for="livev2-item-fps">proxy_fps</label>
+                  <input id="livev2-item-fps" type="number" min="1" bind:value={liveV2DetailConfig.proxy_fps} />
+                </div>
+                <div class="live-field">
+                  <label for="livev2-item-crf">proxy_crf</label>
+                  <input id="livev2-item-crf" type="number" min="1" max="51" bind:value={liveV2DetailConfig.proxy_crf} />
+                </div>
+              </div>
+              <div class="row">
+                <label class="inline-check"><input type="checkbox" bind:checked={liveV2DetailConfig.keep_services} /> keep_services</label>
+                <label class="inline-check"><input type="checkbox" bind:checked={liveV2DetailConfig.mute_audio} /> mute_audio</label>
+                <label class="inline-check"><input type="checkbox" bind:checked={liveV2DetailConfig.seamless_loop} /> seamless_loop</label>
+                <label class="inline-check"><input type="checkbox" bind:checked={liveV2DetailConfig.loop_crossfade} /> loop_crossfade</label>
+                <label class="inline-check"><input type="checkbox" bind:checked={liveV2DetailConfig.optimize} /> optimize</label>
               </div>
               {#if activeMonitorsForWallpaper(liveV2SelectedLibrary.id).length > 0}
                 <div class="row">
@@ -6339,13 +6655,6 @@ import {onDestroy, onMount, tick} from 'svelte';
         <div class="card">
           <h3>{tr('Runner', 'Runner')}</h3>
           <div class="row actions-input-row">
-            <label for="livev2-runner-mode">mode</label>
-            <select id="livev2-runner-mode" bind:value={liveV2RunnerMode}>
-              <option value="cargo">cargo</option>
-              <option value="bin">bin</option>
-            </select>
-            <label for="livev2-runner-cargo">cargo_project_dir</label>
-            <input id="livev2-runner-cargo" bind:value={liveV2RunnerCargoDir} />
             <label for="livev2-runner-bin">bin_name</label>
             <input id="livev2-runner-bin" bind:value={liveV2RunnerBin} />
             <button on:click={saveLiveV2Runner} disabled={liveV2Busy}>{tr('Save Runner', 'Guardar Runner')}</button>
@@ -6361,6 +6670,12 @@ import {onDestroy, onMount, tick} from 'svelte';
               <option value="balanced">balanced</option>
               <option value="quality">quality</option>
             </select>
+            <label for="livev2-default-display-fps">display_fps</label>
+            <input id="livev2-default-display-fps" type="number" min="1" bind:value={liveV2ApplyDefaults.display_fps} />
+            <label for="livev2-default-width-hd">width_hd</label>
+            <input id="livev2-default-width-hd" type="number" min="320" bind:value={liveV2ApplyDefaults.proxy_width_hd} />
+            <label for="livev2-default-width-4k">width_4k</label>
+            <input id="livev2-default-width-4k" type="number" min="320" bind:value={liveV2ApplyDefaults.proxy_width_4k} />
             <label for="livev2-default-fps">proxy_fps</label>
             <input id="livev2-default-fps" type="number" min="1" bind:value={liveV2ApplyDefaults.proxy_fps} />
             <label for="livev2-default-crf-hd">crf_hd</label>
@@ -6371,6 +6686,8 @@ import {onDestroy, onMount, tick} from 'svelte';
             <input id="livev2-default-crossfade" type="number" min="0.05" step="0.05" bind:value={liveV2ApplyDefaults.loop_crossfade_seconds} />
           </div>
           <div class="row">
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.keep_services} /> keep_services</label>
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.mute_audio} /> mute_audio</label>
             <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.seamless_loop} /> seamless_loop</label>
             <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.loop_crossfade} /> loop_crossfade</label>
             <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.optimize} /> optimize</label>
@@ -6378,25 +6695,6 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
         </div>
 
-        <div class="card">
-          <h3>{tr('Doctor', 'Doctor')}</h3>
-          <div class="row">
-            <button class="secondary" on:click={loadLiveV2Doctor} disabled={liveV2Busy}>{tr('Run Doctor', 'Ejecutar Doctor')}</button>
-            {#if liveV2Doctor}
-              <span class={`badge status ${liveV2Doctor.ok ? 'ok' : 'bad'}`}>ok: {liveV2Doctor.ok ? 'true' : 'false'}</span>
-              {#each Object.entries(liveV2Doctor.deps || {}) as [dep, ok]}
-                <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
-              {/each}
-            {/if}
-          </div>
-          {#if liveV2Doctor && (liveV2Doctor.fix?.length ?? 0) > 0}
-            <div class="banner warn">
-              {#each liveV2Doctor.fix as line}
-                <div>{line}</div>
-              {/each}
-            </div>
-          {/if}
-        </div>
       {:else}
         <div class="card">
           <h3>{tr('LiveWallpapers — Explore', 'LiveWallpapers — Explorar')}</h3>
@@ -6607,7 +6905,6 @@ import {onDestroy, onMount, tick} from 'svelte';
                   <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', false, '4k')} disabled={liveV2Busy || !liveV2SelectedBrowse.has_4k}>{tr('Download 4K', 'Descargar 4K')}</button>
                 {:else}
                   <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', false)} disabled={liveV2Busy}>{tr('Download', 'Descargar')}</button>
-                  <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', true)} disabled={liveV2Busy}>{tr('Download + Apply', 'Descargar + Aplicar')}</button>
                 {/if}
               </div>
               {#if liveV2PreviewDebugLines.length > 0}

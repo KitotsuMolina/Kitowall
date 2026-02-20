@@ -70,6 +70,8 @@ import {
   liveResolve,
   liveSearch,
   liveSetApplyDefaults,
+  liveGetWallpaperConfig,
+  liveSetWallpaperConfig,
   liveSetRunner,
   liveThumbRegen,
   liveViewData
@@ -178,11 +180,17 @@ Commands:
   live thumb regen [--id <id>] [--all]
   live open [--id <id>]                   Print folder path (root or item folder)
   live config show
-  live config runner --mode cargo|bin [--cargo-project-dir <path>] [--bin-name <name>]
-  live config apply-defaults [--proxy-fps <n>] [--proxy-crf-hd <n>] [--proxy-crf-4k <n>]
+  live config wallpaper-show --id <id>
+  live config wallpaper --id <id> [--keep-services true|false] [--mute-audio true|false] [--profile performance|balanced|quality]
+                        [--display-fps <n|off>] [--seamless-loop true|false] [--loop-crossfade true|false]
+                        [--loop-crossfade-seconds <n>] [--optimize true|false]
+                        [--proxy-width <n>] [--proxy-fps <n>] [--proxy-crf <n>]
+  live config runner [--bin-name <name>]
+  live config apply-defaults [--keep-services true|false] [--mute-audio true|false] [--display-fps <n|off>]
+                             [--proxy-width-hd <n>] [--proxy-width-4k <n>] [--proxy-fps <n>] [--proxy-crf-hd <n>] [--proxy-crf-4k <n>]
                              [--loop-crossfade-seconds <n>] [--profile performance|balanced|quality]
                              [--seamless-loop true|false] [--loop-crossfade true|false] [--optimize true|false]
-  live doctor
+  live doctor [--fix]
   check [--namespace <ns>] [--json]        Quick system check (no changes)
 
   init [--namespace <ns>] [--apply] [--force]       Setup kitowall (install daemon + watcher + next.service), validate deps
@@ -698,7 +706,7 @@ async function main(): Promise<void> {
     }
 
     if (action === 'doctor') {
-      const out = await liveDoctor();
+      const out = await liveDoctor({fix: args.includes('--fix')});
       console.log(JSON.stringify(out, null, 2));
       return;
     }
@@ -709,23 +717,63 @@ async function main(): Promise<void> {
         console.log(JSON.stringify(liveGetConfig(), null, 2));
         return;
       }
+      if (sub === 'wallpaper-show') {
+        const id = cleanOpt(getOptionValue(args, '--id'));
+        if (!id) throw new Error('Usage: live config wallpaper-show --id <id>');
+        console.log(JSON.stringify(liveGetWallpaperConfig(id), null, 2));
+        return;
+      }
+      if (sub === 'wallpaper') {
+        const id = cleanOpt(getOptionValue(args, '--id'));
+        if (!id) {
+          throw new Error(
+            'Usage: live config wallpaper --id <id> [--keep-services true|false] [--mute-audio true|false] [--profile performance|balanced|quality] [--display-fps <n|off>] [--seamless-loop true|false] [--loop-crossfade true|false] [--loop-crossfade-seconds <n>] [--optimize true|false] [--proxy-width <n>] [--proxy-fps <n>] [--proxy-crf <n>]'
+          );
+        }
+        const profile = cleanOpt(getOptionValue(args, '--profile'));
+        const displayFpsRaw = cleanOpt(getOptionValue(args, '--display-fps'));
+        const display_fps = !displayFpsRaw
+          ? undefined
+          : (displayFpsRaw.toLowerCase() === 'off' ? null : Number(displayFpsRaw));
+        const out = liveSetWallpaperConfig(id, {
+          keep_services: parseBool(getOptionValue(args, '--keep-services')),
+          mute_audio: parseBool(getOptionValue(args, '--mute-audio')),
+          profile: (profile === 'performance' || profile === 'balanced' || profile === 'quality') ? profile : undefined,
+          display_fps: (display_fps === undefined || display_fps === null || Number.isFinite(display_fps)) ? display_fps : undefined,
+          seamless_loop: parseBool(getOptionValue(args, '--seamless-loop')),
+          loop_crossfade: parseBool(getOptionValue(args, '--loop-crossfade')),
+          loop_crossfade_seconds: cleanOpt(getOptionValue(args, '--loop-crossfade-seconds')) ? Number(cleanOpt(getOptionValue(args, '--loop-crossfade-seconds'))) : undefined,
+          optimize: parseBool(getOptionValue(args, '--optimize')),
+          proxy_width: cleanOpt(getOptionValue(args, '--proxy-width')) ? Number(cleanOpt(getOptionValue(args, '--proxy-width'))) : undefined,
+          proxy_fps: cleanOpt(getOptionValue(args, '--proxy-fps')) ? Number(cleanOpt(getOptionValue(args, '--proxy-fps'))) : undefined,
+          proxy_crf: cleanOpt(getOptionValue(args, '--proxy-crf')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf'))) : undefined
+        });
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
       if (sub === 'runner') {
-        const modeRaw = cleanOpt(getOptionValue(args, '--mode'));
         const out = liveSetRunner({
-          mode: (modeRaw === 'cargo' || modeRaw === 'bin') ? modeRaw : undefined,
-          cargo_project_dir: cleanOpt(getOptionValue(args, '--cargo-project-dir')) ?? undefined,
           bin_name: cleanOpt(getOptionValue(args, '--bin-name')) ?? undefined
         });
         console.log(JSON.stringify(out, null, 2));
         return;
       }
       if (sub === 'apply-defaults') {
+        const displayFpsRaw = cleanOpt(getOptionValue(args, '--display-fps'));
+        const display_fps = !displayFpsRaw
+          ? undefined
+          : (displayFpsRaw.toLowerCase() === 'off' ? null : Number(displayFpsRaw));
         const out = liveSetApplyDefaults({
+          keep_services: parseBool(getOptionValue(args, '--keep-services')),
+          mute_audio: parseBool(getOptionValue(args, '--mute-audio')),
           profile: (cleanOpt(getOptionValue(args, '--profile')) as 'performance' | 'balanced' | 'quality' | null) ?? undefined,
+          display_fps: (display_fps === undefined || display_fps === null || Number.isFinite(display_fps)) ? display_fps : undefined,
           seamless_loop: parseBool(getOptionValue(args, '--seamless-loop')),
           loop_crossfade: parseBool(getOptionValue(args, '--loop-crossfade')),
           loop_crossfade_seconds: cleanOpt(getOptionValue(args, '--loop-crossfade-seconds')) ? Number(cleanOpt(getOptionValue(args, '--loop-crossfade-seconds'))) : undefined,
           optimize: parseBool(getOptionValue(args, '--optimize')),
+          proxy_width_hd: cleanOpt(getOptionValue(args, '--proxy-width-hd')) ? Number(cleanOpt(getOptionValue(args, '--proxy-width-hd'))) : undefined,
+          proxy_width_4k: cleanOpt(getOptionValue(args, '--proxy-width-4k')) ? Number(cleanOpt(getOptionValue(args, '--proxy-width-4k'))) : undefined,
           proxy_fps: cleanOpt(getOptionValue(args, '--proxy-fps')) ? Number(cleanOpt(getOptionValue(args, '--proxy-fps'))) : undefined,
           proxy_crf_hd: cleanOpt(getOptionValue(args, '--proxy-crf-hd')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf-hd'))) : undefined,
           proxy_crf_4k: cleanOpt(getOptionValue(args, '--proxy-crf-4k')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf-4k'))) : undefined

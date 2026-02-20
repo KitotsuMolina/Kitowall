@@ -1586,17 +1586,25 @@ label {
   right: 0;
   width: min(520px, 96vw);
   height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
   z-index: 120;
   border-left: 1px solid var(--border-soft);
   background: var(--bg-surface);
   padding: 14px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   box-shadow: -14px 0 28px rgba(0, 0, 0, 0.4);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
 .live-monitor-skeleton {
+  flex: 0 0 auto;
   border: 1px solid var(--border-soft);
   border-radius: 12px;
   background: #111018;
@@ -1661,7 +1669,32 @@ label {
 
 .live-details {
   display: grid;
+  flex: 0 0 auto;
   gap: 8px;
+  min-height: auto;
+  overflow: visible;
+}
+
+.live-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.live-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.live-field > label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.live-field > input,
+.live-field > select {
+  width: 100%;
 }
 
 .live-preview-debug {

@@ -26,6 +26,7 @@ export interface LiveLibraryItem {
   favorite: boolean;
   added_at: number;
   last_applied_at: number;
+  video_config?: LiveVideoPlayConfig;
 }
 
 export interface LiveMonitorConfig {
@@ -35,14 +36,33 @@ export interface LiveMonitorConfig {
 }
 
 export interface LiveApplyDefaults {
+  keep_services: boolean;
+  mute_audio: boolean;
   profile: 'performance' | 'balanced' | 'quality';
+  display_fps: number | null;
   seamless_loop: boolean;
   loop_crossfade: boolean;
   loop_crossfade_seconds: number;
   optimize: boolean;
+  proxy_width_hd: number;
+  proxy_width_4k: number;
   proxy_fps: number;
   proxy_crf_hd: number;
   proxy_crf_4k: number;
+}
+
+export interface LiveVideoPlayConfig {
+  keep_services: boolean;
+  mute_audio: boolean;
+  profile: 'performance' | 'balanced' | 'quality';
+  display_fps: number | null;
+  seamless_loop: boolean;
+  loop_crossfade: boolean;
+  loop_crossfade_seconds: number;
+  optimize: boolean;
+  proxy_width: number;
+  proxy_fps: number;
+  proxy_crf: number;
 }
 
 export interface LiveRunnerConfig {
@@ -130,10 +150,6 @@ function htmlDecode(input: string): string {
     .replace(/&gt;/g, '>');
 }
 
-function projectSiblingPath(name: string): string {
-  return path.resolve(process.cwd(), '..', name);
-}
-
 export function getLiveRoot(): string {
   return path.join(os.homedir(), 'Videos', 'LiveWallpapers');
 }
@@ -168,8 +184,8 @@ function getLiveLockPath(): string {
 
 function defaultRunnerConfig(): LiveRunnerConfig {
   return {
-    mode: 'cargo',
-    cargo_project_dir: process.env.KITOWALL_LIVE_RUNNER_PROJECT?.trim() || projectSiblingPath('kitsune-wallpaperengine'),
+    mode: 'bin',
+    cargo_project_dir: process.env.KITOWALL_LIVE_RUNNER_PROJECT?.trim() || '',
     bin_name: process.env.KITOWALL_LIVE_RUNNER_BIN?.trim() || 'kitsune-livewallpaper'
   };
 }
@@ -180,11 +196,16 @@ function defaultIndex(): LiveIndex {
     items: [],
     per_monitor: {},
     apply_defaults: {
+      keep_services: false,
+      mute_audio: false,
       profile: 'quality',
+      display_fps: null,
       seamless_loop: true,
       loop_crossfade: true,
       loop_crossfade_seconds: 0.35,
       optimize: true,
+      proxy_width_hd: 1920,
+      proxy_width_4k: 3840,
       proxy_fps: 60,
       proxy_crf_hd: 18,
       proxy_crf_4k: 16
@@ -206,7 +227,8 @@ function ensureIndexShape(index: Partial<LiveIndex>): LiveIndex {
     },
     runner: {
       ...base.runner,
-      ...(index.runner ?? {})
+      ...(index.runner ?? {}),
+      mode: 'bin'
     }
   };
 }
@@ -886,6 +908,70 @@ function itemId(provider: LiveProvider, slug: string, variant: LiveVariant): str
   return `${provider}:${slug}:${variant}`;
 }
 
+function clampInt(value: number, fallback: number, min: number, max = Number.MAX_SAFE_INTEGER): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function clampFloat(value: number, fallback: number, min: number, max = Number.MAX_SAFE_INTEGER): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function buildVideoConfigFromDefaults(defaults: LiveApplyDefaults, variant: LiveVariant): LiveVideoPlayConfig {
+  return {
+    keep_services: !!defaults.keep_services,
+    mute_audio: !!defaults.mute_audio,
+    profile: defaults.profile,
+    display_fps: defaults.display_fps === null ? null : clampInt(defaults.display_fps, 0, 1),
+    seamless_loop: !!defaults.seamless_loop,
+    loop_crossfade: !!defaults.loop_crossfade,
+    loop_crossfade_seconds: clampFloat(defaults.loop_crossfade_seconds, 0.35, 0),
+    optimize: !!defaults.optimize,
+    proxy_width: variant === '4k'
+      ? clampInt(defaults.proxy_width_4k, 3840, 320)
+      : clampInt(defaults.proxy_width_hd, 1920, 320),
+    proxy_fps: clampInt(defaults.proxy_fps, 60, 1, 240),
+    proxy_crf: variant === '4k'
+      ? clampInt(defaults.proxy_crf_4k, 16, 1, 51)
+      : clampInt(defaults.proxy_crf_hd, 18, 1, 51)
+  };
+}
+
+function normalizeVideoConfig(
+  config: Partial<LiveVideoPlayConfig> | undefined,
+  fallback: LiveVideoPlayConfig
+): LiveVideoPlayConfig {
+  const displayFpsInput = config?.display_fps;
+  const displayFps = displayFpsInput === null
+    ? null
+    : (displayFpsInput === undefined
+      ? fallback.display_fps
+      : clampInt(displayFpsInput, fallback.display_fps ?? 30, 1, 240));
+  const profile = config?.profile === 'performance' || config?.profile === 'balanced' || config?.profile === 'quality'
+    ? config.profile
+    : fallback.profile;
+  return {
+    keep_services: config?.keep_services ?? fallback.keep_services,
+    mute_audio: config?.mute_audio ?? fallback.mute_audio,
+    profile,
+    display_fps: displayFps,
+    seamless_loop: config?.seamless_loop ?? fallback.seamless_loop,
+    loop_crossfade: config?.loop_crossfade ?? fallback.loop_crossfade,
+    loop_crossfade_seconds: clampFloat(
+      config?.loop_crossfade_seconds ?? fallback.loop_crossfade_seconds,
+      fallback.loop_crossfade_seconds,
+      0
+    ),
+    optimize: config?.optimize ?? fallback.optimize,
+    proxy_width: clampInt(config?.proxy_width ?? fallback.proxy_width, fallback.proxy_width, 320),
+    proxy_fps: clampInt(config?.proxy_fps ?? fallback.proxy_fps, fallback.proxy_fps, 1, 240),
+    proxy_crf: clampInt(config?.proxy_crf ?? fallback.proxy_crf, fallback.proxy_crf, 1, 51)
+  };
+}
+
 async function resolvePost(provider: LiveProvider, pageUrl: string): Promise<LiveResolvedPost> {
   const html = await fetchHtml(pageUrl, pageUrl);
   const parsed = liveParsePostFromHtml(provider, pageUrl, html);
@@ -1083,15 +1169,7 @@ async function buildApplyCommand(
     '--proxy-crf', String(proxyCrf)
   ];
 
-  if (index.runner.mode === 'bin') {
-    return {cmd: index.runner.bin_name, args};
-  }
-
-  return {
-    cmd: 'cargo',
-    args: ['run', '--', ...args],
-    cwd: index.runner.cargo_project_dir
-  };
+  return {cmd: index.runner.bin_name, args};
 }
 
 export async function liveResolve(pageUrl: string): Promise<{ok: true; post: LiveResolvedPost}> {
@@ -1488,6 +1566,7 @@ export async function liveFetch(opts: {
 
   const id = itemId(provider, slug, selected.variant);
   const thumbPath = await generateThumb(filePath, id);
+  const defaults = readIndex().apply_defaults;
   const item: LiveLibraryItem = {
     id,
     provider,
@@ -1501,13 +1580,26 @@ export async function liveFetch(opts: {
     size_bytes: sizeBytes,
     favorite: false,
     added_at: nowUnix(),
-    last_applied_at: 0
+    last_applied_at: 0,
+    video_config: buildVideoConfigFromDefaults(defaults, selected.variant)
   };
 
   withLiveLock(() => {
     const current = readIndex();
     const prev = current.items.find(v => v.id === item.id);
-    const next: LiveLibraryItem = prev ? {...item, favorite: prev.favorite, added_at: prev.added_at || item.added_at, last_applied_at: prev.last_applied_at || 0} : item;
+    const fallbackCfg = buildVideoConfigFromDefaults(current.apply_defaults, item.variant);
+    const next: LiveLibraryItem = prev
+      ? {
+        ...item,
+        favorite: prev.favorite,
+        added_at: prev.added_at || item.added_at,
+        last_applied_at: prev.last_applied_at || 0,
+        video_config: normalizeVideoConfig(prev.video_config, fallbackCfg)
+      }
+      : {
+        ...item,
+        video_config: normalizeVideoConfig(item.video_config, fallbackCfg)
+      };
     const updated = upsertItem(current, next);
     writeIndexAtomic(updated);
     return true;
@@ -1547,16 +1639,44 @@ export async function liveApply(opts: {
     throw new Error(`Live file not found for ${idRaw}. Re-download it with live fetch.`);
   }
 
-  try {
-    await run('dd', [`if=${item.file_path}`, 'of=/dev/null', 'bs=4M', 'count=8'], {timeoutMs: 5000});
-  } catch {}
+  const fallbackCfg = buildVideoConfigFromDefaults(index.apply_defaults, item.variant);
+  const cfg = normalizeVideoConfig(item.video_config, fallbackCfg);
+  const bin = index.runner.bin_name;
 
-  const runner = await buildApplyCommand(index, item, monitor);
-  await run(runner.cmd, runner.args, {cwd: runner.cwd, timeoutMs: 120000});
+  const setVideoArgs = [
+    'config',
+    'set-video',
+    '--monitor', monitor,
+    '--video', item.file_path,
+    '--keep-services', cfg.keep_services ? 'true' : 'false',
+    '--profile', cfg.profile,
+    '--loop-crossfade-seconds', String(cfg.loop_crossfade_seconds),
+    '--proxy-width', String(cfg.proxy_width),
+    '--proxy-fps', String(cfg.proxy_fps),
+    '--proxy-crf', String(cfg.proxy_crf)
+  ];
+  if (cfg.mute_audio) setVideoArgs.push('--mute-audio');
+  if (cfg.display_fps !== null) setVideoArgs.push('--display-fps', String(cfg.display_fps));
+  if (cfg.seamless_loop) setVideoArgs.push('--seamless-loop');
+  if (cfg.loop_crossfade) setVideoArgs.push('--loop-crossfade');
+  if (cfg.optimize) setVideoArgs.push('--optimize');
+
+  await run(bin, setVideoArgs, {timeoutMs: 120000});
+  // Keep livewallpaper authority persistent across session restarts when user applies from library.
+  try {
+    await run(bin, ['service-autostart', 'install', '--overwrite'], {timeoutMs: 15000});
+  } catch {}
+  try {
+    await run(bin, ['service-autostart', 'enable'], {timeoutMs: 15000});
+  } catch {}
+  try {
+    await run(bin, ['stop-services'], {timeoutMs: 15000});
+  } catch {}
+  await run(bin, ['start-config'], {timeoutMs: 120000});
 
   withLiveLock(() => {
     const current = readIndex();
-    const updatedItems = current.items.map(v => (v.id === item.id ? {...v, last_applied_at: nowUnix()} : v));
+    const updatedItems = current.items.map(v => (v.id === item.id ? {...v, last_applied_at: nowUnix(), video_config: cfg} : v));
     const perMonitor = {...current.per_monitor};
     const currentMon = perMonitor[monitor] || {
       auto_apply: false,
@@ -1576,8 +1696,8 @@ export async function liveApply(opts: {
     id: item.id,
     monitor,
     runner: index.runner.mode,
-    command: runner.cmd,
-    args: runner.args
+    command: bin,
+    args: ['start-config']
   };
 }
 
@@ -1676,7 +1796,7 @@ export function liveAutoApplyUnset(monitor: string): {ok: true; monitor: string;
   });
 }
 
-export async function liveDoctor(): Promise<{
+export async function liveDoctor(opts?: {fix?: boolean}): Promise<{
   ok: boolean;
   root: string;
   deps: Record<string, boolean>;
@@ -1702,26 +1822,35 @@ export async function liveDoctor(): Promise<{
     deps.hyprctl = false;
   }
 
-  if (index.runner.mode === 'cargo') {
+  try {
+    await run('which', [index.runner.bin_name], {timeoutMs: 4000});
+    deps.runner_bin = true;
+  } catch {
+    deps.runner_bin = false;
+    fix.push(`Install ${index.runner.bin_name} and ensure it is available in PATH`);
+  }
+
+  if (opts?.fix && deps.runner_bin) {
     try {
-      await run('cargo', ['--version'], {timeoutMs: 4000});
-      deps.cargo = true;
-    } catch {
-      deps.cargo = false;
-      fix.push('Install cargo/rustup to use runner.mode=cargo');
+      await run(index.runner.bin_name, ['install-dependencies'], {timeoutMs: 180000});
+      fix.push(`Executed: ${index.runner.bin_name} install-dependencies`);
+      try {
+        await run('ffmpeg', ['-version'], {timeoutMs: 4000});
+        deps.ffmpeg = true;
+      } catch {
+        deps.ffmpeg = false;
+      }
+      try {
+        await run('hyprctl', ['-j', 'monitors'], {timeoutMs: 4000});
+        deps.hyprctl = true;
+      } catch {
+        deps.hyprctl = false;
+      }
+    } catch (e) {
+      fix.push(`Failed to execute '${index.runner.bin_name} install-dependencies': ${String(e)}`);
     }
-    deps.runner_target = fs.existsSync(index.runner.cargo_project_dir);
-    if (!deps.runner_target) {
-      fix.push(`Set runner.cargo_project_dir to the kitsune-livewallpaper project (current: ${index.runner.cargo_project_dir})`);
-    }
-  } else {
-    try {
-      await run('which', [index.runner.bin_name], {timeoutMs: 4000});
-      deps.runner_bin = true;
-    } catch {
-      deps.runner_bin = false;
-      fix.push(`Install ${index.runner.bin_name} or switch runner.mode to cargo`);
-    }
+  } else if (!deps.ffmpeg || !deps.hyprctl) {
+    fix.push(`Run '${index.runner.bin_name} install-dependencies' to install missing runtime dependencies`);
   }
 
   return {
@@ -1736,14 +1865,46 @@ export async function liveDoctor(): Promise<{
 export function liveSetRunner(opts: Partial<LiveRunnerConfig>): {ok: true; runner: LiveRunnerConfig} {
   return withLiveLock(() => {
     const current = readIndex();
-    const mode = opts.mode === 'bin' ? 'bin' : (opts.mode === 'cargo' ? 'cargo' : current.runner.mode);
     const runner: LiveRunnerConfig = {
-      mode,
+      mode: 'bin',
       cargo_project_dir: clean(opts.cargo_project_dir) || current.runner.cargo_project_dir,
       bin_name: clean(opts.bin_name) || current.runner.bin_name
     };
     writeIndexAtomic({...current, runner});
     return {ok: true, runner};
+  });
+}
+
+export function liveGetWallpaperConfig(id: string): {ok: true; id: string; video_config: LiveVideoPlayConfig} {
+  const itemIdValue = clean(id);
+  if (!itemIdValue) throw new Error('id is required');
+  const index = readIndex();
+  const item = index.items.find(v => v.id === itemIdValue);
+  if (!item) throw new Error(`Live item not found: ${itemIdValue}`);
+  const fallback = buildVideoConfigFromDefaults(index.apply_defaults, item.variant);
+  return {
+    ok: true,
+    id: item.id,
+    video_config: normalizeVideoConfig(item.video_config, fallback)
+  };
+}
+
+export function liveSetWallpaperConfig(
+  id: string,
+  opts: Partial<LiveVideoPlayConfig>
+): {ok: true; id: string; video_config: LiveVideoPlayConfig} {
+  const itemIdValue = clean(id);
+  if (!itemIdValue) throw new Error('id is required');
+  return withLiveLock(() => {
+    const current = readIndex();
+    const item = current.items.find(v => v.id === itemIdValue);
+    if (!item) throw new Error(`Live item not found: ${itemIdValue}`);
+    const fallback = buildVideoConfigFromDefaults(current.apply_defaults, item.variant);
+    const previous = normalizeVideoConfig(item.video_config, fallback);
+    const nextCfg = normalizeVideoConfig({...previous, ...opts}, fallback);
+    const items = current.items.map(v => (v.id === itemIdValue ? {...v, video_config: nextCfg} : v));
+    writeIndexAtomic({...current, items});
+    return {ok: true, id: itemIdValue, video_config: nextCfg};
   });
 }
 
@@ -1756,11 +1917,16 @@ export function liveSetApplyDefaults(opts: Partial<LiveApplyDefaults>): {ok: tru
   return withLiveLock(() => {
     const current = readIndex();
     const next: LiveApplyDefaults = {...current.apply_defaults};
+    if (opts.keep_services !== undefined) next.keep_services = opts.keep_services;
+    if (opts.mute_audio !== undefined) next.mute_audio = opts.mute_audio;
     if (opts.profile !== undefined) next.profile = opts.profile;
+    if (opts.display_fps !== undefined) next.display_fps = opts.display_fps;
     if (opts.seamless_loop !== undefined) next.seamless_loop = opts.seamless_loop;
     if (opts.loop_crossfade !== undefined) next.loop_crossfade = opts.loop_crossfade;
     if (opts.loop_crossfade_seconds !== undefined) next.loop_crossfade_seconds = opts.loop_crossfade_seconds;
     if (opts.optimize !== undefined) next.optimize = opts.optimize;
+    if (opts.proxy_width_hd !== undefined) next.proxy_width_hd = opts.proxy_width_hd;
+    if (opts.proxy_width_4k !== undefined) next.proxy_width_4k = opts.proxy_width_4k;
     if (opts.proxy_fps !== undefined) next.proxy_fps = opts.proxy_fps;
     if (opts.proxy_crf_hd !== undefined) next.proxy_crf_hd = opts.proxy_crf_hd;
     if (opts.proxy_crf_4k !== undefined) next.proxy_crf_4k = opts.proxy_crf_4k;
