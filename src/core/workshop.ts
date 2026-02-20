@@ -36,6 +36,9 @@ export interface WorkshopMeta {
   tags: string[];
   score?: number;
   time_updated?: number;
+  wallpaper_type?: 'video' | 'scene' | 'web' | 'application' | 'unknown';
+  audio_reactive?: boolean;
+  entry?: string;
 }
 
 export interface WorkshopDetails extends WorkshopMeta {
@@ -80,9 +83,24 @@ export interface WorkshopJob {
   useCoexistence?: boolean;
 }
 
+export interface WorkshopActiveInstance {
+  id?: string;
+  pid?: number;
+  backend?: string;
+  type?: string;
+}
+
+export interface WorkshopActiveState {
+  mode: 'livewallpaper';
+  started_at: number;
+  snapshot_id?: string;
+  instances: Record<string, WorkshopActiveInstance>;
+}
+
 interface WeConfig {
   steamWebApiKey?: string;
   coexistServices?: string[];
+  steamRoots?: string[];
 }
 
 interface SteamPublishedItem {
@@ -108,6 +126,8 @@ interface SteamPublishedItem {
     preview_url?: string;
   }>;
 }
+
+type WallpaperType = 'video' | 'scene' | 'web' | 'application' | 'unknown';
 
 function now(): number {
   return Date.now();
@@ -144,6 +164,7 @@ function ensureWePaths(paths: WorkshopPaths): void {
   ensureDir(paths.runtime);
   ensureDir(path.join(paths.cache, 'search'));
   ensureDir(path.join(paths.steamcmd, 'logs'));
+  ensureDir(path.join(paths.root, 'coexistence', 'snapshots'));
 }
 
 function getWeConfigPath(): string {
@@ -160,6 +181,14 @@ function readWeConfig(): WeConfig {
   }
 }
 
+function normalizePath(input: string): string {
+  const raw = clean(input) ?? '';
+  if (!raw) return '';
+  if (raw === '~') return os.homedir();
+  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
+  return raw;
+}
+
 export function setWorkshopApiKey(apiKey: string): {ok: true} {
   const key = clean(apiKey);
   if (!key) throw new Error('steam_web_api_key is required');
@@ -168,6 +197,22 @@ export function setWorkshopApiKey(apiKey: string): {ok: true} {
   current.steamWebApiKey = key;
   writeJson(p, current);
   return {ok: true};
+}
+
+export function workshopGetSteamRoots(): {steam_roots: string[]} {
+  const cfg = readWeConfig();
+  const steamRoots = Array.isArray(cfg.steamRoots)
+    ? cfg.steamRoots.map(v => normalizePath(String(v))).filter(Boolean)
+    : [];
+  return {steam_roots: Array.from(new Set(steamRoots))};
+}
+
+export function workshopSetSteamRoots(roots: string[]): {ok: true; steam_roots: string[]} {
+  const cfg = readWeConfig();
+  const normalized = roots.map(v => normalizePath(String(v))).filter(Boolean);
+  cfg.steamRoots = Array.from(new Set(normalized));
+  writeJson(getWeConfigPath(), cfg);
+  return {ok: true, steam_roots: cfg.steamRoots};
 }
 
 function getSteamWebApiKey(): string | undefined {
@@ -181,6 +226,7 @@ function getCoexistServices(): string[] {
   const cfg = readWeConfig();
   const defaults = [
     'swww-daemon.service',
+    'swww-daemon@kitowall.service',
     'hyprwall-watch.service',
     'hyprwall-next.timer',
     'kitowall-next.timer'
@@ -413,6 +459,304 @@ function writeMetaFile(meta: WorkshopMeta | WorkshopDetails): void {
     ...meta,
     cached_at: now()
   });
+}
+
+function normalizeWallpaperType(raw?: string | null): WallpaperType {
+  const t = clean(raw)?.toLowerCase();
+  if (!t) return 'unknown';
+  if (t === 'video') return 'video';
+  if (t === 'scene') return 'scene';
+  if (t === 'web') return 'web';
+  if (t === 'application') return 'application';
+  return 'unknown';
+}
+
+function detectAudioReactiveFromText(text: string): boolean {
+  return /(audio|spectrum|visualizer|now[\s_-]?playing|media[\s_-]?integration|fft|bass|reactive)/i.test(text);
+}
+
+function readProjectInfo(dir: string): {type: WallpaperType; audioReactive: boolean; entry?: string} {
+  const projectPath = path.join(dir, 'project.json');
+  if (!fs.existsSync(projectPath)) {
+    return {type: 'unknown', audioReactive: false, entry: undefined};
+  }
+  try {
+    const raw = fs.readFileSync(projectPath, 'utf8');
+    const json = JSON.parse(raw) as {type?: string; title?: string; file?: string};
+    const type = normalizeWallpaperType(json.type);
+    const title = clean(json.title) ?? '';
+    const fileEntry = clean(json.file);
+    const entry = fileEntry ? path.join(dir, fileEntry) : undefined;
+    const audioReactive = detectAudioReactiveFromText(`${title}\n${raw}`);
+    return {type, audioReactive, entry};
+  } catch {
+    return {type: 'unknown', audioReactive: false, entry: undefined};
+  }
+}
+
+function inferVideoEntry(dir: string): string | undefined {
+  if (!fs.existsSync(dir)) return undefined;
+  const files = fs.readdirSync(dir, {withFileTypes: true});
+  const preferred = ['.mp4', '.webm', '.gif', '.mkv', '.avi', '.mov'];
+  for (const ext of preferred) {
+    const match = files.find((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(ext));
+    if (match) return path.join(dir, match.name);
+  }
+  return undefined;
+}
+
+function detectTypeFromEntry(entry?: string): WallpaperType {
+  const e = clean(entry)?.toLowerCase();
+  if (!e) return 'unknown';
+  if (e.endsWith('.mp4') || e.endsWith('.webm') || e.endsWith('.gif') || e.endsWith('.mkv') || e.endsWith('.avi') || e.endsWith('.mov')) {
+    return 'video';
+  }
+  if (e.endsWith('index.html') || e.endsWith('.html')) return 'web';
+  if (e.endsWith('scene.json') || e.endsWith('gifscene.json')) return 'scene';
+  return 'unknown';
+}
+
+function readLibraryFoldersVdf(vdfPath: string): string[] {
+  if (!fs.existsSync(vdfPath)) return [];
+  const raw = fs.readFileSync(vdfPath, 'utf8');
+  const out: string[] = [];
+  const lines = raw.split('\n');
+  for (const line of lines) {
+    const m = line.match(/"path"\s+"([^"]+)"/);
+    if (!m || !m[1]) continue;
+    const candidate = m[1].replace(/\\\\/g, '\\');
+    out.push(candidate);
+  }
+  return out;
+}
+
+function getDefaultSteamRoots(): string[] {
+  const home = os.homedir();
+  const roots = [
+    path.join(home, '.steam', 'steam'),
+    path.join(home, '.local', 'share', 'Steam'),
+    path.join(home, '.var', 'app', 'com.valvesoftware.Steam', '.local', 'share', 'Steam')
+  ];
+  return Array.from(new Set(roots));
+}
+
+function getManualSteamRoots(): string[] {
+  const cfg = readWeConfig();
+  if (!Array.isArray(cfg.steamRoots)) return [];
+  return cfg.steamRoots.map(v => normalizePath(String(v))).filter(Boolean);
+}
+
+function detectSteamappsDirs(): string[] {
+  const steamappsSet = new Set<string>();
+  const candidateRoots = [...getDefaultSteamRoots(), ...getManualSteamRoots()];
+
+  for (const root of candidateRoots) {
+    const p = normalizePath(root);
+    if (!p || !fs.existsSync(p)) continue;
+    if (path.basename(p) === 'steamapps' && fs.existsSync(p)) {
+      steamappsSet.add(p);
+    }
+    const directSteamapps = path.join(p, 'steamapps');
+    if (fs.existsSync(directSteamapps)) {
+      steamappsSet.add(directSteamapps);
+    }
+    const marker = `${path.sep}steamapps${path.sep}workshop${path.sep}content${path.sep}${WE_APP_ID}`;
+    const idx = p.indexOf(marker);
+    if (idx >= 0) {
+      const steamapps = p.slice(0, idx + `${path.sep}steamapps`.length);
+      if (fs.existsSync(steamapps)) steamappsSet.add(steamapps);
+    }
+    const markerNoSteamapps = `${path.sep}workshop${path.sep}content${path.sep}${WE_APP_ID}`;
+    const idx2 = p.indexOf(markerNoSteamapps);
+    if (idx2 >= 0) {
+      const steamappsMaybe = p.slice(0, idx2);
+      if (path.basename(steamappsMaybe) === 'steamapps' && fs.existsSync(steamappsMaybe)) {
+        steamappsSet.add(steamappsMaybe);
+      }
+    }
+  }
+
+  const baseSteamapps = Array.from(steamappsSet);
+  for (const steamapps of baseSteamapps) {
+    const vdf = path.join(steamapps, 'libraryfolders.vdf');
+    for (const lib of readLibraryFoldersVdf(vdf)) {
+      const candidate = path.join(lib, 'steamapps');
+      if (fs.existsSync(candidate)) steamappsSet.add(candidate);
+    }
+  }
+  return Array.from(steamappsSet);
+}
+
+function toWorkshopAppContentDir(inputPath: string): string {
+  const p = normalizePath(inputPath);
+  if (!p) return '';
+  const direct = p;
+  const asSteamRoot = path.join(p, 'steamapps', 'workshop', 'content', String(WE_APP_ID));
+  const asSteamappsRoot = path.join(p, 'workshop', 'content', String(WE_APP_ID));
+  const asContentRoot = path.join(p, String(WE_APP_ID));
+  if (fs.existsSync(direct) && direct.endsWith(`${path.sep}${WE_APP_ID}`)) return direct;
+  if (fs.existsSync(direct) && direct.includes(`${path.sep}workshop${path.sep}content${path.sep}${WE_APP_ID}`)) return direct;
+  if (fs.existsSync(asSteamRoot)) return asSteamRoot;
+  if (fs.existsSync(asSteamappsRoot)) return asSteamappsRoot;
+  if (fs.existsSync(asContentRoot)) return asContentRoot;
+  return '';
+}
+
+function detectSteamWorkshopContentDirs(): string[] {
+  const discovered = new Set<string>();
+  for (const root of getManualSteamRoots()) {
+    const fromManual = toWorkshopAppContentDir(root);
+    if (fromManual && fs.existsSync(fromManual)) discovered.add(fromManual);
+  }
+  for (const steamapps of detectSteamappsDirs()) {
+    const candidate = path.join(steamapps, 'workshop', 'content', String(WE_APP_ID));
+    if (fs.existsSync(candidate)) {
+      discovered.add(candidate);
+    }
+  }
+  return Array.from(discovered);
+}
+
+export function workshopWallpaperEngineStatus(): {
+  ok: true;
+  installed: boolean;
+  manifests: string[];
+  steamapps: string[];
+} {
+  const manifests: string[] = [];
+  const steamapps = detectSteamappsDirs();
+  for (const dir of steamapps) {
+    const manifest = path.join(dir, `appmanifest_${WE_APP_ID}.acf`);
+    if (fs.existsSync(manifest)) manifests.push(manifest);
+  }
+  return {
+    ok: true,
+    installed: manifests.length > 0,
+    manifests,
+    steamapps
+  };
+}
+
+function findPreviewCandidate(dir: string): string | undefined {
+  if (!fs.existsSync(dir)) return undefined;
+  const entries = fs.readdirSync(dir, {withFileTypes: true});
+  const preferred = ['preview.gif', 'preview.webm', 'preview.mp4', 'preview.jpg', 'preview.png', 'preview.webp'];
+  for (const name of preferred) {
+    const full = path.join(dir, name);
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const lower = entry.name.toLowerCase();
+    if (lower.startsWith('preview.') || lower.startsWith('thumbnail.')) {
+      return path.join(dir, entry.name);
+    }
+  }
+  return undefined;
+}
+
+export function workshopScanSteamDownloads(): {sources: string[]; count: number; ids: string[]} {
+  const sources = detectSteamWorkshopContentDirs();
+  const idsSet = new Set<string>();
+  for (const source of sources) {
+    if (!fs.existsSync(source)) continue;
+    const entries = fs.readdirSync(source, {withFileTypes: true});
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const id = clean(entry.name);
+      if (!id) continue;
+      idsSet.add(id);
+    }
+  }
+  const ids = Array.from(idsSet).sort();
+  return {sources, count: ids.length, ids};
+}
+
+export function workshopSyncSteamDownloads(): {
+  ok: true;
+  sources: string[];
+  imported: number;
+  skipped: number;
+  total: number;
+} {
+  const app = workshopWallpaperEngineStatus();
+  if (!app.installed) {
+    throw new Error('Wallpaper Engine (AppID 431960) is not installed in Steam. Install it first to sync downloads.');
+  }
+  const paths = getWePaths();
+  ensureWePaths(paths);
+  const sources = detectSteamWorkshopContentDirs();
+  let imported = 0;
+  let skipped = 0;
+  const seen = new Set<string>();
+
+  for (const source of sources) {
+    if (!fs.existsSync(source)) continue;
+    const entries = fs.readdirSync(source, {withFileTypes: true});
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const id = clean(entry.name);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const sourceDir = path.join(source, id);
+      const targetDir = path.join(paths.downloads, id);
+      if (fs.existsSync(targetDir)) {
+        skipped += 1;
+      } else {
+        fs.cpSync(sourceDir, targetDir, {recursive: true});
+        imported += 1;
+      }
+
+      const metadataFile = path.join(paths.metadata, `${id}.json`);
+      const info = readProjectInfo(sourceDir);
+      if (!fs.existsSync(metadataFile)) {
+        const previewCandidate = findPreviewCandidate(sourceDir);
+        let thumbLocal: string | undefined;
+        if (previewCandidate && fs.existsSync(previewCandidate)) {
+          const ext = path.extname(previewCandidate) || '.jpg';
+          const previewDir = path.join(paths.previews, id);
+          ensureDir(previewDir);
+          thumbLocal = path.join(previewDir, `thumb${ext}`);
+          if (!fs.existsSync(thumbLocal)) {
+            fs.copyFileSync(previewCandidate, thumbLocal);
+          }
+        }
+        writeMetaFile({
+          id,
+          title: `Wallpaper ${id}`,
+          tags: [],
+          preview_thumb_local: thumbLocal,
+          author_name: 'Steam Workshop',
+          time_updated: Math.floor(Date.now() / 1000),
+          wallpaper_type: info.type,
+          audio_reactive: info.audioReactive,
+          entry: info.entry
+        });
+      } else {
+        try {
+          const current = JSON.parse(fs.readFileSync(metadataFile, 'utf8')) as WorkshopMeta;
+          if (!current.wallpaper_type || current.wallpaper_type === 'unknown' || current.audio_reactive === undefined || !current.entry) {
+            writeMetaFile({
+              ...current,
+              wallpaper_type: current.wallpaper_type ?? info.type,
+              audio_reactive: current.audio_reactive ?? info.audioReactive,
+              entry: current.entry ?? info.entry
+            });
+          }
+        } catch {
+          // ignore malformed metadata
+        }
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    sources,
+    imported,
+    skipped,
+    total: imported + skipped
+  };
 }
 
 export async function workshopSearch(input: WorkshopSearchInput): Promise<{
@@ -688,6 +1032,87 @@ function snapshotFile(paths: WorkshopPaths): string {
   return path.join(paths.runtime, 'coexistence.snapshot.json');
 }
 
+function snapshotDir(paths: WorkshopPaths): string {
+  return path.join(paths.root, 'coexistence', 'snapshots');
+}
+
+function activeLockFile(paths: WorkshopPaths): string {
+  return path.join(paths.runtime, 'active.lock');
+}
+
+function activeStateFile(paths: WorkshopPaths): string {
+  return path.join(paths.runtime, 'active.json');
+}
+
+function readActiveState(): WorkshopActiveState | null {
+  const paths = getWePaths();
+  ensureWePaths(paths);
+  const p = activeStateFile(paths);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8')) as WorkshopActiveState;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveState(state: WorkshopActiveState): void {
+  const paths = getWePaths();
+  ensureWePaths(paths);
+  writeJson(activeStateFile(paths), state);
+  fs.writeFileSync(activeLockFile(paths), `${state.mode}:${state.started_at}\n`, 'utf8');
+}
+
+function clearActiveState(): void {
+  const paths = getWePaths();
+  ensureWePaths(paths);
+  try {
+    fs.unlinkSync(activeStateFile(paths));
+  } catch {
+    // ignore
+  }
+  try {
+    fs.unlinkSync(activeLockFile(paths));
+  } catch {
+    // ignore
+  }
+}
+
+function killPid(pid?: number): boolean {
+  if (!pid || !Number.isFinite(pid) || pid <= 1) return false;
+  try {
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function workshopActiveStatus(): {
+  ok: true;
+  active: boolean;
+  lock_path: string;
+  state_path: string;
+  state?: WorkshopActiveState;
+} {
+  const paths = getWePaths();
+  ensureWePaths(paths);
+  const state = readActiveState();
+  const lock = fs.existsSync(activeLockFile(paths));
+  return {
+    ok: true,
+    active: lock && !!state,
+    lock_path: activeLockFile(paths),
+    state_path: activeStateFile(paths),
+    state: state ?? undefined
+  };
+}
+
+export function workshopSetActive(state: WorkshopActiveState): {ok: true; active: true; state: WorkshopActiveState} {
+  writeActiveState(state);
+  return {ok: true, active: true, state};
+}
+
 async function isUnitActive(unit: string): Promise<boolean> {
   try {
     const out = await run('systemctl', ['--user', 'show', unit, '--property', 'ActiveState', '--value']);
@@ -697,7 +1122,7 @@ async function isUnitActive(unit: string): Promise<boolean> {
   }
 }
 
-export async function workshopCoexistenceEnter(): Promise<{ok: true; stopped: string[]; snapshot: string[]}> {
+export async function workshopCoexistenceEnter(): Promise<{ok: true; stopped: string[]; snapshot: string[]; snapshot_id: string}> {
   const paths = getWePaths();
   ensureWePaths(paths);
   const units = getCoexistServices();
@@ -712,8 +1137,11 @@ export async function workshopCoexistenceEnter(): Promise<{ok: true; stopped: st
       // best effort
     }
   }
-  writeJson(snapshotFile(paths), {ts: now(), active});
-  return {ok: true, stopped: active, snapshot: active};
+  const snapshotId = String(now());
+  const snap = {id: snapshotId, ts: now(), active};
+  writeJson(path.join(snapshotDir(paths), `${snapshotId}.json`), snap);
+  writeJson(snapshotFile(paths), {id: snapshotId, ts: snap.ts});
+  return {ok: true, stopped: active, snapshot: active, snapshot_id: snapshotId};
 }
 
 export async function workshopCoexistenceExit(): Promise<{ok: true; restored: string[]}> {
@@ -721,8 +1149,19 @@ export async function workshopCoexistenceExit(): Promise<{ok: true; restored: st
   ensureWePaths(paths);
   const snapPath = snapshotFile(paths);
   if (!fs.existsSync(snapPath)) return {ok: true, restored: []};
-  const raw = JSON.parse(fs.readFileSync(snapPath, 'utf8')) as {active?: string[]};
-  const active = Array.isArray(raw.active) ? raw.active.map(v => String(v)) : [];
+  const raw = JSON.parse(fs.readFileSync(snapPath, 'utf8')) as {active?: string[]; id?: string};
+  let active = Array.isArray(raw.active) ? raw.active.map(v => String(v)) : [];
+  if ((!active || active.length === 0) && raw.id) {
+    const historical = path.join(snapshotDir(paths), `${raw.id}.json`);
+    if (fs.existsSync(historical)) {
+      try {
+        const snap = JSON.parse(fs.readFileSync(historical, 'utf8')) as {active?: string[]};
+        active = Array.isArray(snap.active) ? snap.active.map(v => String(v)) : [];
+      } catch {
+        active = [];
+      }
+    }
+  }
   const restored: string[] = [];
   for (const unit of active) {
     try {
@@ -753,6 +1192,49 @@ export async function workshopCoexistenceStatus(): Promise<{ok: true; snapshot: 
     current[unit] = await isUnitActive(unit);
   }
   return {ok: true, snapshot, current};
+}
+
+export async function workshopStop(options?: {monitor?: string; all?: boolean}): Promise<{
+  ok: true;
+  stopped_instances: string[];
+  restored_units: string[];
+  had_active: boolean;
+}> {
+  let state = readActiveState();
+  const hadActive = !!state;
+  const stopped: string[] = [];
+  let shouldRestore = false;
+
+  if (state?.instances) {
+    if (options?.monitor) {
+      const inst = state.instances[options.monitor];
+      if (killPid(inst?.pid)) stopped.push(options.monitor);
+      delete state.instances[options.monitor];
+      if (Object.keys(state.instances).length > 0 && !options?.all) {
+        writeActiveState(state);
+      } else {
+        clearActiveState();
+        shouldRestore = true;
+      }
+    } else {
+      for (const [monitor, inst] of Object.entries(state.instances)) {
+        if (killPid(inst?.pid)) stopped.push(monitor);
+      }
+      clearActiveState();
+      shouldRestore = true;
+    }
+  } else if (options?.all) {
+    clearActiveState();
+    shouldRestore = true;
+  }
+
+  const coexist = shouldRestore ? await workshopCoexistenceExit() : {ok: true, restored: [] as string[]};
+  return {
+    ok: true,
+    stopped_instances: stopped,
+    restored_units: coexist.restored,
+    had_active: hadActive
+  };
 }
 
 export async function workshopRunJob(jobId: string): Promise<WorkshopJob> {
@@ -853,6 +1335,16 @@ export function workshopLibrary(): {
         meta = undefined;
       }
     }
+    const info = readProjectInfo(p);
+    if (meta) {
+      meta.wallpaper_type = meta.wallpaper_type ?? info.type;
+      if (meta.audio_reactive === undefined) {
+        meta.audio_reactive = info.audioReactive;
+      }
+      if (!meta.entry) {
+        meta.entry = info.entry;
+      }
+    }
     items.push({
       id,
       path: p,
@@ -862,4 +1354,130 @@ export function workshopLibrary(): {
   }
   items.sort((a, b) => a.id.localeCompare(b.id));
   return {root: paths.downloads, items};
+}
+
+function spawnMpvpaper(monitor: string, entry: string): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const child = spawn('mpvpaper', ['-o', 'no-audio --loop-file=inf', monitor, entry], {
+      detached: true,
+      stdio: 'ignore',
+      env: process.env
+    });
+
+    let settled = false;
+    const done = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    child.once('error', (err) => done(() => reject(err)));
+    setTimeout(() => {
+      done(() => {
+        child.unref();
+        resolve(child.pid ?? 0);
+      });
+    }, 180);
+  });
+}
+
+export async function workshopApply(input: {id: string; monitor: string; backend?: string}): Promise<{
+  ok: true;
+  applied: true;
+  monitor: string;
+  id: string;
+  backend: string;
+  pid: number;
+  state: WorkshopActiveState;
+}> {
+  const id = clean(input.id);
+  const monitor = clean(input.monitor);
+  const requestedBackend = clean(input.backend) ?? 'auto';
+  if (!id) throw new Error('id is required');
+  if (!monitor) throw new Error('monitor is required');
+
+  const paths = getWePaths();
+  ensureWePaths(paths);
+  const dir = path.join(paths.downloads, id);
+  if (!fs.existsSync(dir)) {
+    throw new Error(`Wallpaper not found in downloads: ${id}`);
+  }
+  const project = readProjectInfo(dir);
+  const inferredEntry = project.entry && fs.existsSync(project.entry) ? project.entry : inferVideoEntry(dir);
+  const type = project.type !== 'unknown'
+    ? project.type
+    : detectTypeFromEntry(inferredEntry ?? path.join(dir, 'scene.json'));
+
+  if (type !== 'video') {
+    throw new Error(`Unsupported wallpaper type for apply: ${type}. Supported: video (mpvpaper).`);
+  }
+
+  let state = readActiveState();
+  if (!state) {
+    const coexist = await workshopCoexistenceEnter();
+    state = {
+      mode: 'livewallpaper',
+      started_at: now(),
+      snapshot_id: coexist.snapshot_id,
+      instances: {}
+    };
+  }
+
+  const current = state.instances[monitor];
+  if (current?.pid) {
+    killPid(current.pid);
+  }
+
+  let backend: string;
+  let pid = 0;
+  if (!(requestedBackend === 'auto' || requestedBackend === 'mpvpaper')) {
+    throw new Error(`Invalid backend for video wallpaper: ${requestedBackend}`);
+  }
+  if (!inferredEntry || !fs.existsSync(inferredEntry)) {
+    throw new Error(`Video entry not found for wallpaper: ${id}`);
+  }
+  backend = 'mpvpaper';
+  pid = await spawnMpvpaper(monitor, inferredEntry).catch((err) => {
+    throw new Error(`Failed to launch mpvpaper: ${err instanceof Error ? err.message : String(err)}`);
+  });
+
+  if (!pid) {
+    throw new Error(`${backend} started without pid`);
+  }
+
+  state.instances[monitor] = {
+    id,
+    pid,
+    backend,
+    type
+  };
+  writeActiveState(state);
+  return {ok: true, applied: true, monitor, id, backend, pid, state};
+}
+
+export async function workshopApplyMap(input: {map: string; backend?: string}): Promise<{
+  ok: true;
+  applied: Array<{monitor: string; id: string; backend: string; pid: number}>;
+  state?: WorkshopActiveState;
+}> {
+  const raw = clean(input.map);
+  if (!raw) throw new Error('map is required');
+  const entries = raw.split(',').map(v => v.trim()).filter(Boolean);
+  if (entries.length === 0) throw new Error('map has no entries');
+  const applied: Array<{monitor: string; id: string; backend: string; pid: number}> = [];
+  for (const pair of entries) {
+    const idx = pair.indexOf(':');
+    if (idx <= 0 || idx === pair.length - 1) {
+      throw new Error(`Invalid map entry: ${pair}. Expected <monitor>:<id>`);
+    }
+    const monitor = pair.slice(0, idx).trim();
+    const id = pair.slice(idx + 1).trim();
+    if (!monitor || !id) {
+      throw new Error(`Invalid map entry: ${pair}. Expected <monitor>:<id>`);
+    }
+    const out = await workshopApply({id, monitor, backend: input.backend});
+    applied.push({monitor: out.monitor, id: out.id, backend: out.backend, pid: out.pid});
+  }
+  const state = readActiveState() ?? undefined;
+  return {ok: true, applied, state};
 }

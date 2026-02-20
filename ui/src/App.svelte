@@ -152,6 +152,8 @@ import {onDestroy, onMount, tick} from 'svelte';
     tags: string[];
     score?: number;
     time_updated?: number;
+    wallpaper_type?: 'video' | 'scene' | 'web' | 'application' | 'unknown';
+    audio_reactive?: boolean;
   };
 
   type LiveWorkshopDetails = LiveWorkshopItem & {
@@ -195,6 +197,91 @@ import {onDestroy, onMount, tick} from 'svelte';
   type LiveLibraryResponse = {
     root: string;
     items: LiveLibraryItem[];
+  };
+
+  type LiveSteamRootsResponse = {
+    ok: boolean;
+    steam_roots: string[];
+  };
+
+  type LiveSteamScanResponse = {
+    ok: boolean;
+    sources: string[];
+    count: number;
+    ids: string[];
+  };
+
+  type LiveSteamSyncResponse = {
+    ok: boolean;
+    sources: string[];
+    imported: number;
+    skipped: number;
+    total: number;
+  };
+
+  type LiveAppStatus = {
+    ok: boolean;
+    installed: boolean;
+    manifests: string[];
+    steamapps: string[];
+  };
+
+  type LiveAuthorityState = {
+    mode?: 'livewallpaper';
+    started_at?: number;
+    snapshot_id?: string;
+    instances?: Record<string, {id?: string; pid?: number; backend?: string; type?: string}>;
+  };
+
+  type LiveAuthorityResponse = {
+    ok: boolean;
+    active: boolean;
+    lock_path: string;
+    state_path: string;
+    state?: LiveAuthorityState;
+  };
+
+  type LiveApplyResponse = {
+    ok: boolean;
+    applied?: boolean;
+    monitor?: string;
+    id?: string;
+    backend?: string;
+    pid?: number;
+  };
+
+  type LiveProvider = 'moewalls' | 'motionbgs';
+  type LiveVariant = 'hd' | '4k';
+  type LiveQuality = 'auto' | 'hd' | '4k';
+
+  type LiveIndexItem = {
+    id: string;
+    provider: LiveProvider;
+    title: string;
+    slug: string;
+    page_url: string;
+    variant: LiveVariant;
+    resolution: {w: number; h: number};
+    file_path: string;
+    thumb_path: string;
+    size_bytes: number;
+    favorite: boolean;
+    added_at: number;
+    last_applied_at: number;
+  };
+
+  type LiveBrowseItemV2 = {
+    provider: LiveProvider;
+    title: string;
+    page_url: string;
+    slug: string;
+    has_hd: boolean;
+    has_4k: boolean;
+    thumb_remote?: string;
+    tags?: string[];
+    preview_motion_remote?: string;
+    preview_motion_local?: string;
+    preview_motion_blob?: string;
   };
 
   type GroupLayerEntry = {
@@ -384,6 +471,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let liveBusy = false;
   let liveDepsBusy = false;
   let liveDepsStatus: LiveDepsStatus | null = null;
+  let liveDepsManualCommand = '';
   let liveSort: 'top' | 'newest' | 'trend' | 'subscribed' | 'updated' = 'top';
   let liveSearchText = '';
   let liveTags = '';
@@ -392,15 +480,80 @@ import {onDestroy, onMount, tick} from 'svelte';
   let liveSearchItems: LiveWorkshopItem[] = [];
   let liveSearchTotal: number | null = null;
   let liveSearchCached = false;
-  let liveView: 'search' | 'library' = 'search';
+  let liveView: 'general' | 'downloaded' = 'general';
   let liveLibraryRoot = '';
   let liveLibraryItems: LiveLibraryItem[] = [];
+  let liveFilterType: 'all' | 'video' | 'scene' | 'web' | 'application' | 'unknown' = 'all';
+  let liveFilterAudio: 'all' | 'reactive' | 'static' = 'all';
+  let liveFilterQuery = '';
+  let liveSteamRoots: string[] = [];
+  let liveSteamDetectedSources: string[] = [];
+  let liveSteamDetectedCount = 0;
+  let liveSteamManualRoot = '';
+  let liveAppStatus: LiveAppStatus | null = null;
+  let liveAuthority: LiveAuthorityResponse | null = null;
+  let liveApplyMonitor = '';
   let liveSelected: LiveWorkshopDetails | LiveWorkshopItem | null = null;
   let liveSelectedSource: 'search' | 'library' | null = null;
+  let liveSelectedLibraryPath = '';
+  let liveSelectedPreviewDataUrl = '';
   let liveSideOpen = false;
+  let liveSteamApiKey = '';
+  let liveSteamApiKeyVisible = false;
+  let liveSteamApiKeySaved = false;
+  let liveSteamApiKeySavedAt: number | null = null;
   let liveDownloadTargetDir = '~/.local/share/kitsune/we/downloads';
   let liveCurrentJob: LiveJob | null = null;
   let liveJobPollTimer: ReturnType<typeof setInterval> | null = null;
+  const livePreviewDataUrlCache = new Map<string, string>();
+  let livePreviewDataUrlById: Record<string, string> = {};
+  let liveV2ThumbDataStatus: Record<string, 'pending' | 'ready' | 'failed'> = {};
+  let liveV2Tab: 'library' | 'explore' | 'config' = 'explore';
+  let liveV2Busy = false;
+  let liveV2Items: LiveIndexItem[] = [];
+  let liveV2LibraryLoaded = false;
+  let liveV2FavoritesOnly = false;
+  let liveV2LibrarySideOpen = false;
+  let liveV2SelectedLibrary: LiveIndexItem | null = null;
+  let liveV2Query = '';
+  let liveV2Page = 1;
+  let liveV2Provider: 'all' | LiveProvider = 'all';
+  let liveV2BrowseItems: LiveBrowseItemV2[] = [];
+  let liveV2ExploreLoading = false;
+  let liveV2ExploreLoaded = false;
+  let liveV2SelectedBrowse: LiveBrowseItemV2 | null = null;
+  let liveV2SideOpen = false;
+  let liveV2PreviewLoading = false;
+  let liveV2PreviewReq = 0;
+  let liveV2PreviewRenderKey = 0;
+  let liveV2PreviewRecoverCount = 0;
+  let liveV2PreviewLastRecoverAt = 0;
+  let liveV2PreviewRemountCount = 0;
+  let liveV2PreviewLastRemountAt = 0;
+  let liveV2PreviewBlobAttempted = false;
+  let liveV2PreviewBlobRetryCount = 0;
+  let liveV2PreviewHadPlayback = false;
+  let liveV2PreviewEngine: 'native' | 'webview' = 'native';
+  let liveV2NativePreviewLastSrc = '';
+  let liveV2NativePreviewActive = false;
+  let liveV2PreviewDebugLines: string[] = [];
+  let liveV2SelectedUrl = '';
+  let liveV2Quality: LiveQuality = 'auto';
+  let liveV2Monitor = '';
+  let liveV2Doctor: {ok: boolean; deps: Record<string, boolean>; fix: string[]} | null = null;
+  let liveV2RunnerMode: 'cargo' | 'bin' = 'cargo';
+  let liveV2RunnerCargoDir = '';
+  let liveV2RunnerBin = 'kitsune-livewallpaper';
+  let liveV2ApplyDefaults = {
+    profile: 'quality',
+    seamless_loop: true,
+    loop_crossfade: true,
+    loop_crossfade_seconds: 0.35,
+    optimize: true,
+    proxy_fps: 60,
+    proxy_crf_hd: 18,
+    proxy_crf_4k: 16
+  };
   let packTab: 'wallhaven' | 'unsplash' | 'reddit' | 'generic_json' | 'static_url' | 'local' = 'wallhaven';
   let rawPacksByName: Record<string, Record<string, unknown>> = {};
   let wallhavenPackName = '';
@@ -577,9 +730,14 @@ import {onDestroy, onMount, tick} from 'svelte';
       void loadKitsuneStatus();
     }
     if (id === 'kitsune-live') {
-      void loadLiveDepsStatus();
-      void loadLiveSearch(false);
-      void loadLiveLibrary();
+      void initLiveV2().then(() => {
+        if (liveV2Tab === 'explore') {
+          void ensureLiveV2ExploreLoaded();
+        }
+        if (liveV2Tab === 'library' && !liveV2LibraryLoaded) {
+          void loadLiveV2Library();
+        }
+      });
     }
     if (id === 'packs') {
       void loadPacksRaw();
@@ -632,8 +790,8 @@ import {onDestroy, onMount, tick} from 'svelte';
       fileSrcCache.set(path, src);
       return src;
     } catch {
-      // Do not cache failed conversion fallback; allow future retries.
-      return path;
+      // Prefer file:// fallback for renderers where convertFileSrc can fail intermittently.
+      return fileUrl(path) ?? path;
     }
   }
 
@@ -660,6 +818,375 @@ import {onDestroy, onMount, tick} from 'svelte';
     return v.includes('.mp4') || v.includes('.webm') || v.includes('.mov') || v.includes('.mkv') || v.includes('.gif');
   }
 
+  function isMp4Path(pathValue?: string): boolean {
+    const v = String(pathValue ?? '').trim().toLowerCase();
+    return v.endsWith('.mp4');
+  }
+
+  function liveV2MotionPreviewSrc(item: LiveBrowseItemV2 | null): string {
+    if (!item) return '';
+    const blob = String(item.preview_motion_blob ?? '').trim();
+    const local = String(item.preview_motion_local ?? '').trim();
+    const remote = String(item.preview_motion_remote ?? '').trim();
+    if (blob) return blob;
+    const localBlobFirstProvider = item.provider === 'motionbgs' || item.provider === 'moewalls';
+    const localIsMp4 = isMp4Path(local);
+    if (local && localBlobFirstProvider && localIsMp4) {
+      const localSrc = imageSrc(local) ?? fileUrl(local) ?? '';
+      if (localSrc) return localSrc;
+    }
+    if (local && localBlobFirstProvider && !liveV2PreviewBlobAttempted) {
+      // Keep showing loading/fallback while blob promotion runs, avoid noisy asset:// failure first.
+      return '';
+    }
+    if (local) {
+      // Prefer Tauri asset URL first; WebKit can reject direct file:// media sources.
+      const localSrc = imageSrc(local) ?? fileUrl(local) ?? '';
+      if (localSrc) return localSrc;
+    }
+    return remote;
+  }
+
+  function liveV2NativePreviewSrc(item: LiveBrowseItemV2 | null): string {
+    if (!item) return '';
+    const local = String(item.preview_motion_local ?? '').trim();
+    if (local) return local;
+    return String(item.preview_motion_remote ?? '').trim();
+  }
+
+  async function stopLiveV2NativePreview(): Promise<void> {
+    if (!liveV2NativePreviewActive && !liveV2NativePreviewLastSrc) return;
+    liveV2NativePreviewLastSrc = '';
+    liveV2NativePreviewActive = false;
+    try {
+      await invoke('kitowall_native_preview_stop');
+    } catch (e) {
+      liveV2PreviewDebug(`native preview stop error: ${String(e)}`);
+    }
+  }
+
+  async function startLiveV2NativePreview(item: LiveBrowseItemV2 | null): Promise<void> {
+    if (liveV2PreviewEngine !== 'native') return;
+    const src = liveV2NativePreviewSrc(item);
+    if (!src) return;
+    if (src === liveV2NativePreviewLastSrc) return;
+    liveV2NativePreviewLastSrc = src;
+    try {
+      await invoke('kitowall_native_preview_start', {source: src});
+      liveV2NativePreviewActive = true;
+      liveV2PreviewDebug(`native preview start src=${src.slice(0, 180)}`);
+    } catch (e) {
+      liveV2NativePreviewActive = false;
+      liveV2PreviewDebug(`native preview start error: ${String(e)}`);
+      liveV2PreviewEngine = 'webview';
+      liveV2PreviewDebug('native preview unavailable, fallback=webview');
+    }
+  }
+
+  async function restartLiveV2NativePreview(): Promise<void> {
+    await stopLiveV2NativePreview();
+    await startLiveV2NativePreview(liveV2SelectedBrowse);
+  }
+
+  function revokePreviewBlob(item: LiveBrowseItemV2 | null | undefined): void {
+    const u = String(item?.preview_motion_blob ?? '').trim();
+    if (!u.startsWith('blob:')) return;
+    try {
+      URL.revokeObjectURL(u);
+    } catch {}
+  }
+
+  function mimeForPath(pathValue: string): string {
+    const lower = String(pathValue || '').toLowerCase();
+    if (lower.endsWith('.webm')) return 'video/webm';
+    if (lower.endsWith('.mp4')) return 'video/mp4';
+    if (lower.endsWith('.mov')) return 'video/quicktime';
+    return '';
+  }
+
+  async function promoteLocalPreviewToBlob(force = false, forcedMime?: string): Promise<boolean> {
+    const cur = liveV2SelectedBrowse;
+    if (!cur) return false;
+    const local = String(cur.preview_motion_local ?? '').trim();
+    if (!local) return false;
+    if (!force && String(cur.preview_motion_blob ?? '').startsWith('blob:')) return true;
+    if (!force && liveV2PreviewBlobAttempted) return false;
+    if (!force) liveV2PreviewBlobAttempted = true;
+    try {
+      const src = imageSrc(local) ?? fileUrl(local);
+      if (!src) return false;
+      const res = await fetch(src);
+      if (!res.ok) {
+        liveV2PreviewDebug(`blob fetch failed status=${res.status}`);
+        return false;
+      }
+      const arr = await res.arrayBuffer();
+      const headerCt = String(res.headers.get('content-type') ?? '').toLowerCase();
+      const headerMime = headerCt.startsWith('video/')
+        ? headerCt.split(';', 1)[0].trim()
+        : '';
+      const mime = forcedMime ?? (headerMime || mimeForPath(local));
+      const oldBlob = String(cur.preview_motion_blob ?? '');
+      const blobUrl = mime
+        ? URL.createObjectURL(new Blob([arr], {type: mime}))
+        : URL.createObjectURL(new Blob([arr]));
+      if (oldBlob.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(oldBlob);
+        } catch {}
+      }
+      if (liveV2SelectedBrowse?.page_url !== cur.page_url) {
+        try {
+          URL.revokeObjectURL(blobUrl);
+        } catch {}
+        return false;
+      }
+      liveV2PreviewDebug(`blob promoted ok mime=${mime || '(none)'} size=${arr.byteLength} ct=${headerCt || '-'}`);
+      liveV2SelectedBrowse = {
+        ...cur,
+        preview_motion_blob: blobUrl
+      };
+      liveV2PreviewRenderKey += 1;
+      return true;
+    } catch (e) {
+      liveV2PreviewDebug(`blob promote error: ${String(e)}`);
+      return false;
+    }
+  }
+
+  function liveV2PreviewDebug(msg: string): void {
+    const line = `[${new Date().toISOString().slice(11, 19)}] ${msg}`;
+    console.log(`[live-preview] ${line}`);
+    liveV2PreviewDebugLines = [...liveV2PreviewDebugLines.slice(-79), line];
+  }
+
+  async function clearLiveV2PreviewFor(url?: string): Promise<void> {
+    const u = String(url ?? '').trim();
+    if (!u) return;
+    try {
+      await liveV2Run(['preview-clear', u]);
+    } catch {}
+  }
+
+  async function closeLiveV2SidePanel(): Promise<void> {
+    const lastUrl = String(liveV2SelectedBrowse?.page_url ?? '').trim();
+    liveV2PreviewDebug(`close panel url=${lastUrl || '-'}`);
+    await stopLiveV2NativePreview();
+    revokePreviewBlob(liveV2SelectedBrowse);
+    liveV2SideOpen = false;
+    liveV2PreviewLoading = false;
+    liveV2PreviewRecoverCount = 0;
+    liveV2PreviewLastRecoverAt = 0;
+    liveV2PreviewRemountCount = 0;
+    liveV2PreviewLastRemountAt = 0;
+    liveV2PreviewBlobAttempted = false;
+    liveV2PreviewBlobRetryCount = 0;
+    liveV2PreviewHadPlayback = false;
+    liveV2SelectedBrowse = null;
+    if (lastUrl) {
+      await clearLiveV2PreviewFor(lastUrl);
+    }
+  }
+
+  function deriveMoeWallsPreviewFromThumb(thumbRemote?: string): string {
+    const raw = String(thumbRemote ?? '').trim();
+    if (!raw) return '';
+    try {
+      const u = new URL(raw);
+      if (!/moewalls\.com$/i.test(u.hostname)) return '';
+      const m = u.pathname.match(/^\/wp-content\/uploads\/(\d{4})\/\d{2}\/([^/]+)$/i);
+      if (!m) return '';
+      const year = m[1];
+      const file = m[2];
+      const baseNoExt = file.replace(/\.[a-z0-9]+$/i, '');
+      const base = baseNoExt
+        .replace(/-thumb-\d+x\d+$/i, '')
+        .replace(/-thumb$/i, '');
+      if (!base) return '';
+      return `${u.origin}/wp-content/uploads/preview/${year}/${base}-preview.webm`;
+    } catch {
+      return '';
+    }
+  }
+
+  function deriveMotionBgsPreviewFromThumb(thumbRemote?: string): string {
+    const raw = String(thumbRemote ?? '').trim();
+    if (!raw) return '';
+    try {
+      const u = new URL(raw);
+      if (!/motionbgs\.com$/i.test(u.hostname)) return '';
+      // Supports both:
+      // - /media/<id>/<slug>.3840x2160.jpg
+      // - /i/c/960x540/media/<id>/<slug>.3840x2160.jpg
+      const m = u.pathname.match(/\/media\/(\d+)\/([^/?#]+?)(?:\.\d+x\d+)?\.(?:jpg|jpeg|png|webp|gif)$/i);
+      if (!m) return '';
+      const mediaId = m[1];
+      const base = m[2];
+      if (!mediaId || !base) return '';
+      return `${u.origin}/media/${mediaId}/${base}.960x540.mp4`;
+    } catch {
+      return '';
+    }
+  }
+
+  function onLiveV2PreviewLoaded(e: Event): void {
+    const el = e.currentTarget;
+    if (!(el instanceof HTMLVideoElement)) return;
+    el.dataset.loadedOk = '1';
+    el.muted = true;
+    liveV2PreviewHadPlayback = true;
+    const p = el.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {});
+    }
+    liveV2PreviewDebug(`loadeddata src=${(el.currentSrc || el.src || '').slice(0, 180)} ready=${el.readyState} t=${Number(el.currentTime || 0).toFixed(2)} d=${Number(el.duration || 0).toFixed(2)} canPlayMp4=${el.canPlayType('video/mp4')} canPlayWebm=${el.canPlayType('video/webm')}`);
+    liveV2PreviewRecoverCount = 0;
+    liveV2PreviewLastRecoverAt = 0;
+  }
+
+  function onLiveV2PreviewState(eventName: string, e: Event): void {
+    const el = e.currentTarget;
+    if (!(el instanceof HTMLVideoElement)) {
+      liveV2PreviewDebug(`${eventName} (non-video target)`);
+      return;
+    }
+    liveV2PreviewDebug(`${eventName} ready=${el.readyState} net=${el.networkState} t=${Number(el.currentTime || 0).toFixed(2)} d=${Number(el.duration || 0).toFixed(2)}`);
+    if (eventName === 'playing' || Number(el.currentTime || 0) > 0.05) {
+      liveV2PreviewHadPlayback = true;
+    }
+  }
+
+  function onLiveV2PreviewEnded(e: Event): void {
+    onLiveV2PreviewState('ended', e);
+  }
+
+  function onLiveV2PreviewError(e: Event): void {
+    const el = e.currentTarget;
+    if (el instanceof HTMLVideoElement) {
+      const mediaErr = el.error;
+      liveV2PreviewDebug(`error src=${(el.currentSrc || el.src || '').slice(0, 180)} ready=${el.readyState} net=${el.networkState} t=${Number(el.currentTime || 0).toFixed(2)} d=${Number(el.duration || 0).toFixed(2)} code=${mediaErr?.code ?? 0} msg=${String((mediaErr as {message?: string} | null)?.message ?? '') || '-'} canPlayMp4=${el.canPlayType('video/mp4')} canPlayWebm=${el.canPlayType('video/webm')}`);
+    } else {
+      liveV2PreviewDebug('error (non-video target)');
+    }
+    if (liveV2SelectedBrowse?.provider === 'motionbgs' || liveV2SelectedBrowse?.provider === 'moewalls') {
+      const local = String(liveV2SelectedBrowse.preview_motion_local ?? '').trim();
+      if (local) {
+        if (el instanceof HTMLVideoElement && el.error?.code === 3) {
+          const activeSrc = (el.currentSrc || el.src || '').trim().toLowerCase();
+          if (activeSrc.startsWith('blob:') && liveV2PreviewBlobRetryCount < 1) {
+            liveV2PreviewBlobRetryCount += 1;
+            liveV2PreviewDebug(`blob decode retry=${liveV2PreviewBlobRetryCount} forceMime=video/mp4`);
+            const cur = liveV2SelectedBrowse;
+            revokePreviewBlob(cur);
+            liveV2SelectedBrowse = {
+              ...cur,
+              preview_motion_blob: ''
+            };
+            void (async () => {
+              const ok = await promoteLocalPreviewToBlob(true, 'video/mp4');
+              if (!ok) liveV2PreviewDebug('blob decode retry failed');
+            })();
+            return;
+          }
+        }
+        if (el instanceof HTMLVideoElement && el.error?.code === 4) {
+          const activeSrc = (el.currentSrc || el.src || '').trim().toLowerCase();
+          if (!activeSrc.startsWith('blob:')) {
+            void (async () => {
+              const ok = await promoteLocalPreviewToBlob();
+              if (!ok) {
+                liveV2PreviewDebug('blob promote not available after code=4');
+                const cur = liveV2SelectedBrowse;
+                const remote = String(cur?.preview_motion_remote ?? '').trim();
+                if (cur && remote) {
+                  liveV2PreviewDebug('switch local->remote after local access/decode failure');
+                  revokePreviewBlob(cur);
+                  liveV2SelectedBrowse = {
+                    ...cur,
+                    preview_motion_local: '',
+                    preview_motion_blob: ''
+                  };
+                  liveV2PreviewRenderKey += 1;
+                }
+              }
+            })();
+          }
+          // Source not supported: avoid retry loops that cause flashing/black screen.
+          liveV2PreviewDebug('source not supported by runtime (code=4), stop retries');
+          return;
+        }
+        // Local-first mode: never downgrade to image fallback for live providers.
+        // Avoid rapid error-recovery loops (thrashing) and re-mount decoder if needed.
+        if (el instanceof HTMLVideoElement) {
+          const now = Date.now();
+          if (now - liveV2PreviewLastRecoverAt < 1200) return;
+          liveV2PreviewLastRecoverAt = now;
+
+          if (liveV2PreviewRecoverCount < 3) {
+            liveV2PreviewRecoverCount += 1;
+            liveV2PreviewDebug(`recover attempt=${liveV2PreviewRecoverCount} (play)`);
+            try {
+              if (Number(el.duration || 0) > 0 && Number(el.currentTime || 0) >= Number(el.duration || 0) - 0.2) {
+                el.currentTime = 0;
+              }
+              const p = el.play();
+              if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch {}
+            return;
+          }
+
+          if (liveV2PreviewRemountCount < 2 && now - liveV2PreviewLastRemountAt > 1800) {
+            liveV2PreviewRemountCount += 1;
+            liveV2PreviewLastRemountAt = now;
+            liveV2PreviewRecoverCount = 0;
+            liveV2PreviewRenderKey += 1;
+            liveV2PreviewDebug(`remount attempt=${liveV2PreviewRemountCount} key=${liveV2PreviewRenderKey}`);
+          }
+        }
+        return;
+      }
+    }
+
+    if (el instanceof HTMLVideoElement) {
+      const alreadyLoaded = el.dataset.loadedOk === '1';
+      const hasPlayed = Number(el.currentTime || 0) > 0.1;
+      const hasBuffer = (el.readyState || 0) >= 2;
+      const activeSrc = (el.currentSrc || el.src || '').trim().toLowerCase();
+      const isRemoteSrc = activeSrc.startsWith('http://') || activeSrc.startsWith('https://');
+      if (isRemoteSrc && liveV2SelectedBrowse) {
+        const local = String(liveV2SelectedBrowse.preview_motion_local ?? '').trim();
+        if (local) {
+          // Hard remote media error: switch to local cached preview immediately.
+          liveV2PreviewDebug('switch remote->local after media error');
+          liveV2SelectedBrowse = {
+            ...liveV2SelectedBrowse,
+            preview_motion_remote: '',
+            preview_motion_blob: String(liveV2SelectedBrowse.preview_motion_blob ?? '')
+          };
+          return;
+        }
+      }
+      // Motion providers can emit late/non-fatal errors; if playback already started,
+      // keep current video state and do not force reload/fallback.
+      if (alreadyLoaded || hasPlayed || hasBuffer || liveV2PreviewHadPlayback) {
+        return;
+      }
+    }
+    if (!liveV2SelectedBrowse) return;
+    if (liveV2SelectedBrowse.provider === 'motionbgs' || liveV2SelectedBrowse.provider === 'moewalls') {
+      liveV2PreviewDebug('skip thumbnail fallback for live provider after transient error');
+      return;
+    }
+    // Remote previews can disappear on source sites; fallback to the card thumbnail.
+    liveV2PreviewDebug('fallback to thumbnail (no stable video source)');
+    liveV2SelectedBrowse = {
+      ...liveV2SelectedBrowse,
+      preview_motion_local: '',
+      preview_motion_remote: '',
+      preview_motion_blob: ''
+    };
+  }
+
   function livePreviewPrimary(item: LiveWorkshopItem | LiveWorkshopDetails | null): string | null {
     if (!item) return null;
     if (item.preview_motion_remote && isMotionPreview(item.preview_motion_remote)) return item.preview_motion_remote;
@@ -674,9 +1201,200 @@ import {onDestroy, onMount, tick} from 'svelte';
     return item.preview_url_remote ?? null;
   }
 
+  function liveLocalPreviewPath(item: LiveWorkshopItem | LiveWorkshopDetails | null): string {
+    return item?.preview_thumb_local ?? '';
+  }
+
   function isLiveSelectionMotion(): boolean {
     const src = livePreviewPrimary(liveSelected);
     return !!src && isMotionPreview(src);
+  }
+
+  function onLivePreviewError(e: Event): void {
+    const img = e.currentTarget;
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.dataset.fallbackApplied === '1') return;
+    const local = String(img.dataset.localPath ?? '').trim();
+    if (!local) return;
+    const fallback = fileUrl(local);
+    if (!fallback) return;
+    img.dataset.fallbackApplied = '1';
+    img.src = fallback;
+  }
+
+  function liveLibraryPreviewCandidates(entry: LiveLibraryItem): string[] {
+    const base = String(entry.path ?? '').trim().replace(/\/+$/, '');
+    const out: string[] = [];
+    if (base) {
+      out.push(`${base}/preview.jpg`);
+      out.push(`${base}/preview.jpeg`);
+      out.push(`${base}/preview.png`);
+      out.push(`${base}/preview.webp`);
+      out.push(`${base}/thumbnail.jpg`);
+      out.push(`${base}/thumbnail.png`);
+      out.push(`${base}/thumbnail.webp`);
+    }
+    const metaThumb = String(entry.meta?.preview_thumb_local ?? '').trim();
+    if (metaThumb) out.push(metaThumb);
+    return Array.from(new Set(out));
+  }
+
+  function liveSelectedPreviewCandidates(): string[] {
+    const id = String(liveSelected?.id ?? '').trim();
+    const entry = liveLibraryItems.find(v => v.id === id && (!liveSelectedLibraryPath || v.path === liveSelectedLibraryPath))
+      ?? liveLibraryItems.find(v => v.id === id);
+    if (entry) return liveLibraryPreviewCandidates(entry);
+    const fallback = String(liveSelected?.preview_thumb_local ?? '').trim();
+    return fallback ? [fallback] : [];
+  }
+
+  function liveCandidateSrc(pathValue: string): string {
+    return imageSrc(pathValue) ?? fileUrl(pathValue) ?? pathValue;
+  }
+
+  function filteredLiveLibraryItems(): LiveLibraryItem[] {
+    const q = liveFilterQuery.trim().toLowerCase();
+    return liveLibraryItems.filter((entry) => {
+      const meta = entry.meta;
+      const type = (meta?.wallpaper_type ?? 'unknown') as 'video' | 'scene' | 'web' | 'application' | 'unknown';
+      const reactive = !!meta?.audio_reactive;
+      if (liveFilterType !== 'all' && type !== liveFilterType) return false;
+      if (liveFilterAudio === 'reactive' && !reactive) return false;
+      if (liveFilterAudio === 'static' && reactive) return false;
+      if (!q) return true;
+      const hay = `${entry.id} ${meta?.title ?? ''} ${entry.path}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function liveMonitorOptions(): string[] {
+    return Array.isArray(status?.outputs) ? status.outputs : [];
+  }
+
+  function liveV2ThumbPngPath(item: LiveIndexItem): string {
+    const raw = String(item.thumb_path ?? '').trim();
+    if (!raw) return '';
+    if (raw.toLowerCase().endsWith('.png')) return raw;
+    if (/\.[a-z0-9]+$/i.test(raw)) return raw.replace(/\.[a-z0-9]+$/i, '.png');
+    return `${raw}.png`;
+  }
+
+  function liveV2LibraryPreviewCandidates(item: LiveIndexItem): string[] {
+    const out: string[] = [];
+    const thumb = liveV2ThumbPngPath(item);
+    if (thumb) out.push(thumb);
+    const filePath = String(item.file_path ?? '').trim();
+    const base = filePath.replace(/\/[^/]+$/, '');
+    if (base && base !== filePath) {
+      out.push(`${base}/preview.png`);
+      out.push(`${base}/thumbnail.png`);
+    }
+    return Array.from(new Set(out));
+  }
+
+  function liveV2LibraryPreviewSrc(item: LiveIndexItem): string {
+    const candidates = liveV2LibraryPreviewCandidates(item);
+    const first = String(candidates[0] ?? '').trim();
+    return fileUrl(first) ?? imageSrc(first) ?? first;
+  }
+
+  function liveV2LibraryDataUrl(id: string): string {
+    return String(livePreviewDataUrlById[id] ?? '').trim();
+  }
+
+  async function preloadLiveV2LibraryPreviewData(items: LiveIndexItem[]): Promise<void> {
+    const slice = items.slice(0, 80);
+    const nextStatus = {...liveV2ThumbDataStatus};
+    for (const item of slice) {
+      if (String(livePreviewDataUrlById[item.id] ?? '').trim()) {
+        nextStatus[item.id] = 'ready';
+      } else if (!nextStatus[item.id]) {
+        nextStatus[item.id] = 'pending';
+      }
+    }
+    liveV2ThumbDataStatus = nextStatus;
+
+    for (const item of slice) {
+      if (String(livePreviewDataUrlById[item.id] ?? '').trim()) continue;
+      void (async () => {
+        const candidates = liveV2LibraryPreviewCandidates(item);
+        for (const c of candidates) {
+          const dataUrl = await readLocalDataUrl(c);
+          if (!dataUrl) continue;
+          livePreviewDataUrlById = {...livePreviewDataUrlById, [item.id]: dataUrl};
+          liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'ready'};
+          return;
+        }
+        liveV2ThumbDataStatus = {...liveV2ThumbDataStatus, [item.id]: 'failed'};
+      })();
+    }
+  }
+
+  function activeMonitorsForWallpaper(id: string): string[] {
+    const map = liveAuthority?.state?.instances ?? {};
+    return Object.entries(map)
+      .filter(([, inst]) => String(inst?.id ?? '') === id)
+      .map(([monitor]) => monitor);
+  }
+
+  async function readLocalDataUrl(pathValue: string): Promise<string | null> {
+    const p = String(pathValue ?? '').trim();
+    if (!p) return null;
+    const cached = livePreviewDataUrlCache.get(p);
+    if (cached) return cached;
+    try {
+      const data = await invoke<{ok: boolean; data_url?: string}>('kitowall_file_data_url', {path: p});
+      const url = String(data?.data_url ?? '').trim();
+      if (!url) return null;
+      livePreviewDataUrlCache.set(p, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveEntryPreviewDataUrl(entry: LiveLibraryItem): Promise<string | null> {
+    const candidates = liveLibraryPreviewCandidates(entry);
+    for (const c of candidates) {
+      const dataUrl = await readLocalDataUrl(c);
+      if (dataUrl) return dataUrl;
+    }
+    return null;
+  }
+
+  async function preloadLiveLibraryPreviewData(entries: LiveLibraryItem[]): Promise<void> {
+    const next = {...livePreviewDataUrlById};
+    const slice = entries.slice(0, 80);
+    for (const entry of slice) {
+      const dataUrl = await resolveEntryPreviewDataUrl(entry);
+      if (dataUrl) next[entry.id] = dataUrl;
+    }
+    livePreviewDataUrlById = next;
+  }
+
+  function onLiveLibraryPreviewError(e: Event): void {
+    const img = e.currentTarget;
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.dataset.localFallbackApplied !== '1') {
+      const local = String(img.dataset.localPath ?? '').trim();
+      const localUrl = fileUrl(local);
+      if (localUrl) {
+        img.dataset.localFallbackApplied = '1';
+        img.src = localUrl;
+        return;
+      }
+    }
+    let fallbacks: string[] = [];
+    try {
+      fallbacks = JSON.parse(img.dataset.fallbacks ?? '[]') as string[];
+    } catch {
+      fallbacks = [];
+    }
+    const idx = Number(img.dataset.fallbackIndex ?? '0');
+    const next = fallbacks[idx];
+    if (!next) return;
+    img.dataset.fallbackIndex = String(idx + 1);
+    img.src = liveCandidateSrc(next);
   }
 
   function parseLiveDepsJson(stdout: string): LiveDepsStatus {
@@ -717,8 +1435,23 @@ import {onDestroy, onMount, tick} from 'svelte';
       const stderr = (result.stderr ?? '').trim();
       const stdout = (result.stdout ?? '').trim();
       if (!result.ok) {
-        throw new Error(stderr || stdout || `install failed (exit ${result.exitCode})`);
+        const msg = stderr || stdout || `install failed (exit ${result.exitCode})`;
+        const nonInteractive = /eof|tty|non-?interactive|instalacion interactiva/i.test(msg);
+        if (nonInteractive) {
+          const cmd = await getLiveDepsInstallCommand();
+          liveDepsManualCommand = cmd;
+          pushToast(
+            tr(
+              'Interactive install is not available from UI. Use the manual command shown below.',
+              'La instalacion interactiva no esta disponible desde la UI. Usa el comando manual de abajo.'
+            ),
+            'warn'
+          );
+          return;
+        }
+        throw new Error(msg);
       }
+      liveDepsManualCommand = '';
       pushToast('LiveWallpaper dependencies installation command executed', 'success');
       await loadLiveDepsStatus();
     } catch (e) {
@@ -732,11 +1465,8 @@ import {onDestroy, onMount, tick} from 'svelte';
   async function printLiveDepsInstallCommand(): Promise<void> {
     liveDepsBusy = true;
     try {
-      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
-        args: ['livewallpapers', 'install', '--print']
-      });
-      const cmd = (result.stdout ?? '').trim();
-      if (!cmd) throw new Error('No install command returned');
+      const cmd = await getLiveDepsInstallCommand();
+      liveDepsManualCommand = cmd;
       kitsuneLastCommand = 'kitsune livewallpapers install --print';
       kitsuneOutput = cmd;
       pushToast('Manual install command generated in command output panel', 'info');
@@ -745,6 +1475,252 @@ import {onDestroy, onMount, tick} from 'svelte';
       pushToast(String(e), 'error');
     } finally {
       liveDepsBusy = false;
+    }
+  }
+
+  async function getLiveDepsInstallCommand(): Promise<string> {
+    const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
+      args: ['livewallpapers', 'install', '--print']
+    });
+    const cmd = (result.stdout ?? '').trim();
+    if (!cmd) throw new Error('No install command returned');
+    return cmd;
+  }
+
+  async function copyLiveDepsManualCommand(): Promise<void> {
+    const cmd = liveDepsManualCommand.trim();
+    if (!cmd) return;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      pushToast(tr('Command copied', 'Comando copiado'), 'success');
+    } catch {
+      pushToast(tr('Could not copy command', 'No se pudo copiar el comando'), 'error');
+    }
+  }
+
+  async function saveLiveApiKey(): Promise<void> {
+    const key = liveSteamApiKey.trim();
+    if (!key) {
+      pushToast(tr('Steam Web API Key is required', 'Steam Web API Key es requerida'), 'error');
+      return;
+    }
+    liveBusy = true;
+    try {
+      await invoke('kitowall_we_set_api_key', {apiKey: key});
+      liveSteamApiKeySaved = true;
+      liveSteamApiKeySavedAt = Date.now();
+      pushToast(tr('Steam Web API Key saved', 'Steam Web API Key guardada'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  function onLiveApiKeyInput(): void {
+    liveSteamApiKeySaved = false;
+  }
+
+  async function loadLiveSteamRoots(): Promise<void> {
+    try {
+      const data = await invoke<LiveSteamRootsResponse>('kitowall_we_get_steam_roots');
+      liveSteamRoots = Array.isArray(data?.steam_roots) ? data.steam_roots : [];
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    }
+  }
+
+  async function loadLiveAppStatus(): Promise<void> {
+    try {
+      const data = await invoke<LiveAppStatus>('kitowall_we_app_status');
+      liveAppStatus = data;
+    } catch (e) {
+      liveAppStatus = null;
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    }
+  }
+
+  async function loadLiveAuthorityStatus(): Promise<void> {
+    try {
+      const data = await invoke<LiveAuthorityResponse>('kitowall_we_active');
+      liveAuthority = data;
+    } catch (e) {
+      liveAuthority = null;
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    }
+  }
+
+  async function stopLiveAuthority(): Promise<void> {
+    liveBusy = true;
+    try {
+      await invoke('kitowall_we_stop_all');
+      pushToast(tr('LiveWallpapers stopped and services restored', 'LiveWallpapers detenido y servicios restaurados'), 'success');
+      await loadLiveAuthorityStatus();
+      await loadLiveDepsStatus();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function saveLiveSteamRoots(nextRoots: string[]): Promise<void> {
+    const roots = nextRoots.map(v => String(v).trim()).filter(Boolean);
+    const csv = roots.join(',');
+    await invoke('kitowall_we_set_steam_roots', {rootsCsv: csv});
+    liveSteamRoots = roots;
+  }
+
+  async function pickLiveSteamRoot(): Promise<void> {
+    liveBusy = true;
+    try {
+      const result = await invoke<{path?: string | null}>('kitowall_pick_folder');
+      const selected = String(result?.path ?? '').trim();
+      if (!selected) return;
+      if (liveSteamRoots.includes(selected)) return;
+      await saveLiveSteamRoots([...liveSteamRoots, selected]);
+      await scanLiveSteam();
+      pushToast(tr('Steam path added', 'Ruta de Steam agregada'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function addLiveSteamRootManual(): Promise<void> {
+    const p = liveSteamManualRoot.trim();
+    if (!p) return;
+    if (liveSteamRoots.includes(p)) {
+      pushToast(tr('Path already exists', 'La ruta ya existe'), 'info');
+      return;
+    }
+    liveBusy = true;
+    try {
+      await saveLiveSteamRoots([...liveSteamRoots, p]);
+      liveSteamManualRoot = '';
+      await scanLiveSteam();
+      pushToast(tr('Steam path added', 'Ruta de Steam agregada'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function removeLiveSteamRoot(pathToRemove: string): Promise<void> {
+    liveBusy = true;
+    try {
+      await saveLiveSteamRoots(liveSteamRoots.filter(v => v !== pathToRemove));
+      await scanLiveSteam();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function scanLiveSteam(): Promise<void> {
+    liveBusy = true;
+    try {
+      const data = await invoke<LiveSteamScanResponse>('kitowall_we_scan_steam');
+      liveSteamDetectedSources = Array.isArray(data?.sources) ? data.sources : [];
+      liveSteamDetectedCount = Number.isFinite(data?.count) ? Number(data.count) : 0;
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function syncLiveSteam(): Promise<void> {
+    if (liveAppStatus && !liveAppStatus.installed) {
+      pushToast(
+        tr(
+          'Wallpaper Engine must be installed to sync wallpapers.',
+          'Wallpaper Engine debe estar instalado para sincronizar wallpapers.'
+        ),
+        'error'
+      );
+      return;
+    }
+    liveBusy = true;
+    try {
+      const out = await invoke<LiveSteamSyncResponse>('kitowall_we_sync_steam');
+      pushToast(
+        tr(
+          `Synced ${out.imported} imported / ${out.skipped} existing`,
+          `Sincronizado ${out.imported} importados / ${out.skipped} existentes`
+        ),
+        'success'
+      );
+      await scanLiveSteam();
+      await loadLiveLibrary();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function applyLiveWallpaper(entry: LiveLibraryItem): Promise<void> {
+    const type = (entry.meta?.wallpaper_type ?? 'unknown').toLowerCase();
+    if (type !== 'video') {
+      pushToast(
+        tr(
+          `Unsupported type "${type}". Only video wallpapers are supported now.`,
+          `Tipo no soportado "${type}". Ahora solo se soportan wallpapers de video.`
+        ),
+        'error'
+      );
+      return;
+    }
+    const monitor = liveApplyMonitor.trim() || liveMonitorOptions()[0] || '';
+    if (!monitor) {
+      pushToast(tr('Select a monitor first', 'Selecciona un monitor primero'), 'error');
+      return;
+    }
+    liveBusy = true;
+    try {
+      const out = await invoke<LiveApplyResponse>('kitowall_we_apply', {
+        id: entry.id,
+        monitor,
+        backend: 'auto'
+      });
+      if (!out?.ok) throw new Error('Apply failed');
+      pushToast(tr(`Applied on ${monitor}`, `Aplicado en ${monitor}`), 'success');
+      await loadLiveAuthorityStatus();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function stopLiveWallpaperMonitor(monitor: string): Promise<void> {
+    const m = monitor.trim();
+    if (!m) return;
+    liveBusy = true;
+    try {
+      await invoke('kitowall_we_stop_monitor', {monitor: m});
+      pushToast(tr(`Stopped on ${m}`, `Detenido en ${m}`), 'success');
+      await loadLiveAuthorityStatus();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveBusy = false;
     }
   }
 
@@ -762,7 +1738,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       liveSearchItems = Array.isArray(data?.items) ? data.items : [];
       liveSearchTotal = typeof data?.total === 'number' ? data.total : null;
       liveSearchCached = !!data?.cached;
-      liveView = 'search';
+      liveView = 'general';
     } catch (e) {
       lastError = String(e);
       pushToast(String(e), 'error');
@@ -777,7 +1753,11 @@ import {onDestroy, onMount, tick} from 'svelte';
       const data = await invoke<LiveLibraryResponse>('kitowall_we_library');
       liveLibraryRoot = String(data?.root ?? '');
       liveLibraryItems = Array.isArray(data?.items) ? data.items : [];
-      liveView = 'library';
+      liveView = 'downloaded';
+      if (!liveApplyMonitor && liveMonitorOptions().length > 0) {
+        liveApplyMonitor = liveMonitorOptions()[0] ?? '';
+      }
+      void preloadLiveLibraryPreviewData(liveLibraryItems);
     } catch (e) {
       lastError = String(e);
       pushToast(String(e), 'error');
@@ -801,11 +1781,18 @@ import {onDestroy, onMount, tick} from 'svelte';
   }
 
   async function openLiveFromLibrary(item: LiveLibraryItem): Promise<void> {
+    liveSelectedLibraryPath = item.path;
+    liveSelectedPreviewDataUrl = '';
     liveSelected = item.meta ?? {
       id: item.id,
       title: item.id,
       tags: []
     };
+    const dataUrl = await resolveEntryPreviewDataUrl(item);
+    if (dataUrl) {
+      liveSelectedPreviewDataUrl = dataUrl;
+      livePreviewDataUrlById = {...livePreviewDataUrlById, [item.id]: dataUrl};
+    }
     liveSelectedSource = 'library';
     liveSideOpen = true;
     try {
@@ -864,6 +1851,462 @@ import {onDestroy, onMount, tick} from 'svelte';
       pushToast(String(e), 'error');
     } finally {
       liveBusy = false;
+    }
+  }
+
+  async function liveV2Run(args: string[]): Promise<unknown> {
+    return await invoke('kitowall_live_run', {args});
+  }
+
+  async function openExternalUrl(url: string): Promise<void> {
+    const u = String(url ?? '').trim();
+    if (!/^https?:\/\//i.test(u)) return;
+    try {
+      await invoke('kitowall_open_url', {url: u});
+    } catch (e) {
+      pushToast(String(e), 'error');
+    }
+  }
+
+  function onExternalUrlKeydown(e: KeyboardEvent, url: string): void {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    void openExternalUrl(url);
+  }
+
+  async function loadLiveV2Config(): Promise<void> {
+    try {
+      const out = await liveV2Run(['config', 'show']) as {
+        ok: boolean;
+        index?: {
+          apply_defaults?: typeof liveV2ApplyDefaults;
+          runner?: {mode?: 'cargo' | 'bin'; cargo_project_dir?: string; bin_name?: string};
+        };
+      };
+      const index = out?.index;
+      if (index?.apply_defaults) {
+        liveV2ApplyDefaults = {...liveV2ApplyDefaults, ...index.apply_defaults};
+      }
+      if (index?.runner) {
+        liveV2RunnerMode = index.runner.mode ?? 'cargo';
+        liveV2RunnerCargoDir = index.runner.cargo_project_dir ?? '';
+        liveV2RunnerBin = index.runner.bin_name ?? 'kitsune-livewallpaper';
+      }
+    } catch (e) {
+      lastError = String(e);
+    }
+  }
+
+  async function initLiveV2(): Promise<void> {
+    try {
+      await liveV2Run(['init']);
+      await loadLiveV2Config();
+      if (liveV2Tab === 'library' && !liveV2LibraryLoaded) {
+        void loadLiveV2Library();
+      }
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    }
+  }
+
+  async function ensureLiveV2ExploreLoaded(): Promise<void> {
+    if (liveV2ExploreLoaded) return;
+    await browseLiveV2();
+  }
+
+  function selectLiveV2Tab(tab: 'library' | 'explore' | 'config'): void {
+    liveV2Tab = tab;
+    if (tab === 'library') {
+      if (!liveV2LibraryLoaded && !liveV2Busy) {
+        void loadLiveV2Library();
+      } else if (liveV2Items.length > 0) {
+        void preloadLiveV2LibraryPreviewData(liveV2Items);
+      }
+      return;
+    }
+    if (tab !== 'explore') return;
+    if (liveV2ExploreLoaded || liveV2ExploreLoading) return;
+    liveV2ExploreLoading = true;
+    liveV2BrowseItems = [];
+    void (async () => {
+      await tick();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          void ensureLiveV2ExploreLoaded();
+        });
+      });
+    })();
+    liveV2LibrarySideOpen = false;
+    liveV2SelectedLibrary = null;
+  }
+
+  async function loadLiveV2Library(): Promise<void> {
+    liveV2Busy = true;
+    try {
+      const out = await liveV2Run(['list', ...(liveV2FavoritesOnly ? ['--favorites'] : [])]) as {
+        ok: boolean;
+        items?: LiveIndexItem[];
+      };
+      liveV2Items = (Array.isArray(out?.items) ? out.items : []).map((item) => ({
+        ...item,
+        thumb_path: liveV2ThumbPngPath(item)
+      }));
+      liveV2ThumbDataStatus = Object.fromEntries(liveV2Items.map((item) => [item.id, 'pending' as const]));
+      // Reset per-id cached thumbnails so Live V2 re-resolves using PNG-only paths.
+      const nextThumbs = {...livePreviewDataUrlById};
+      for (const item of liveV2Items) delete nextThumbs[item.id];
+      livePreviewDataUrlById = nextThumbs;
+      void preloadLiveV2LibraryPreviewData(liveV2Items);
+      if (liveV2SelectedLibrary) {
+        liveV2SelectedLibrary = liveV2Items.find(v => v.id === liveV2SelectedLibrary?.id) ?? null;
+        if (!liveV2SelectedLibrary) liveV2LibrarySideOpen = false;
+      }
+      liveV2LibraryLoaded = true;
+      if (!liveV2Monitor && liveMonitorOptions().length > 0) {
+        liveV2Monitor = liveMonitorOptions()[0] ?? '';
+      }
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  function openLiveV2LibraryDetails(item: LiveIndexItem): void {
+    liveV2SelectedLibrary = item;
+    liveV2LibrarySideOpen = true;
+  }
+
+  function closeLiveV2LibraryDetails(): void {
+    liveV2LibrarySideOpen = false;
+    liveV2SelectedLibrary = null;
+  }
+
+  async function browseLiveV2(): Promise<void> {
+    liveV2ExploreLoading = true;
+    try {
+      const out = await liveV2Run([
+        'browse',
+        '--page', String(Math.max(1, Math.floor(Number(liveV2Page) || 1))),
+        '--quality', 'all',
+        '--provider', liveV2Provider
+      ]) as {ok: boolean; items?: LiveBrowseItemV2[]};
+      liveV2BrowseItems = Array.isArray(out?.items) ? out.items : [];
+      liveV2ExploreLoaded = true;
+      if (liveV2SelectedBrowse) {
+        liveV2SelectedBrowse = liveV2BrowseItems.find(v => v.page_url === liveV2SelectedBrowse?.page_url) ?? liveV2SelectedBrowse;
+      }
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2ExploreLoading = false;
+    }
+  }
+
+  async function searchLiveV2(): Promise<void> {
+    const q = liveV2Query.trim();
+    if (!q) {
+      await browseLiveV2();
+      return;
+    }
+    liveV2ExploreLoading = true;
+    try {
+      const out = await liveV2Run([
+        'search',
+        q,
+        '--page', String(Math.max(1, Math.floor(Number(liveV2Page) || 1))),
+        '--limit', '24',
+        '--provider', liveV2Provider
+      ]) as {ok: boolean; items?: LiveBrowseItemV2[]};
+      liveV2BrowseItems = Array.isArray(out?.items) ? out.items : [];
+      liveV2ExploreLoaded = true;
+      if (liveV2SelectedBrowse) {
+        liveV2SelectedBrowse = liveV2BrowseItems.find(v => v.page_url === liveV2SelectedBrowse?.page_url) ?? null;
+      }
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2ExploreLoading = false;
+    }
+  }
+
+  async function fetchLiveV2(url: string, applyNow = false, qualityOverride?: LiveQuality): Promise<void> {
+    const u = url.trim();
+    if (!u) {
+      pushToast(tr('Select a URL first', 'Selecciona una URL primero'), 'error');
+      return;
+    }
+    liveV2Busy = true;
+    try {
+      const args = ['fetch', u, '--quality', qualityOverride ?? liveV2Quality];
+      if (applyNow) {
+        const monitor = liveV2Monitor.trim() || liveMonitorOptions()[0] || '';
+        if (!monitor) throw new Error('Monitor is required to apply');
+        args.push('--monitor', monitor, '--apply');
+      }
+      await liveV2Run(args);
+      pushToast(tr('Live wallpaper downloaded', 'Live wallpaper descargado'), 'success');
+      await loadLiveV2Library();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function openLiveV2Browse(item: LiveBrowseItemV2): Promise<void> {
+    liveV2PreviewDebugLines = [];
+    liveV2PreviewDebug(`open details provider=${item.provider} url=${item.page_url}`);
+    await stopLiveV2NativePreview();
+    revokePreviewBlob(liveV2SelectedBrowse);
+    const previousUrl = String(liveV2SelectedBrowse?.page_url ?? '').trim();
+    if (previousUrl && previousUrl !== item.page_url) {
+      liveV2PreviewDebug(`clear previous cached preview url=${previousUrl}`);
+      revokePreviewBlob(liveV2SelectedBrowse);
+      void clearLiveV2PreviewFor(previousUrl);
+    }
+    const localFirst = item.provider === 'motionbgs' || item.provider === 'moewalls';
+    const reqId = ++liveV2PreviewReq;
+    liveV2PreviewRecoverCount = 0;
+    liveV2PreviewLastRecoverAt = 0;
+    liveV2PreviewRemountCount = 0;
+    liveV2PreviewLastRemountAt = 0;
+    liveV2PreviewBlobAttempted = false;
+    liveV2PreviewBlobRetryCount = 0;
+    liveV2PreviewHadPlayback = false;
+    liveV2PreviewRenderKey += 1;
+    liveV2PreviewLoading = localFirst;
+    liveV2SelectedBrowse = {
+      ...item,
+      // Use local-first for live providers to avoid remote stream interruptions.
+      preview_motion_local: '',
+      preview_motion_remote: localFirst ? '' : String(item.preview_motion_remote ?? ''),
+      preview_motion_blob: ''
+    };
+    liveV2SelectedUrl = item.page_url;
+    liveV2SideOpen = true;
+    if (item.provider === 'moewalls' && !item.preview_motion_remote) {
+      const guess = deriveMoeWallsPreviewFromThumb(item.thumb_remote);
+      if (guess) {
+        if (reqId !== liveV2PreviewReq) return;
+        liveV2PreviewDebug(`derived moewalls preview from thumb: ${guess}`);
+        liveV2SelectedBrowse = {
+          ...(liveV2SelectedBrowse ?? item),
+          // Keep local-first behavior stable: do not start remote playback before cache is ready.
+          preview_motion_remote: localFirst ? '' : guess,
+          preview_motion_blob: ''
+        };
+      }
+    } else if (item.provider === 'motionbgs' && !item.preview_motion_remote) {
+      const guess = deriveMotionBgsPreviewFromThumb(item.thumb_remote);
+      if (guess) {
+        if (reqId !== liveV2PreviewReq) return;
+        liveV2PreviewDebug(`derived motionbgs preview from thumb: ${guess}`);
+        liveV2SelectedBrowse = {
+          ...(liveV2SelectedBrowse ?? item),
+          preview_motion_remote: '',
+          preview_motion_blob: ''
+        };
+      }
+    }
+    try {
+      const out = await liveV2Run(['resolve', item.page_url]) as {
+        ok: boolean;
+        post?: {
+          title?: string;
+          thumb_remote?: string;
+          preview_motion_remote?: string;
+          tags?: string[];
+          variants?: Array<{variant: 'hd' | '4k'}>;
+        };
+      };
+      const post = out?.post;
+      if (!post) return;
+      if (reqId !== liveV2PreviewReq) return;
+      liveV2PreviewDebug(`resolve ok variants=${(post.variants || []).map(v => v.variant).join(',') || '-'} preview=${String(post.preview_motion_remote ?? '') || '-'}`);
+      const variants = Array.isArray(post.variants) ? post.variants : [];
+      const hasHd = variants.some(v => v.variant === 'hd');
+      const has4k = variants.some(v => v.variant === '4k');
+      const resolvedThumb = String(post.thumb_remote ?? item.thumb_remote ?? '');
+      const resolvedPreview = String(post.preview_motion_remote ?? item.preview_motion_remote ?? '');
+      const motionGuess = item.provider === 'motionbgs' && !resolvedPreview
+        ? deriveMotionBgsPreviewFromThumb(resolvedThumb)
+        : '';
+      liveV2SelectedBrowse = {
+        ...(liveV2SelectedBrowse ?? item),
+        title: String(post.title ?? item.title),
+        thumb_remote: resolvedThumb,
+        preview_motion_remote: localFirst ? '' : (resolvedPreview || (item.provider === 'moewalls' ? deriveMoeWallsPreviewFromThumb(resolvedThumb) : motionGuess)),
+        preview_motion_blob: String(liveV2SelectedBrowse?.preview_motion_blob ?? ''),
+        tags: Array.isArray(post.tags) ? post.tags : (item.tags ?? []),
+        has_hd: hasHd || item.has_hd,
+        has_4k: has4k || item.has_4k
+      };
+      try {
+        liveV2PreviewDebug('request preview cache (live preview)');
+        const previewOut = await liveV2Run(['preview', item.page_url]) as {
+          ok: boolean;
+          motion_available?: boolean;
+          local_path?: string;
+          remote_url?: string;
+        };
+        if (previewOut?.motion_available) {
+          if (reqId !== liveV2PreviewReq) return;
+          liveV2PreviewDebug(`preview cached local=${String(previewOut.local_path ?? '') || '-'} remote=${String(previewOut.remote_url ?? '') || '-'}`);
+          liveV2SelectedBrowse = {
+            ...(liveV2SelectedBrowse ?? item),
+            preview_motion_local: String(previewOut.local_path ?? ''),
+            preview_motion_remote: localFirst
+              ? ''
+              : String(previewOut.remote_url ?? (liveV2SelectedBrowse?.preview_motion_remote ?? '')),
+            preview_motion_blob: String(liveV2SelectedBrowse?.preview_motion_blob ?? '')
+          };
+          if (localFirst) {
+            const local = String(previewOut.local_path ?? '').trim();
+            if (isMp4Path(local)) {
+              liveV2PreviewDebug('use local mp4 directly (skip blob-first)');
+            } else {
+              liveV2PreviewDebug('promote local preview to blob (blob-first)');
+              void promoteLocalPreviewToBlob();
+            }
+          }
+        } else {
+          liveV2PreviewDebug('preview cache unavailable (motion_available=false)');
+        }
+      } catch (e) {
+        liveV2PreviewDebug(`preview cache error: ${String(e)}`);
+      }
+    } catch (e) {
+      liveV2PreviewDebug(`open details error: ${String(e)}`);
+    }
+    finally {
+      if (reqId === liveV2PreviewReq) {
+        const chosen = liveV2MotionPreviewSrc(liveV2SelectedBrowse);
+        liveV2PreviewDebug(`final source=${chosen ? chosen.slice(0, 180) : '-'} local=${String(liveV2SelectedBrowse?.preview_motion_local ?? '') ? 'yes' : 'no'} remote=${String(liveV2SelectedBrowse?.preview_motion_remote ?? '') ? 'yes' : 'no'}`);
+        liveV2PreviewLoading = false;
+        void startLiveV2NativePreview(liveV2SelectedBrowse);
+      }
+    }
+  }
+
+  async function applyLiveV2(id: string): Promise<void> {
+    const monitor = liveV2Monitor.trim() || liveMonitorOptions()[0] || '';
+    if (!monitor) {
+      pushToast(tr('Select a monitor first', 'Selecciona un monitor primero'), 'error');
+      return;
+    }
+    liveV2Busy = true;
+    try {
+      await liveV2Run(['apply', id, '--monitor', monitor, '--quality', liveV2Quality]);
+      pushToast(tr(`Applied on ${monitor}`, `Aplicado en ${monitor}`), 'success');
+      await loadLiveV2Library();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function toggleFavoriteLiveV2(item: LiveIndexItem): Promise<void> {
+    liveV2Busy = true;
+    try {
+      await liveV2Run(['favorite', item.id, item.favorite ? 'off' : 'on']);
+      await loadLiveV2Library();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function removeLiveV2(item: LiveIndexItem): Promise<void> {
+    liveV2Busy = true;
+    try {
+      await liveV2Run(['remove', item.id, '--delete-files']);
+      await loadLiveV2Library();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function openLiveV2Folder(id?: string): Promise<void> {
+    liveV2Busy = true;
+    try {
+      const out = await liveV2Run(id ? ['open', '--id', id] : ['open']) as {ok: boolean; path?: string};
+      const p = String(out?.path ?? '').trim();
+      if (!p) throw new Error('No path returned');
+      await invoke('kitowall_open_path', {path: p});
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function loadLiveV2Doctor(): Promise<void> {
+    try {
+      const out = await liveV2Run(['doctor']) as {ok: boolean; deps: Record<string, boolean>; fix: string[]};
+      liveV2Doctor = out;
+    } catch (e) {
+      liveV2Doctor = null;
+      lastError = String(e);
+    }
+  }
+
+  async function saveLiveV2Runner(): Promise<void> {
+    liveV2Busy = true;
+    try {
+      await liveV2Run([
+        'config',
+        'runner',
+        '--mode', liveV2RunnerMode,
+        '--cargo-project-dir', liveV2RunnerCargoDir.trim(),
+        '--bin-name', liveV2RunnerBin.trim()
+      ]);
+      await loadLiveV2Config();
+      await loadLiveV2Doctor();
+      pushToast(tr('Runner config saved', 'Configuracion de runner guardada'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
+    }
+  }
+
+  async function saveLiveV2ApplyDefaults(): Promise<void> {
+    liveV2Busy = true;
+    try {
+      await liveV2Run([
+        'config',
+        'apply-defaults',
+        '--profile', liveV2ApplyDefaults.profile,
+        '--seamless-loop', String(!!liveV2ApplyDefaults.seamless_loop),
+        '--loop-crossfade', String(!!liveV2ApplyDefaults.loop_crossfade),
+        '--loop-crossfade-seconds', String(liveV2ApplyDefaults.loop_crossfade_seconds),
+        '--optimize', String(!!liveV2ApplyDefaults.optimize),
+        '--proxy-fps', String(liveV2ApplyDefaults.proxy_fps),
+        '--proxy-crf-hd', String(liveV2ApplyDefaults.proxy_crf_hd),
+        '--proxy-crf-4k', String(liveV2ApplyDefaults.proxy_crf_4k)
+      ]);
+      await loadLiveV2Config();
+      pushToast(tr('Apply defaults saved', 'Defaults de apply guardados'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      liveV2Busy = false;
     }
   }
 
@@ -2553,6 +3996,17 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
   }
 
+  $: {
+    const nativeSrc = liveV2PreviewEngine === 'native' && liveV2SideOpen
+      ? liveV2NativePreviewSrc(liveV2SelectedBrowse)
+      : '';
+    if (!nativeSrc) {
+      void stopLiveV2NativePreview();
+    } else if (nativeSrc !== liveV2NativePreviewLastSrc) {
+      void startLiveV2NativePreview(liveV2SelectedBrowse);
+    }
+  }
+
   onMount(() => {
     try {
       const saved = localStorage.getItem(SELECTED_PACK_KEY);
@@ -2577,6 +4031,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     loadTimerStatus();
     loadWallpaperLibrary();
     loadSystemLogs();
+    loadLiveAuthorityStatus();
 
     statusPollTimer = setInterval(() => {
       void syncStatus();
@@ -2584,6 +4039,7 @@ import {onDestroy, onMount, tick} from 'svelte';
 
     const onFocus = () => {
       void syncStatus();
+      void loadLiveAuthorityStatus();
     };
     const onVisibility = () => {
       if (!document.hidden) void syncStatus();
@@ -2631,6 +4087,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   onDestroy(() => {
     if (statusPollTimer) clearInterval(statusPollTimer);
     if (liveJobPollTimer) clearInterval(liveJobPollTimer);
+    void stopLiveV2NativePreview();
   });
 </script>
 
@@ -2664,7 +4121,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       Kitsune
     </button>
     <button class={`menu-item ${activeSection === 'kitsune-live' ? 'active' : ''}`} on:click={() => selectSection('kitsune-live')}>
-      Kitsune LiveWallpapers
+      LiveWallpapers
     </button>
     </div>
     <div class="sidebar-footer">
@@ -2681,6 +4138,23 @@ import {onDestroy, onMount, tick} from 'svelte';
 
     {#if lastError}
       <div class="banner error">{lastError}</div>
+    {/if}
+    {#if liveAuthority?.active}
+      <div class="banner warn">
+        {tr(
+          'LiveWallpapers active: swww / rotation / spectra are temporarily disabled.',
+          'LiveWallpapers activo: swww / rotacion / espectros estan deshabilitados temporalmente.'
+        )}
+        <div class="row actions-buttons-row">
+          <button class="secondary" on:click={stopLiveAuthority} disabled={liveBusy}>{tr('Stop LiveWallpapers', 'Detener LiveWallpapers')}</button>
+          {#if liveAuthority?.state?.started_at}
+            <span class="badge">since: {formatTimestamp(liveAuthority.state.started_at)}</span>
+          {/if}
+          {#if liveAuthority?.state?.snapshot_id}
+            <span class="badge">snapshot: {liveAuthority.state.snapshot_id}</span>
+          {/if}
+        </div>
+      </div>
     {/if}
     {#if toasts.length > 0}
       <div class="toast-stack">
@@ -2851,7 +4325,12 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <div class="monitor-screen-wrap">
                   <div class="monitor-screen">
                     {#if imageSrc(status.last_set?.[output])}
-                      <img class="monitor-image" src={imageSrc(status.last_set?.[output]) ?? ''} alt={`last wallpaper for ${output}`} />
+                      <img
+                        class="monitor-image"
+                        src={imageSrc(status.last_set?.[output]) ?? ''}
+                        alt={`last wallpaper for ${output}`}
+                        on:error={(e) => onGalleryImageError(e, status.last_set?.[output] ?? '')}
+                      />
                     {:else}
                       <div class="monitor-placeholder">{tr('No previous image', 'Sin imagen previa')}</div>
                     {/if}
@@ -3837,7 +5316,14 @@ import {onDestroy, onMount, tick} from 'svelte';
                   {/if}
                 </div>
                 {#if row.url}
-                  <div class="syslog-url">{row.url}</div>
+                  <div
+                    class="syslog-url url-click"
+                    role="button"
+                    tabindex="0"
+                    title={tr('Open in browser', 'Abrir en navegador')}
+                    on:click={() => openExternalUrl(row.url ?? '')}
+                    on:keydown={(e) => onExternalUrlKeydown(e, row.url ?? '')}
+                  >{row.url}</div>
                 {/if}
                 {#if row.message}
                   <div class="muted">{row.message}</div>
@@ -4681,120 +6167,687 @@ import {onDestroy, onMount, tick} from 'svelte';
         {/if}
       </div>
     {:else if activeSection === 'kitsune-live'}
-      <h2>Kitsune LiveWallpapers</h2>
+      <section class="live-module">
+      <h2>LiveWallpapers</h2>
       <div class="card">
         <div class="row actions-buttons-row">
-          <button class="secondary" on:click={loadLiveDepsStatus} disabled={liveDepsBusy}>{tr('Check Dependencies', 'Validar Dependencias')}</button>
-          <button class="secondary" on:click={installLiveDeps} disabled={liveDepsBusy}>{tr('Install Dependencies', 'Instalar Dependencias')}</button>
-          <button class="secondary" on:click={printLiveDepsInstallCommand} disabled={liveDepsBusy}>{tr('Show Manual Install', 'Ver Instalacion Manual')}</button>
+          <button class={`secondary ${liveV2Tab === 'library' ? 'active' : ''}`} on:click={() => selectLiveV2Tab('library')}>{tr('Library', 'Biblioteca')}</button>
+          <button class={`secondary ${liveV2Tab === 'explore' ? 'active' : ''}`} on:click={() => selectLiveV2Tab('explore')}>{tr('Explore', 'Explorar')}</button>
+          <button class={`secondary ${liveV2Tab === 'config' ? 'active' : ''}`} on:click={() => selectLiveV2Tab('config')}>{tr('Config', 'Configuracion')}</button>
+          <button class="secondary" on:click={initLiveV2} disabled={liveV2Busy}>{tr('Refresh', 'Actualizar')}</button>
+          <button class="secondary" on:click={() => openLiveV2Folder()} disabled={liveV2Busy}>{tr('Open Root', 'Abrir Raiz')}</button>
         </div>
-        {#if liveDepsStatus}
-          <div class="row">
-            <span class={`badge status ${liveDepsStatus.ok ? 'ok' : 'bad'}`}>ready: {liveDepsStatus.ok ? 'true' : 'false'}</span>
-            <span class="badge">required: {liveDepsStatus.required.length}</span>
-            <span class="badge">missing: {liveDepsStatus.missing.length}</span>
-          </div>
-          {#if !liveDepsStatus.ok}
-            <div class="banner error">
-              {tr('Missing dependencies for live wallpapers. Install with the button above, or manually:', 'Faltan dependencias para live wallpapers. Instala con el boton de arriba o manualmente:')}
-              <code>{liveDepsStatus.install ?? 'sudo pacman -S --needed steamcmd'}</code>
-            </div>
-          {/if}
-          <div class="row">
-            {#each Object.entries(liveDepsStatus.deps) as [dep, ok]}
-              <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
-            {/each}
-          </div>
-        {/if}
       </div>
 
-      <div class="card">
-        <div class="row actions-buttons-row">
-          <button class={`secondary ${liveView === 'search' ? 'active' : ''}`} on:click={() => (liveView = 'search')} disabled={liveBusy}>{tr('Workshop Search', 'Busqueda Workshop')}</button>
-          <button class={`secondary ${liveView === 'library' ? 'active' : ''}`} on:click={() => (liveView = 'library')} disabled={liveBusy}>{tr('Downloaded', 'Descargados')}</button>
-          <button class="secondary" on:click={loadLiveLibrary} disabled={liveBusy}>{tr('Refresh Library', 'Actualizar Biblioteca')}</button>
-        </div>
-
-        {#if liveView === 'search'}
+      {#if liveV2Tab === 'library'}
+        <div class="card">
+          <h3>{tr('LiveWallpapers — Library', 'LiveWallpapers — Biblioteca')}</h3>
           <div class="row actions-input-row">
-            <label for="live-search">{tr('Search', 'Buscar')}</label>
-            <input id="live-search" bind:value={liveSearchText} placeholder={tr('e.g. neon city', 'ej. neon city')} />
-            <label for="live-tags">{tr('Tags', 'Tags')}</label>
-            <input id="live-tags" bind:value={liveTags} placeholder={tr('anime, cyberpunk', 'anime, cyberpunk')} />
-            <label for="live-sort">{tr('Sort', 'Orden')}</label>
-            <select id="live-sort" bind:value={liveSort}>
-              <option value="top">top</option>
-              <option value="trend">trend</option>
-              <option value="newest">newest</option>
-              <option value="subscribed">subscribed</option>
-              <option value="updated">updated</option>
+            <label for="livev2-library-monitor">{tr('Monitor', 'Monitor')}</label>
+            <select id="livev2-library-monitor" bind:value={liveV2Monitor}>
+              {#if liveMonitorOptions().length === 0}
+                <option value="">{tr('no outputs', 'sin salidas')}</option>
+              {:else}
+                {#each liveMonitorOptions() as mon}
+                  <option value={mon}>{mon}</option>
+                {/each}
+              {/if}
             </select>
-            <label for="live-page">{tr('Page', 'Pagina')}</label>
-            <input id="live-page" type="number" min="1" bind:value={livePage} />
-            <button class="secondary" on:click={() => loadLiveSearch(false)} disabled={liveBusy}>{tr('Search', 'Buscar')}</button>
+            <label for="livev2-library-quality">{tr('Quality', 'Calidad')}</label>
+            <select id="livev2-library-quality" bind:value={liveV2Quality}>
+              <option value="auto">auto</option>
+              <option value="hd">hd</option>
+              <option value="4k">4k</option>
+            </select>
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2FavoritesOnly} on:change={() => loadLiveV2Library()} /> {tr('favorites only', 'solo favoritos')}</label>
+            <button class="secondary" on:click={loadLiveV2Library} disabled={liveV2Busy}>{tr('Refresh Library', 'Actualizar Biblioteca')}</button>
           </div>
           <div class="row">
-            <span class="badge">items: {liveSearchItems.length}</span>
-            <span class="badge">total: {liveSearchTotal ?? 'n/a'}</span>
-            <span class="badge">cache: {liveSearchCached ? 'hit' : 'fresh'}</span>
+            <span class="badge">items: {liveV2Items.length}</span>
           </div>
-          {#if liveSearchItems.length === 0}
-            <p class="muted">{tr('No workshop results yet.', 'Aun no hay resultados del workshop.')}</p>
+          {#if liveV2Items.length === 0}
+            <p class="muted">{tr('No downloaded live wallpapers yet.', 'Aun no hay live wallpapers descargados.')}</p>
           {:else}
-            <div class="live-grid">
-              {#each liveSearchItems as item (item.id)}
-                <article class="live-card">
-                  <button class="live-media-button" on:click={() => openLiveFromSearch(item)}>
-                    {#if isMotionPreview(livePreviewPrimary(item) ?? undefined)}
-                      <video class="live-thumb" src={livePreviewPrimary(item) ?? ''} autoplay loop muted playsinline></video>
-                    {:else if livePreviewPrimary(item)}
-                      <img class="live-thumb" src={livePreviewPrimary(item) ?? ''} alt={item.title} />
-                    {:else}
-                      <div class="monitor-placeholder">No preview</div>
-                    {/if}
-                  </button>
+            <div class="live-grid live-downloaded-grid">
+              {#each liveV2Items as item (item.id)}
+                <article class="live-card live-downloaded-card">
+                  <div
+                    class="live-media-button"
+                    role="button"
+                    tabindex="0"
+                    on:click={() => openLiveV2LibraryDetails(item)}
+                    on:keydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openLiveV2LibraryDetails(item);
+                      }
+                    }}
+                  >
+                    <div class="monitor-screen-wrap">
+                      <div class="monitor-screen">
+                        {#if liveV2LibraryDataUrl(item.id)}
+                          <img
+                            class="monitor-image"
+                            src={liveV2LibraryDataUrl(item.id)}
+                            alt={item.title}
+                            data-local-path={item.thumb_path}
+                            data-fallbacks={JSON.stringify(liveV2LibraryPreviewCandidates(item))}
+                            data-fallback-index="1"
+                            on:error={onLiveLibraryPreviewError}
+                          />
+                        {:else if liveV2ThumbDataStatus[item.id] !== 'failed'}
+                          <div class="live-skeleton-block" style="width:100%;height:100%;"></div>
+                        {:else if liveV2LibraryPreviewSrc(item)}
+                          <img
+                            class="monitor-image"
+                            src={liveV2LibraryPreviewSrc(item)}
+                            alt={item.title}
+                            data-local-path={item.thumb_path}
+                            data-fallbacks={JSON.stringify(liveV2LibraryPreviewCandidates(item))}
+                            data-fallback-index="1"
+                            on:error={onLiveLibraryPreviewError}
+                          />
+                        {:else}
+                          <div class="monitor-placeholder">No preview</div>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
                   <div class="live-meta">
-                    <div class="live-title">{item.title}</div>
+                    <div class="live-title" title={item.title}>{item.title}</div>
                     <div class="row">
+                      <span class="badge">{item.provider}</span>
+                      <span class="badge">{item.variant.toUpperCase()}</span>
                       <span class="badge">{item.id}</span>
-                      {#if item.score}<span class="badge">score: {item.score.toFixed(2)}</span>{/if}
                     </div>
-                    <div class="row">
-                      <button class="secondary" on:click={() => openLiveFromSearch(item)} disabled={liveBusy}>{tr('Details', 'Detalles')}</button>
-                      <button on:click={() => downloadLiveItem(item)} disabled={liveBusy}>{tr('Download', 'Descargar')}</button>
-                    </div>
+                    <div class="row"><button class="secondary" on:click={() => openLiveV2LibraryDetails(item)} disabled={liveV2Busy}>{tr('Details', 'Detalles')}</button></div>
                   </div>
                 </article>
               {/each}
             </div>
           {/if}
-        {:else}
+        </div>
+        {#if liveV2LibrarySideOpen && liveV2SelectedLibrary}
+          <aside class="live-sidepanel">
+            <div class="row">
+              <h3>{liveV2SelectedLibrary.title}</h3>
+              <button class="secondary" on:click={closeLiveV2LibraryDetails}>{tr('Close', 'Cerrar')}</button>
+            </div>
+            <div class="live-monitor-skeleton">
+              <div class="live-monitor-screen">
+                <img
+                  class="live-monitor-media"
+                  src={liveV2LibraryPreviewSrc(liveV2SelectedLibrary)}
+                  alt={liveV2SelectedLibrary.title}
+                  data-local-path={liveV2SelectedLibrary.thumb_path}
+                  data-fallbacks={JSON.stringify(liveV2LibraryPreviewCandidates(liveV2SelectedLibrary))}
+                  data-fallback-index="1"
+                  on:error={onLiveLibraryPreviewError}
+                />
+              </div>
+            </div>
+            <div class="live-details">
+              <p class="muted">
+                {tr(
+                  'Thanks to the source websites for sharing these wallpapers. For a better discovery experience, please visit their original pages.',
+                  'Gracias a las paginas fuente por compartir estos wallpapers. Para una mejor experiencia de busqueda, visita sus paginas originales.'
+                )}
+              </p>
+              <div class="row">
+                <span
+                  class="badge live-path-badge url-click"
+                  role="button"
+                  tabindex="0"
+                  title={tr('Open source page', 'Abrir pagina fuente')}
+                  on:click={() => openExternalUrl(liveV2SelectedLibrary.page_url)}
+                  on:keydown={(e) => onExternalUrlKeydown(e, liveV2SelectedLibrary.page_url)}
+                >{tr('Visit source page', 'Visitar pagina fuente')}</span>
+              </div>
+              <div class="row">
+                <span class="badge">{liveV2SelectedLibrary.provider}</span>
+                <span class="badge">{liveV2SelectedLibrary.variant.toUpperCase()}</span>
+                <span class="badge">{liveV2SelectedLibrary.id}</span>
+              </div>
+              <div class="row">
+                <span class="badge">{liveV2SelectedLibrary.resolution.w}x{liveV2SelectedLibrary.resolution.h}</span>
+                <span class="badge">{(liveV2SelectedLibrary.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+                <span class={`badge status ${liveV2SelectedLibrary.favorite ? 'ok' : 'warn'}`}>{liveV2SelectedLibrary.favorite ? tr('favorite', 'favorito') : tr('not favorite', 'no favorito')}</span>
+              </div>
+              <div class="row">
+                <span class="badge">{tr('Added', 'Agregado')}: {formatTimestamp(liveV2SelectedLibrary.added_at ? liveV2SelectedLibrary.added_at * 1000 : null)}</span>
+                <span class="badge">{tr('Last apply', 'Ultimo apply')}: {formatTimestamp(liveV2SelectedLibrary.last_applied_at ? liveV2SelectedLibrary.last_applied_at * 1000 : null)}</span>
+              </div>
+              <div class="row">
+                <button on:click={() => applyLiveV2(liveV2SelectedLibrary.id)} disabled={liveV2Busy}>{tr('Apply', 'Aplicar')}</button>
+                <button class="secondary" on:click={() => toggleFavoriteLiveV2(liveV2SelectedLibrary)} disabled={liveV2Busy}>
+                  {liveV2SelectedLibrary.favorite ? tr('Unfavorite', 'Quitar Favorito') : tr('Favorite', 'Favorito')}
+                </button>
+                <button class="secondary danger-outline" on:click={() => removeLiveV2(liveV2SelectedLibrary)} disabled={liveV2Busy}>{tr('Delete', 'Eliminar')}</button>
+                <button class="secondary" on:click={() => openLiveV2Folder(liveV2SelectedLibrary.id)} disabled={liveV2Busy}>{tr('Open Folder', 'Abrir Carpeta')}</button>
+              </div>
+              {#if activeMonitorsForWallpaper(liveV2SelectedLibrary.id).length > 0}
+                <div class="row">
+                  {#each activeMonitorsForWallpaper(liveV2SelectedLibrary.id) as mon}
+                    <button class="secondary" on:click={() => stopLiveWallpaperMonitor(mon)} disabled={liveV2Busy}>{tr(`Stop ${mon}`, `Detener ${mon}`)}</button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </aside>
+        {/if}
+      {:else if liveV2Tab === 'config'}
+        <div class="card">
+          <h3>{tr('Runner', 'Runner')}</h3>
+          <div class="row actions-input-row">
+            <label for="livev2-runner-mode">mode</label>
+            <select id="livev2-runner-mode" bind:value={liveV2RunnerMode}>
+              <option value="cargo">cargo</option>
+              <option value="bin">bin</option>
+            </select>
+            <label for="livev2-runner-cargo">cargo_project_dir</label>
+            <input id="livev2-runner-cargo" bind:value={liveV2RunnerCargoDir} />
+            <label for="livev2-runner-bin">bin_name</label>
+            <input id="livev2-runner-bin" bind:value={liveV2RunnerBin} />
+            <button on:click={saveLiveV2Runner} disabled={liveV2Busy}>{tr('Save Runner', 'Guardar Runner')}</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>{tr('Apply Defaults', 'Defaults de Apply')}</h3>
+          <div class="row actions-input-row">
+            <label for="livev2-default-profile">profile</label>
+            <select id="livev2-default-profile" bind:value={liveV2ApplyDefaults.profile}>
+              <option value="performance">performance</option>
+              <option value="balanced">balanced</option>
+              <option value="quality">quality</option>
+            </select>
+            <label for="livev2-default-fps">proxy_fps</label>
+            <input id="livev2-default-fps" type="number" min="1" bind:value={liveV2ApplyDefaults.proxy_fps} />
+            <label for="livev2-default-crf-hd">crf_hd</label>
+            <input id="livev2-default-crf-hd" type="number" min="1" max="51" bind:value={liveV2ApplyDefaults.proxy_crf_hd} />
+            <label for="livev2-default-crf-4k">crf_4k</label>
+            <input id="livev2-default-crf-4k" type="number" min="1" max="51" bind:value={liveV2ApplyDefaults.proxy_crf_4k} />
+            <label for="livev2-default-crossfade">crossfade_s</label>
+            <input id="livev2-default-crossfade" type="number" min="0.05" step="0.05" bind:value={liveV2ApplyDefaults.loop_crossfade_seconds} />
+          </div>
+          <div class="row">
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.seamless_loop} /> seamless_loop</label>
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.loop_crossfade} /> loop_crossfade</label>
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.optimize} /> optimize</label>
+            <button on:click={saveLiveV2ApplyDefaults} disabled={liveV2Busy}>{tr('Save Defaults', 'Guardar Defaults')}</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>{tr('Doctor', 'Doctor')}</h3>
+          <div class="row">
+            <button class="secondary" on:click={loadLiveV2Doctor} disabled={liveV2Busy}>{tr('Run Doctor', 'Ejecutar Doctor')}</button>
+            {#if liveV2Doctor}
+              <span class={`badge status ${liveV2Doctor.ok ? 'ok' : 'bad'}`}>ok: {liveV2Doctor.ok ? 'true' : 'false'}</span>
+              {#each Object.entries(liveV2Doctor.deps || {}) as [dep, ok]}
+                <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
+              {/each}
+            {/if}
+          </div>
+          {#if liveV2Doctor && (liveV2Doctor.fix?.length ?? 0) > 0}
+            <div class="banner warn">
+              {#each liveV2Doctor.fix as line}
+                <div>{line}</div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="card">
+          <h3>{tr('LiveWallpapers — Explore', 'LiveWallpapers — Explorar')}</h3>
+          <div class="row actions-input-row">
+            <label for="livev2-explore-provider">{tr('Provider', 'Provider')}</label>
+            <select id="livev2-explore-provider" bind:value={liveV2Provider}>
+              <option value="all">all</option>
+              <option value="moewalls">moewalls</option>
+              <option value="motionbgs">motionbgs</option>
+            </select>
+            <label for="livev2-explore-page">page</label>
+            <input id="livev2-explore-page" type="number" min="1" bind:value={liveV2Page} />
+            <label for="livev2-explore-search">{tr('Search', 'Buscar')}</label>
+            <input id="livev2-explore-search" bind:value={liveV2Query} placeholder={tr('query', 'consulta')} />
+            <button class="secondary" on:click={browseLiveV2} disabled={liveV2ExploreLoading || liveV2Busy}>{tr('Browse', 'Explorar')}</button>
+            <button class="secondary" on:click={searchLiveV2} disabled={liveV2ExploreLoading || liveV2Busy}>{tr('Search', 'Buscar')}</button>
+          </div>
+          {#if liveV2ExploreLoading}
+            <div class="live-grid live-downloaded-grid">
+              {#each Array(8) as _, i}
+                <article class="live-card live-downloaded-card live-skeleton-card" aria-hidden="true">
+                  <div class="monitor-screen-wrap">
+                    <div class="monitor-screen live-skeleton-block"></div>
+                  </div>
+                  <div class="live-meta">
+                    <div class="live-skeleton-line w70"></div>
+                    <div class="live-skeleton-line w40"></div>
+                    <div class="live-skeleton-line w90"></div>
+                    <div class="live-skeleton-line w55"></div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {:else if liveV2BrowseItems.length > 0}
+            <div class="live-grid live-downloaded-grid">
+              {#each liveV2BrowseItems as item}
+                <article class="live-card live-downloaded-card">
+                  <div
+                    class="live-media-button"
+                    role="button"
+                    tabindex="0"
+                    on:click={() => openLiveV2Browse(item)}
+                    on:keydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        void openLiveV2Browse(item);
+                      }
+                    }}
+                  >
+                    <div class="monitor-screen-wrap">
+                      <div class="monitor-screen">
+                        {#if item.thumb_remote}
+                          <img class="monitor-image" src={item.thumb_remote} alt={item.title} referrerpolicy="no-referrer" loading="lazy" />
+                        {:else}
+                          <div class="monitor-placeholder">{tr('No preview', 'Sin preview')}</div>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="live-meta">
+                    <div class="live-title" title={item.title}>{item.title}</div>
+                    <div class="row">
+                      <span class="badge">{item.provider}</span>
+                      <span class={`badge status ${item.has_hd ? 'ok' : 'warn'}`}>HD</span>
+                      <span class={`badge status ${item.has_4k ? 'ok' : 'warn'}`}>4K</span>
+                    </div>
+                    {#if (item.tags?.length ?? 0) > 0}
+                      <div class="row">
+                        {#each (item.tags ?? []).slice(0, 4) as tag}
+                          <span class="badge">{tag}</span>
+                        {/each}
+                      </div>
+                    {/if}
+                    <div class="row">
+                      <span
+                        class="badge live-path-badge url-click"
+                        role="button"
+                        tabindex="0"
+                        title={tr('Open in browser', 'Abrir en navegador')}
+                        on:click={() => openExternalUrl(item.page_url)}
+                        on:keydown={(e) => onExternalUrlKeydown(e, item.page_url)}
+                      >{item.page_url}</span>
+                    </div>
+                    <div class="row">
+                      <button class="secondary" on:click={() => openLiveV2Browse(item)} disabled={liveV2Busy}>{tr('Details', 'Detalles')}</button>
+                      <button class="secondary" on:click={() => (liveV2SelectedUrl = item.page_url)} disabled={liveV2Busy}>{tr('Use URL', 'Usar URL')}</button>
+                    </div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {:else}
+            <p class="muted">{tr('No results yet. Use Browse or Search.', 'Aun no hay resultados. Usa Explorar o Buscar.')}</p>
+          {/if}
+        </div>
+        {#if liveV2SideOpen && liveV2SelectedBrowse}
+          <aside class="live-sidepanel">
+            <div class="row">
+              <h3>{liveV2SelectedBrowse.title}</h3>
+              <button class="secondary" on:click={closeLiveV2SidePanel}>{tr('Close', 'Cerrar')}</button>
+            </div>
+            <div class="live-monitor-skeleton">
+              <div class="live-monitor-screen">
+                {#if liveV2PreviewEngine === 'native'}
+                  <div class="live-preview-fallback">
+                    {#if liveV2SelectedBrowse.thumb_remote}
+                      <img class="live-monitor-media" src={liveV2SelectedBrowse.thumb_remote} alt={liveV2SelectedBrowse.title} referrerpolicy="no-referrer" />
+                    {:else}
+                      <div class="monitor-placeholder">{tr('Native preview mode', 'Modo preview nativo')}</div>
+                    {/if}
+                    <div class="live-preview-loading">
+                      <span class="live-preview-spinner" aria-hidden="true"></span>
+                      <span>{liveV2NativePreviewActive ? tr('Playing in native player (mpv)', 'Reproduciendo en reproductor nativo (mpv)') : tr('Starting native player (mpv)...', 'Iniciando reproductor nativo (mpv)...')}</span>
+                    </div>
+                  </div>
+                {:else if liveV2SelectedBrowse.preview_motion_local || liveV2SelectedBrowse.preview_motion_remote}
+                  {#key `${liveV2SelectedBrowse.page_url}:${liveV2PreviewRenderKey}:${liveV2MotionPreviewSrc(liveV2SelectedBrowse)}`}
+                    <video
+                      class="live-monitor-media live-preview-video"
+                      src={liveV2MotionPreviewSrc(liveV2SelectedBrowse)}
+                      autoplay
+                      muted
+                      controls
+                      playsinline
+                      preload="auto"
+                      poster={liveV2SelectedBrowse.thumb_remote || undefined}
+                      disablepictureinpicture
+                      on:loadeddata={onLiveV2PreviewLoaded}
+                      on:error={onLiveV2PreviewError}
+                      on:playing={(e) => onLiveV2PreviewState('playing', e)}
+                      on:pause={(e) => onLiveV2PreviewState('pause', e)}
+                      on:waiting={(e) => onLiveV2PreviewState('waiting', e)}
+                      on:stalled={(e) => onLiveV2PreviewState('stalled', e)}
+                      on:ended={onLiveV2PreviewEnded}
+                    ></video>
+                  {/key}
+                {:else if liveV2SelectedBrowse.thumb_remote}
+                  <div class="live-preview-fallback">
+                    <img class="live-monitor-media" src={liveV2SelectedBrowse.thumb_remote} alt={liveV2SelectedBrowse.title} referrerpolicy="no-referrer" />
+                    {#if liveV2PreviewLoading}
+                      <div class="live-preview-loading">
+                        <span class="live-preview-spinner" aria-hidden="true"></span>
+                        <span>{tr('Loading preview...', 'Cargando preview...')}</span>
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="monitor-placeholder">
+                    {#if liveV2PreviewLoading}
+                      {tr('Loading preview...', 'Cargando preview...')}
+                    {:else}
+                      {tr('No preview', 'Sin preview')}
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
+            <div class="live-details">
+              <p class="muted">
+                {tr(
+                  'Thanks to the source websites for sharing these wallpapers. For a better discovery experience, please visit their original pages.',
+                  'Gracias a las paginas fuente por compartir estos wallpapers. Para una mejor experiencia de busqueda, visita sus paginas originales.'
+                )}
+              </p>
+              <div class="row">
+                <span
+                  class="badge live-path-badge url-click"
+                  role="button"
+                  tabindex="0"
+                  title={tr('Open source page', 'Abrir pagina fuente')}
+                  on:click={() => openExternalUrl(liveV2SelectedBrowse.page_url)}
+                  on:keydown={(e) => onExternalUrlKeydown(e, liveV2SelectedBrowse.page_url)}
+                >{tr('Visit source page', 'Visitar pagina fuente')}</span>
+              </div>
+              <div class="row">
+                <span class="badge">{liveV2SelectedBrowse.provider}</span>
+                <span class={`badge status ${liveV2SelectedBrowse.has_hd ? 'ok' : 'warn'}`}>HD</span>
+                <span class={`badge status ${liveV2SelectedBrowse.has_4k ? 'ok' : 'warn'}`}>4K</span>
+              </div>
+              {#if liveV2PreviewEngine === 'native'}
+                <div class="row">
+                  <button class="secondary" on:click={restartLiveV2NativePreview}>
+                    {tr('Restart preview', 'Reiniciar preview')}
+                  </button>
+                </div>
+              {/if}
+              <div class="row">
+                <span
+                  class="badge live-path-badge url-click"
+                  role="button"
+                  tabindex="0"
+                  title={tr('Open in browser', 'Abrir en navegador')}
+                  on:click={() => openExternalUrl(liveV2SelectedBrowse.page_url)}
+                  on:keydown={(e) => onExternalUrlKeydown(e, liveV2SelectedBrowse.page_url)}
+                >{liveV2SelectedBrowse.page_url}</span>
+              </div>
+              {#if (liveV2SelectedBrowse.tags?.length ?? 0) > 0}
+                <div class="row">
+                  {#each liveV2SelectedBrowse.tags ?? [] as tag}
+                    <span class="badge">{tag}</span>
+                  {/each}
+                </div>
+              {/if}
+              <div class="row">
+                <button class="secondary" on:click={() => (liveV2SelectedUrl = liveV2SelectedBrowse?.page_url ?? '')} disabled={liveV2Busy}>{tr('Use URL', 'Usar URL')}</button>
+                {#if liveV2SelectedBrowse.provider === 'motionbgs'}
+                  <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', false, 'hd')} disabled={liveV2Busy || !liveV2SelectedBrowse.has_hd}>{tr('Download HD', 'Descargar HD')}</button>
+                  <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', false, '4k')} disabled={liveV2Busy || !liveV2SelectedBrowse.has_4k}>{tr('Download 4K', 'Descargar 4K')}</button>
+                {:else}
+                  <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', false)} disabled={liveV2Busy}>{tr('Download', 'Descargar')}</button>
+                  <button on:click={() => fetchLiveV2(liveV2SelectedBrowse?.page_url ?? '', true)} disabled={liveV2Busy}>{tr('Download + Apply', 'Descargar + Aplicar')}</button>
+                {/if}
+              </div>
+              {#if liveV2PreviewDebugLines.length > 0}
+                <pre class="live-preview-debug">{liveV2PreviewDebugLines.join('\n')}</pre>
+              {/if}
+            </div>
+          </aside>
+        {/if}
+      {/if}
+      {#if false}
+      <div class="card">
+        <div class="row actions-buttons-row">
+          <button class={`secondary ${liveView === 'general' ? 'active' : ''}`} on:click={() => (liveView = 'general')} disabled={liveBusy}>{tr('General', 'General')}</button>
+          <button class={`secondary ${liveView === 'downloaded' ? 'active' : ''}`} on:click={() => (liveView = 'downloaded')} disabled={liveBusy}>{tr('Downloaded', 'Descargados')}</button>
+        </div>
+      </div>
+
+      {#if liveView === 'general'}
+        <div class="card">
+          <h3>{tr('Config', 'Configuracion')}</h3>
+          <div class="row actions-input-row">
+            <label for="live-steam-api-key">steam_web_api_key</label>
+            {#if liveSteamApiKeyVisible}
+              <input
+                id="live-steam-api-key"
+                type="text"
+                bind:value={liveSteamApiKey}
+                on:input={onLiveApiKeyInput}
+                placeholder={tr('Enter your Steam Web API Key', 'Ingresa tu Steam Web API Key')}
+              />
+            {:else}
+              <input
+                id="live-steam-api-key"
+                type="password"
+                bind:value={liveSteamApiKey}
+                on:input={onLiveApiKeyInput}
+                placeholder={tr('Enter your Steam Web API Key', 'Ingresa tu Steam Web API Key')}
+              />
+            {/if}
+            <button class="secondary" on:click={() => (liveSteamApiKeyVisible = !liveSteamApiKeyVisible)} disabled={liveBusy}>
+              {liveSteamApiKeyVisible ? tr('Hide', 'Ocultar') : tr('Show', 'Mostrar')}
+            </button>
+            <button on:click={saveLiveApiKey} disabled={liveBusy}>{tr('Save', 'Guardar')}</button>
+          </div>
+          <div class="row">
+            <span class={`badge status ${liveSteamApiKeySaved ? 'ok' : 'warn'}`}>
+              {liveSteamApiKeySaved ? tr('key saved', 'key guardada') : tr('key pending', 'key pendiente')}
+            </span>
+            {#if liveSteamApiKeySavedAt}
+              <span class="badge">saved: {formatTimestamp(liveSteamApiKeySavedAt)}</span>
+            {/if}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row actions-buttons-row">
+            <button class="secondary" on:click={loadLiveDepsStatus} disabled={liveDepsBusy}>{tr('Check Dependencies', 'Validar Dependencias')}</button>
+            <button class="secondary" on:click={installLiveDeps} disabled={liveDepsBusy}>{tr('Install Dependencies', 'Instalar Dependencias')}</button>
+            <button class="secondary" on:click={printLiveDepsInstallCommand} disabled={liveDepsBusy}>{tr('Show Manual Install', 'Ver Instalacion Manual')}</button>
+          </div>
+          {#if liveDepsManualCommand}
+            <div class="banner warn">
+              <span>{tr('Run this command in your terminal:', 'Ejecuta este comando en tu terminal:')}</span>
+              <code>{liveDepsManualCommand}</code>
+              <div class="row">
+                <button class="secondary" on:click={copyLiveDepsManualCommand} disabled={liveDepsBusy}>{tr('Copy Command', 'Copiar Comando')}</button>
+              </div>
+            </div>
+          {/if}
+          {#if liveDepsStatus}
+            <div class="row">
+              <span class={`badge status ${liveDepsStatus.ok ? 'ok' : 'bad'}`}>ready: {liveDepsStatus.ok ? 'true' : 'false'}</span>
+              <span class="badge">required: {liveDepsStatus.required.length}</span>
+              <span class="badge">missing: {liveDepsStatus.missing.length}</span>
+            </div>
+            {#if !liveDepsStatus.ok}
+              <div class="banner error">
+                {tr('Missing dependencies for live wallpapers. Install with the button above, or manually:', 'Faltan dependencias para live wallpapers. Instala con el boton de arriba o manualmente:')}
+                <code>{liveDepsStatus.install ?? 'sudo pacman -S --needed steamcmd'}</code>
+              </div>
+            {/if}
+            <div class="row">
+              {#each Object.entries(liveDepsStatus.deps) as [dep, ok]}
+                <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <div class="card">
+          <p class="muted">
+            {tr(
+              'Kitowall detects local Steam/Wallpaper Engine downloads automatically. If nothing is found, add your Steam path manually and run sync.',
+              'Kitowall detecta automaticamente las descargas locales de Steam/Wallpaper Engine. Si no encuentra nada, agrega manualmente la ruta de Steam y sincroniza.'
+            )}
+          </p>
+          <div class="row">
+            <span class={`badge status ${liveAppStatus?.installed ? 'ok' : 'bad'}`}>
+              wallpaper engine: {liveAppStatus?.installed ? 'installed' : 'missing'}
+            </span>
+          </div>
+          {#if liveAppStatus && !liveAppStatus.installed}
+            <div class="banner error">
+              {tr(
+                'Wallpaper Engine must be installed in Steam to sync wallpapers.',
+                'Wallpaper Engine debe estar instalado en Steam para poder sincronizar wallpapers.'
+              )}
+            </div>
+          {/if}
+          <div class="row">
+            <button class="secondary" on:click={scanLiveSteam} disabled={liveBusy}>{tr('Detect Steam Paths', 'Detectar rutas Steam')}</button>
+            <button class="secondary" on:click={syncLiveSteam} disabled={liveBusy || (liveAppStatus ? !liveAppStatus.installed : false)}>{tr('Sync Downloads', 'Sincronizar Descargas')}</button>
+            <span class="badge">sources: {liveSteamDetectedSources.length}</span>
+            <span class="badge">detected items: {liveSteamDetectedCount}</span>
+          </div>
+          <div class="row">
+            {#each liveSteamDetectedSources as source}
+              <span class="badge">{source}</span>
+            {/each}
+          </div>
+          <div class="row actions-input-row">
+            <label for="live-steam-root-manual">{tr('Manual Steam Path', 'Ruta Steam Manual')}</label>
+            <input
+              id="live-steam-root-manual"
+              bind:value={liveSteamManualRoot}
+              placeholder={tr('/path/to/Steam or .../workshop/content/431960', '/ruta/a/Steam o .../workshop/content/431960')}
+            />
+            <button class="secondary" on:click={pickLiveSteamRoot} disabled={liveBusy}>{tr('Pick Folder', 'Elegir Carpeta')}</button>
+            <button on:click={addLiveSteamRootManual} disabled={liveBusy}>{tr('Add Path', 'Agregar Ruta')}</button>
+          </div>
+          <div class="row">
+            <span class="badge">manual paths: {liveSteamRoots.length}</span>
+          </div>
+          {#if liveSteamRoots.length > 0}
+            <div class="row">
+              {#each liveSteamRoots as steamPath}
+                <span class="badge">{steamPath}</span>
+                <button class="secondary" on:click={() => removeLiveSteamRoot(steamPath)} disabled={liveBusy}>{tr('Remove', 'Quitar')}</button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="card">
+          <p class="muted">
+            {tr(
+              'The system will automatically detect wallpapers already downloaded from Wallpaper Engine. Use Sync Downloads to import them.',
+              'El sistema detectara automaticamente los wallpapers que hayas descargado desde Wallpaper Engine. Usa Sincronizar Descargas para importarlos.'
+            )}
+          </p>
+          {#if liveAppStatus && !liveAppStatus.installed}
+            <div class="banner error">
+              {tr(
+                'Wallpaper Engine must be installed in Steam to sync wallpapers.',
+                'Wallpaper Engine debe estar instalado en Steam para poder sincronizar wallpapers.'
+              )}
+            </div>
+          {/if}
+          <div class="row actions-input-row">
+            <label for="live-filter-type">{tr('Type', 'Tipo')}</label>
+            <select id="live-filter-type" bind:value={liveFilterType}>
+              <option value="all">all</option>
+              <option value="video">video</option>
+              <option value="scene">scene</option>
+              <option value="web">web</option>
+              <option value="application">application</option>
+              <option value="unknown">unknown</option>
+            </select>
+            <label for="live-filter-audio">{tr('Audio', 'Audio')}</label>
+            <select id="live-filter-audio" bind:value={liveFilterAudio}>
+              <option value="all">all</option>
+              <option value="reactive">reactive</option>
+              <option value="static">static</option>
+            </select>
+            <label for="live-filter-query">{tr('Search', 'Buscar')}</label>
+            <input id="live-filter-query" bind:value={liveFilterQuery} placeholder={tr('id, title or path', 'id, titulo o ruta')} />
+          </div>
+          <div class="row actions-buttons-row">
+            <label for="live-apply-monitor">{tr('Monitor', 'Monitor')}</label>
+            <select id="live-apply-monitor" bind:value={liveApplyMonitor}>
+              {#if liveMonitorOptions().length === 0}
+                <option value="">{tr('no outputs', 'sin salidas')}</option>
+              {:else}
+                {#each liveMonitorOptions() as monitorName}
+                  <option value={monitorName}>{monitorName}</option>
+                {/each}
+              {/if}
+            </select>
+            <button class="secondary" on:click={syncLiveSteam} disabled={liveBusy || (liveAppStatus ? !liveAppStatus.installed : false)}>{tr('Sync Downloads', 'Sincronizar Descargas')}</button>
+            <button class="secondary" on:click={loadLiveLibrary} disabled={liveBusy}>{tr('Refresh Downloaded', 'Actualizar Descargados')}</button>
+          </div>
           <div class="row">
             <span class="badge">root: {liveLibraryRoot || '-'}</span>
             <span class="badge">items: {liveLibraryItems.length}</span>
+            <span class="badge">filtered: {filteredLiveLibraryItems().length}</span>
           </div>
-          {#if liveLibraryItems.length === 0}
+          {#if filteredLiveLibraryItems().length === 0}
             <p class="muted">{tr('No downloaded live wallpapers yet.', 'Aun no hay live wallpapers descargados.')}</p>
           {:else}
-            <div class="live-grid">
-              {#each liveLibraryItems as entry (entry.id)}
-                <article class="live-card">
-                  <button class="live-media-button" on:click={() => openLiveFromLibrary(entry)}>
-                    {#if isMotionPreview(livePreviewPrimary(entry.meta ?? null) ?? undefined)}
-                      <video class="live-thumb" src={livePreviewPrimary(entry.meta ?? null) ?? ''} autoplay loop muted playsinline></video>
-                    {:else if livePreviewPrimary(entry.meta ?? null)}
-                      <img class="live-thumb" src={livePreviewPrimary(entry.meta ?? null) ?? ''} alt={entry.id} />
-                    {:else}
-                      <div class="monitor-placeholder">No preview</div>
-                    {/if}
-                  </button>
+            <div class="live-grid live-downloaded-grid">
+              {#each filteredLiveLibraryItems() as entry (entry.id)}
+                <article class="live-card live-downloaded-card">
+                  <div class="monitor-screen-wrap">
+                    <button class="live-media-button" on:click={() => openLiveFromLibrary(entry)}>
+                      <div class="monitor-screen">
+                        <img
+                          class="monitor-image"
+                          src={livePreviewDataUrlById[entry.id] ?? liveCandidateSrc(liveLibraryPreviewCandidates(entry)[0] ?? '')}
+                          alt={entry.id}
+                          data-fallbacks={JSON.stringify(liveLibraryPreviewCandidates(entry))}
+                          data-fallback-index="1"
+                          on:error={onLiveLibraryPreviewError}
+                        />
+                      </div>
+                    </button>
+                  </div>
                   <div class="live-meta">
-                    <div class="live-title">{entry.meta?.title ?? entry.id}</div>
+                    <div class="live-title" title={entry.meta?.title ?? entry.id}>{entry.meta?.title ?? entry.id}</div>
                     <div class="row">
                       <span class="badge">{entry.id}</span>
-                      <span class="badge">{entry.path}</span>
+                      <span class="badge">type: {entry.meta?.wallpaper_type ?? 'unknown'}</span>
+                      <span class={`badge status ${entry.meta?.audio_reactive ? 'ok' : 'warn'}`}>
+                        audio: {entry.meta?.audio_reactive ? 'reactive' : 'static'}
+                      </span>
+                      <span class="badge live-path-badge" title={entry.path}>{entry.path}</span>
                     </div>
+                    {#if activeMonitorsForWallpaper(entry.id).length > 0}
+                      <div class="row">
+                        {#each activeMonitorsForWallpaper(entry.id) as mon}
+                          <span class="badge status ok">active on {mon}</span>
+                        {/each}
+                      </div>
+                    {/if}
                     <div class="row">
+                      <button on:click={() => applyLiveWallpaper(entry)} disabled={liveBusy || (liveAppStatus ? !liveAppStatus.installed : false) || (entry.meta?.wallpaper_type ?? 'unknown') !== 'video'}>{tr('Apply', 'Aplicar')}</button>
+                      {#if activeMonitorsForWallpaper(entry.id).length > 0}
+                        {#each activeMonitorsForWallpaper(entry.id) as mon}
+                          <button class="secondary" on:click={() => stopLiveWallpaperMonitor(mon)} disabled={liveBusy}>{tr(`Stop ${mon}`, `Detener ${mon}`)}</button>
+                        {/each}
+                      {/if}
                       <button class="secondary" on:click={() => openLiveFromLibrary(entry)} disabled={liveBusy}>{tr('Open Panel', 'Abrir Panel')}</button>
                     </div>
                   </div>
@@ -4802,8 +6855,8 @@ import {onDestroy, onMount, tick} from 'svelte';
               {/each}
             </div>
           {/if}
-        {/if}
-      </div>
+        </div>
+      {/if}
 
       {#if liveCurrentJob}
         <div class="card">
@@ -4828,12 +6881,26 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
           <div class="live-monitor-skeleton">
             <div class="live-monitor-screen">
-              {#if isLiveSelectionMotion() && livePreviewPrimary(liveSelected)}
-                <video class="live-monitor-media" src={livePreviewPrimary(liveSelected) ?? ''} autoplay loop muted playsinline></video>
-              {:else if livePreviewPrimary(liveSelected)}
-                <img class="live-monitor-media" src={livePreviewPrimary(liveSelected) ?? ''} alt={liveSelected?.title ?? 'preview'} />
+              {#if livePreviewPrimary(liveSelected)}
+                <img
+                  class="live-monitor-media"
+                  src={liveSelectedPreviewDataUrl || liveCandidateSrc(liveSelectedPreviewCandidates()[0] ?? (livePreviewPrimary(liveSelected) ?? ''))}
+                  alt={liveSelected?.title ?? 'preview'}
+                  data-local-path={liveLocalPreviewPath(liveSelected)}
+                  data-fallbacks={JSON.stringify(liveSelectedPreviewCandidates())}
+                  data-fallback-index="1"
+                  on:error={onLiveLibraryPreviewError}
+                />
               {:else if livePreviewFallback(liveSelected)}
-                <img class="live-monitor-media" src={livePreviewFallback(liveSelected) ?? ''} alt={liveSelected?.title ?? 'preview'} />
+                <img
+                  class="live-monitor-media"
+                  src={liveSelectedPreviewDataUrl || liveCandidateSrc(liveSelectedPreviewCandidates()[0] ?? (livePreviewFallback(liveSelected) ?? ''))}
+                  alt={liveSelected?.title ?? 'preview'}
+                  data-local-path={liveLocalPreviewPath(liveSelected)}
+                  data-fallbacks={JSON.stringify(liveSelectedPreviewCandidates())}
+                  data-fallback-index="1"
+                  on:error={onLiveLibraryPreviewError}
+                />
               {:else}
                 <div class="monitor-placeholder">No preview</div>
               {/if}
@@ -4841,6 +6908,12 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
           <div class="live-details">
             <div class="row"><span class="badge">id: {liveSelected?.id ?? '-'}</span></div>
+            <div class="row"><span class="badge">type: {liveSelected?.wallpaper_type ?? 'unknown'}</span></div>
+            <div class="row">
+              <span class={`badge status ${liveSelected?.audio_reactive ? 'ok' : 'warn'}`}>
+                audio: {liveSelected?.audio_reactive ? 'reactive' : 'static'}
+              </span>
+            </div>
             <div class="row"><span class="badge">author: {liveSelected?.author_name ?? '-'}</span></div>
             <div class="row"><span class="badge">updated: {liveSelected?.time_updated ? formatTimestamp(liveSelected.time_updated * 1000) : '-'}</span></div>
             {#if liveSelected && 'file_size' in liveSelected && liveSelected.file_size}
@@ -4855,7 +6928,21 @@ import {onDestroy, onMount, tick} from 'svelte';
               <p class="muted">{liveSelected.description_short}</p>
             {/if}
             <div class="row">
-              <button on:click={() => downloadLiveItem(liveSelected)} disabled={liveBusy}>{tr('Download', 'Descargar')}</button>
+              {#if liveSelected?.id}
+                <button
+                  on:click={() => {
+                    const entry = liveLibraryItems.find(v => v.id === liveSelected?.id && (!liveSelectedLibraryPath || v.path === liveSelectedLibraryPath))
+                      ?? liveLibraryItems.find(v => v.id === liveSelected?.id);
+                    if (entry) void applyLiveWallpaper(entry);
+                  }}
+                  disabled={liveBusy || (liveAppStatus ? !liveAppStatus.installed : false)}
+                >
+                  {tr('Apply', 'Aplicar')}
+                </button>
+                {#each activeMonitorsForWallpaper(liveSelected.id) as mon}
+                  <button class="secondary" on:click={() => stopLiveWallpaperMonitor(mon)} disabled={liveBusy}>{tr(`Stop ${mon}`, `Detener ${mon}`)}</button>
+                {/each}
+              {/if}
               {#if liveSelected && 'item_url' in liveSelected && liveSelected.item_url}
                 <a class="secondary live-link" href={liveSelected.item_url} target="_blank" rel="noreferrer">Steam</a>
               {/if}
@@ -4864,6 +6951,8 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
         </aside>
       {/if}
+      {/if}
+      </section>
     {/if}
 
     {#if showResolutionModal}

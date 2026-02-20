@@ -1,6 +1,6 @@
 {
   "name": "kitowall",
-  "version": "2.0.0",
+  "version": "2.7.0",
   "description": "CLI/daemon for Hyprland wallpapers using swww with pack-based rotation.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "commonjs",
@@ -25,7 +25,8 @@
     "package:all": "npm run release:check && npm run package:cli && npm run package:ui",
     "test:smoke": "bash ./tests/smoke.e2e.sh",
     "test:regression": "bash ./tests/regression.e2e.sh",
-    "test:e2e": "npm run test:smoke && npm run test:regression"
+    "test:e2e": "npm run test:smoke && npm run test:regression",
+    "test:live": "npm run build && node --test tests/live.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

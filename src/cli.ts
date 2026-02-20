@@ -41,8 +41,39 @@ import {
   workshopCoexistenceEnter,
   workshopCoexistenceExit,
   workshopCoexistenceStatus,
-  setWorkshopApiKey
+  setWorkshopApiKey,
+  workshopGetSteamRoots,
+  workshopSetSteamRoots,
+  workshopScanSteamDownloads,
+  workshopSyncSteamDownloads,
+  workshopWallpaperEngineStatus,
+  workshopActiveStatus,
+  workshopStop,
+  workshopApply,
+  workshopApplyMap
 } from './core/workshop';
+import {
+  liveApply,
+  liveAutoApplySet,
+  liveAutoApplyUnset,
+  liveBrowse,
+  liveDoctor,
+  liveFavorite,
+  liveFetch,
+  liveGetConfig,
+  liveInit,
+  liveList,
+  liveOpenFolderPath,
+  livePreview,
+  livePreviewClear,
+  liveRemove,
+  liveResolve,
+  liveSearch,
+  liveSetApplyDefaults,
+  liveSetRunner,
+  liveThumbRegen,
+  liveViewData
+} from './core/live';
 
 function getCliVersion(): string {
   try {
@@ -106,6 +137,8 @@ Commands:
                                          Show system logs (requests/downloads/errors)
   logs clear                             Clear system logs
   we config set-api-key <key>            Save Steam Web API key (~/.config/kitowall/we.json)
+  we config get-steam-roots              Show configured manual Steam roots
+  we config set-steam-roots <a,b,c>      Save manual Steam roots (steam root or workshop/content/431960)
   we search [--text <q>] [--tags <a,b>] [--sort <top|newest|trend|subscribed|updated>] [--page <n>] [--page-size <n>] [--days <n>] [--fixtures]
                                          Search Wallpaper Engine workshop items (appid 431960)
   we details <publishedfileid> [--fixtures]
@@ -115,7 +148,41 @@ Commands:
   we job <job_id>                        Show one download job
   we jobs [--limit <n>]                  List recent download jobs
   we library                             List downloaded workshop items
+  we scan-steam                          Detect Steam workshop folders and list downloaded ids
+  we sync-steam                          Sync local Steam Workshop 431960 items into Kitsune downloads
+  we app-status                          Detect if Wallpaper Engine is installed in Steam
+  we active                              Show current livewallpaper authority/lock state
+  we apply <id> --monitor <name> [--backend auto|mpvpaper]
+                                         Apply video live wallpaper on one monitor
+  we apply --map DP-1:<id1>,HDMI-A-1:<id2> [--backend auto|mpvpaper]
+                                         Apply wallpapers in batch by monitor map
+  we stop [--monitor <name> | --all]     Stop livewallpaper instances and restore previous services
   we coexist enter|exit|status           Temporarily stop/restore wallpaper rotation services
+  live init                              Initialize LiveWallpapers storage/index
+  live list [--favorites] [--json]       List downloaded LiveWallpapers from local index
+  live browse [--page <n>] [--quality 4k|all] [--provider moewalls|motionbgs|all]
+                                          Browse provider pages
+  live search <query> [--page <n>] [--limit <n>] [--provider moewalls|motionbgs|all]
+                                          Search provider posts
+  live resolve <url>                      Resolve HD/4K variants from provider post URL
+  live preview <url>                      Resolve + cache local motion preview for side panel playback
+  live preview-clear <url>                Remove cached side-panel motion preview for one post
+  live fetch <url> [--quality auto|hd|4k] [--monitor <name>] [--apply]
+                                          Download from provider and save into local library
+  live apply <id> --monitor <name> [--quality auto|hd|4k]
+                                          Apply live wallpaper by local library id
+  live auto-apply set --monitor <name> --quality auto|hd|4k
+  live auto-apply unset --monitor <name>
+  live favorite <id> on|off
+  live remove <id> [--delete-files]
+  live thumb regen [--id <id>] [--all]
+  live open [--id <id>]                   Print folder path (root or item folder)
+  live config show
+  live config runner --mode cargo|bin [--cargo-project-dir <path>] [--bin-name <name>]
+  live config apply-defaults [--proxy-fps <n>] [--proxy-crf-hd <n>] [--proxy-crf-4k <n>]
+                             [--loop-crossfade-seconds <n>] [--profile performance|balanced|quality]
+                             [--seamless-loop true|false] [--loop-crossfade true|false] [--optimize true|false]
+  live doctor
   check [--namespace <ns>] [--json]        Quick system check (no changes)
 
   init [--namespace <ns>] [--apply] [--force]       Setup kitowall (install daemon + watcher + next.service), validate deps
@@ -305,12 +372,25 @@ async function main(): Promise<void> {
 
     if (action === 'config') {
       const sub = cleanOpt(args[2] ?? null);
-      if (sub !== 'set-api-key') throw new Error('Usage: we config set-api-key <key>');
-      const key = cleanOpt(args[3] ?? null);
-      if (!key) throw new Error('Usage: we config set-api-key <key>');
-      setWorkshopApiKey(key);
-      console.log(JSON.stringify({ok: true, updated: 'steamWebApiKey'}, null, 2));
-      return;
+      if (sub === 'set-api-key') {
+        const key = cleanOpt(args[3] ?? null);
+        if (!key) throw new Error('Usage: we config set-api-key <key>');
+        setWorkshopApiKey(key);
+        console.log(JSON.stringify({ok: true, updated: 'steamWebApiKey'}, null, 2));
+        return;
+      }
+      if (sub === 'get-steam-roots') {
+        console.log(JSON.stringify({ok: true, ...workshopGetSteamRoots()}, null, 2));
+        return;
+      }
+      if (sub === 'set-steam-roots') {
+        const raw = cleanOpt(args[3] ?? null) ?? '';
+        const roots = raw ? raw.split(',').map(v => v.trim()).filter(Boolean) : [];
+        const out = workshopSetSteamRoots(roots);
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      throw new Error('Usage: we config <set-api-key|get-steam-roots|set-steam-roots> ...');
     }
 
     if (action === 'search') {
@@ -395,6 +475,58 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (action === 'scan-steam') {
+      const out = workshopScanSteamDownloads();
+      console.log(JSON.stringify({ok: true, ...out}, null, 2));
+      return;
+    }
+
+    if (action === 'sync-steam') {
+      const out = workshopSyncSteamDownloads();
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'app-status') {
+      const out = workshopWallpaperEngineStatus();
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'active') {
+      const out = workshopActiveStatus();
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'apply') {
+      const mapValue = cleanOpt(getOptionValue(args, '--map'));
+      const backend = cleanOpt(getOptionValue(args, '--backend')) ?? 'auto';
+      if (mapValue) {
+        const out = await workshopApplyMap({map: mapValue, backend});
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      const id = cleanOpt(args[2] ?? null);
+      const monitor = cleanOpt(getOptionValue(args, '--monitor'));
+      if (!id || !monitor) {
+        throw new Error('Usage: we apply <id> --monitor <name> [--backend auto|mpvpaper] OR we apply --map DP-1:<id1>,HDMI-A-1:<id2>');
+      }
+      const out = await workshopApply({id, monitor, backend});
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'stop') {
+      const monitor = cleanOpt(getOptionValue(args, '--monitor'));
+      const out = await workshopStop({
+        monitor,
+        all: args.includes('--all') || !monitor
+      });
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
     if (action === 'coexist') {
       const sub = cleanOpt(args[2] ?? null);
       if (sub === 'enter') {
@@ -415,7 +547,201 @@ async function main(): Promise<void> {
       throw new Error('Usage: we coexist <enter|exit|status>');
     }
 
-    throw new Error('Usage: we <config|search|details|download|job|jobs|library|run-job|coexist> ...');
+    throw new Error('Usage: we <config|search|details|download|job|jobs|library|scan-steam|sync-steam|app-status|active|apply|stop|run-job|coexist> ...');
+  }
+
+  if (cmd === 'live') {
+    const action = cleanOpt(args[1] ?? null);
+    if (!action) throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|config|doctor> ...');
+
+    if (action === 'init') {
+      console.log(JSON.stringify(liveInit(), null, 2));
+      return;
+    }
+
+    if (action === 'list') {
+      const out = liveList({favorites: args.includes('--favorites')});
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'browse') {
+      const pageRaw = cleanOpt(getOptionValue(args, '--page'));
+      const qualityRaw = cleanOpt(getOptionValue(args, '--quality'));
+      const providerRaw = cleanOpt(getOptionValue(args, '--provider'));
+      const out = await liveBrowse({
+        page: pageRaw ? Number(pageRaw) : 1,
+        quality: qualityRaw === '4k' ? '4k' : 'all',
+        provider: (providerRaw === 'moewalls' || providerRaw === 'motionbgs') ? providerRaw : 'all'
+      });
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'search') {
+      const query = cleanOpt(args[2] ?? null);
+      if (!query) throw new Error('Usage: live search <query> [--page <n>] [--limit <n>] [--provider moewalls|motionbgs|all]');
+      const pageRaw = cleanOpt(getOptionValue(args, '--page'));
+      const limitRaw = cleanOpt(getOptionValue(args, '--limit'));
+      const providerRaw = cleanOpt(getOptionValue(args, '--provider'));
+      const out = await liveSearch(query, {
+        page: pageRaw ? Number(pageRaw) : 1,
+        limit: limitRaw ? Number(limitRaw) : 20,
+        provider: (providerRaw === 'moewalls' || providerRaw === 'motionbgs') ? providerRaw : 'all'
+      });
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'resolve') {
+      const url = cleanOpt(args[2] ?? null);
+      if (!url) throw new Error('Usage: live resolve <motionbgs_or_moewalls_url>');
+      const out = await liveResolve(url);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'preview') {
+      const url = cleanOpt(args[2] ?? null);
+      if (!url) throw new Error('Usage: live preview <motionbgs_or_moewalls_url>');
+      const out = await livePreview(url);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'preview-clear') {
+      const url = cleanOpt(args[2] ?? null);
+      if (!url) throw new Error('Usage: live preview-clear <motionbgs_or_moewalls_url>');
+      const out = await livePreviewClear(url);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'fetch') {
+      const url = cleanOpt(args[2] ?? null);
+      if (!url) throw new Error('Usage: live fetch <url> [--quality auto|hd|4k] [--monitor <name>] [--apply]');
+      const qualityRaw = cleanOpt(getOptionValue(args, '--quality'));
+      const monitor = cleanOpt(getOptionValue(args, '--monitor')) ?? undefined;
+      const quality = (qualityRaw === 'hd' || qualityRaw === '4k' || qualityRaw === 'auto') ? qualityRaw : 'auto';
+      const out = await liveFetch({
+        url,
+        quality,
+        monitor,
+        apply: args.includes('--apply')
+      });
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'apply') {
+      const id = cleanOpt(args[2] ?? null);
+      const monitor = cleanOpt(getOptionValue(args, '--monitor'));
+      if (!id || !monitor) throw new Error('Usage: live apply <id> --monitor <name> [--quality auto|hd|4k]');
+      const qualityRaw = cleanOpt(getOptionValue(args, '--quality'));
+      const quality = (qualityRaw === 'hd' || qualityRaw === '4k' || qualityRaw === 'auto') ? qualityRaw : 'auto';
+      const out = await liveApply({id, monitor, quality});
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'auto-apply') {
+      const sub = cleanOpt(args[2] ?? null);
+      if (sub === 'set') {
+        const monitor = cleanOpt(getOptionValue(args, '--monitor'));
+        const qualityRaw = cleanOpt(getOptionValue(args, '--quality'));
+        if (!monitor) throw new Error('Usage: live auto-apply set --monitor <name> --quality auto|hd|4k');
+        const quality = (qualityRaw === 'hd' || qualityRaw === '4k' || qualityRaw === 'auto') ? qualityRaw : 'auto';
+        const out = liveAutoApplySet(monitor, quality);
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      if (sub === 'unset') {
+        const monitor = cleanOpt(getOptionValue(args, '--monitor'));
+        if (!monitor) throw new Error('Usage: live auto-apply unset --monitor <name>');
+        const out = liveAutoApplyUnset(monitor);
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      throw new Error('Usage: live auto-apply <set|unset> ...');
+    }
+
+    if (action === 'favorite') {
+      const id = cleanOpt(args[2] ?? null);
+      const state = cleanOpt(args[3] ?? null);
+      if (!id || !state) throw new Error('Usage: live favorite <id> on|off');
+      const out = liveFavorite(id, state === 'on');
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'remove') {
+      const id = cleanOpt(args[2] ?? null);
+      if (!id) throw new Error('Usage: live remove <id> [--delete-files]');
+      const out = liveRemove(id, {deleteFiles: args.includes('--delete-files')});
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'thumb') {
+      const sub = cleanOpt(args[2] ?? null);
+      if (sub !== 'regen') throw new Error('Usage: live thumb regen [--id <id>] [--all]');
+      const id = cleanOpt(getOptionValue(args, '--id')) ?? undefined;
+      const out = await liveThumbRegen({id, all: args.includes('--all')});
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'open') {
+      const out = liveOpenFolderPath(cleanOpt(getOptionValue(args, '--id')) ?? undefined);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'doctor') {
+      const out = await liveDoctor();
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
+    if (action === 'config') {
+      const sub = cleanOpt(args[2] ?? null);
+      if (sub === 'show') {
+        console.log(JSON.stringify(liveGetConfig(), null, 2));
+        return;
+      }
+      if (sub === 'runner') {
+        const modeRaw = cleanOpt(getOptionValue(args, '--mode'));
+        const out = liveSetRunner({
+          mode: (modeRaw === 'cargo' || modeRaw === 'bin') ? modeRaw : undefined,
+          cargo_project_dir: cleanOpt(getOptionValue(args, '--cargo-project-dir')) ?? undefined,
+          bin_name: cleanOpt(getOptionValue(args, '--bin-name')) ?? undefined
+        });
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      if (sub === 'apply-defaults') {
+        const out = liveSetApplyDefaults({
+          profile: (cleanOpt(getOptionValue(args, '--profile')) as 'performance' | 'balanced' | 'quality' | null) ?? undefined,
+          seamless_loop: parseBool(getOptionValue(args, '--seamless-loop')),
+          loop_crossfade: parseBool(getOptionValue(args, '--loop-crossfade')),
+          loop_crossfade_seconds: cleanOpt(getOptionValue(args, '--loop-crossfade-seconds')) ? Number(cleanOpt(getOptionValue(args, '--loop-crossfade-seconds'))) : undefined,
+          optimize: parseBool(getOptionValue(args, '--optimize')),
+          proxy_fps: cleanOpt(getOptionValue(args, '--proxy-fps')) ? Number(cleanOpt(getOptionValue(args, '--proxy-fps'))) : undefined,
+          proxy_crf_hd: cleanOpt(getOptionValue(args, '--proxy-crf-hd')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf-hd'))) : undefined,
+          proxy_crf_4k: cleanOpt(getOptionValue(args, '--proxy-crf-4k')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf-4k'))) : undefined
+        });
+        console.log(JSON.stringify(out, null, 2));
+        return;
+      }
+      throw new Error('Usage: live config <show|runner|apply-defaults> ...');
+    }
+
+    if (action === 'view') {
+      console.log(JSON.stringify(liveViewData(), null, 2));
+      return;
+    }
+
+    throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|config|doctor> ...');
   }
 
   // Regular commands (need config/state)

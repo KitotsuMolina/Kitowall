@@ -631,6 +631,7 @@ label {
 
 .monitor-screen-wrap {
   position: relative;
+  width: 100%;
 }
 
 .monitor-image {
@@ -727,6 +728,22 @@ label {
   border-radius: 8px;
   padding: 8px;
   background: rgba(0, 0, 0, 0.16);
+}
+
+.url-click {
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.url-click:hover {
+  border-color: var(--primary);
+  color: #ffffff;
+  background: rgba(165, 14, 219, 0.14);
+}
+
+.url-click:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .next-pack-btn {
@@ -1463,6 +1480,46 @@ label {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
 
+.live-downloaded-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.live-downloaded-card {
+  min-width: 280px;
+  max-width: 320px;
+  flex: 0 0 300px;
+}
+
+.live-module {
+  display: grid;
+  gap: 14px;
+}
+
+.live-module h2 {
+  margin: 10px 0 0;
+}
+
+.live-module .card {
+  margin: 0;
+}
+
+.live-module .actions-buttons-row {
+  margin-top: 10px;
+  margin-bottom: 8px;
+  row-gap: 10px;
+}
+
+.live-module button,
+.live-module .live-link {
+  margin: 2px 6px 2px 0;
+}
+
+.live-module .badge {
+  margin: 2px 6px 2px 0;
+}
+
 .live-card {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
@@ -1472,6 +1529,7 @@ label {
 }
 
 .live-media-button {
+  display: block;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1492,12 +1550,34 @@ label {
   padding: 10px;
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .live-title {
   font-weight: 700;
   line-height: 1.2;
-  word-break: break-word;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-meta .row {
+  min-width: 0;
+  width: 100%;
+}
+
+.live-meta .badge {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-path-badge {
+  flex: 1 1 100%;
+  max-width: 100%;
 }
 
 .live-sidepanel {
@@ -1541,9 +1621,62 @@ label {
   display: block;
 }
 
+.live-preview-fallback {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.live-preview-loading {
+  position: absolute;
+  inset: auto 10px 10px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: calc(100% - 20px);
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(8, 10, 14, 0.75);
+  color: #f6f8ff;
+  font-size: 12px;
+  backdrop-filter: blur(2px);
+}
+
+.live-preview-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: live-spin 0.9s linear infinite;
+}
+
+@keyframes live-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .live-details {
   display: grid;
   gap: 8px;
+}
+
+.live-preview-debug {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: rgba(8, 10, 14, 0.55);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .live-link {
@@ -1551,6 +1684,47 @@ label {
   align-items: center;
   justify-content: center;
   text-decoration: none;
+}
+
+.live-skeleton-card {
+  pointer-events: none;
+}
+
+.live-skeleton-block,
+.live-skeleton-line {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.live-skeleton-block::after,
+.live-skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.18),
+    rgba(255, 255, 255, 0)
+  );
+  animation: liveSkeletonPulse 1.2s ease-in-out infinite;
+}
+
+.live-skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.live-skeleton-line.w70 { width: 70%; }
+.live-skeleton-line.w40 { width: 40%; }
+.live-skeleton-line.w90 { width: 90%; }
+.live-skeleton-line.w55 { width: 55%; }
+
+@keyframes liveSkeletonPulse {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 @keyframes modalIn {

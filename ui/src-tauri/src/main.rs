@@ -1,8 +1,11 @@
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command};
 use std::collections::HashSet;
+use std::env;
+use std::sync::{Mutex, OnceLock};
+use base64::Engine as _;
 use thiserror::Error;
 
 type Json = Value;
@@ -250,6 +253,70 @@ fn host_aware_command(base: &str) -> Command {
     } else {
         Command::new(base)
     }
+}
+
+static NATIVE_PREVIEW_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+
+fn native_preview_slot() -> &'static Mutex<Option<Child>> {
+    NATIVE_PREVIEW_CHILD.get_or_init(|| Mutex::new(None))
+}
+
+fn stop_native_preview_process() -> Result<(), String> {
+    let slot = native_preview_slot();
+    let mut guard = slot
+        .lock()
+        .map_err(|_| "native preview lock poisoned".to_string())?;
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn kitowall_native_preview_stop() -> Result<Json, String> {
+    stop_native_preview_process()?;
+    Ok(serde_json::json!({"ok": true}))
+}
+
+#[tauri::command]
+fn kitowall_native_preview_start(source: String) -> Result<Json, String> {
+    let src = source.trim();
+    if src.is_empty() {
+        return Err("source is required".to_string());
+    }
+
+    stop_native_preview_process()?;
+
+    let mut cmd = host_aware_command("mpv");
+    cmd.args([
+        "--force-window=yes",
+        "--keep-open=yes",
+        "--loop-file=inf",
+        "--mute=yes",
+        "--really-quiet",
+        "--no-config",
+        "--profile=sw-fast",
+        "--hwdec=auto-safe",
+        "--title=KitoWall Preview",
+    ]);
+    cmd.arg(src);
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to start mpv: {e}"))?;
+    let pid = child.id();
+    let slot = native_preview_slot();
+    let mut guard = slot
+        .lock()
+        .map_err(|_| "native preview lock poisoned".to_string())?;
+    *guard = Some(child);
+
+    Ok(serde_json::json!({
+      "ok": true,
+      "pid": pid,
+      "source": src
+    }))
 }
 
 fn systemctl_show(unit: &str, props: &[&str]) -> Result<Json, String> {
@@ -1511,6 +1578,54 @@ fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
 }
 
 #[tauri::command]
+async fn kitowall_live_run(args: Vec<String>) -> Result<Json, String> {
+    if args.is_empty() {
+        return Err("live args are required".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut full: Vec<String> = vec!["live".into()];
+        full.extend(args);
+        let refs: Vec<&str> = full.iter().map(String::as_str).collect();
+        run_kitowall(&refs).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn kitowall_open_path(path: String) -> Result<Json, String> {
+    let p = PathBuf::from(path.trim());
+    if !p.exists() {
+        return Err(format!("Path not found: {}", p.display()));
+    }
+    let status = host_aware_command("xdg-open")
+        .arg(&p)
+        .status()
+        .map_err(|e| format!("failed to run xdg-open: {}", e))?;
+    if !status.success() {
+        return Err(format!("xdg-open failed with status: {}", status));
+    }
+    Ok(serde_json::json!({"ok": true, "path": p}))
+}
+
+#[tauri::command]
+fn kitowall_open_url(url: String) -> Result<Json, String> {
+    let u = url.trim().to_string();
+    let lower = u.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err(format!("Unsupported url: {}", u));
+    }
+    let status = host_aware_command("xdg-open")
+        .arg(&u)
+        .status()
+        .map_err(|e| format!("failed to run xdg-open: {}", e))?;
+    if !status.success() {
+        return Err(format!("xdg-open failed with status: {}", status));
+    }
+    Ok(serde_json::json!({"ok": true, "url": u}))
+}
+
+#[tauri::command]
 fn kitowall_we_search(
     text: Option<String>,
     tags: Option<String>,
@@ -1661,7 +1776,128 @@ fn kitowall_we_coexist_status() -> Result<Json, String> {
     run_kitowall(&["we", "coexist", "status"]).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn kitowall_we_set_api_key(api_key: String) -> Result<Json, String> {
+    let key = api_key.trim().to_string();
+    if key.is_empty() {
+        return Err("api_key is required".to_string());
+    }
+    run_kitowall(&["we", "config", "set-api-key", &key]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_get_steam_roots() -> Result<Json, String> {
+    run_kitowall(&["we", "config", "get-steam-roots"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_set_steam_roots(roots_csv: String) -> Result<Json, String> {
+    let roots = roots_csv.trim().to_string();
+    run_kitowall(&["we", "config", "set-steam-roots", &roots]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_scan_steam() -> Result<Json, String> {
+    run_kitowall(&["we", "scan-steam"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_sync_steam() -> Result<Json, String> {
+    run_kitowall(&["we", "sync-steam"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_app_status() -> Result<Json, String> {
+    run_kitowall(&["we", "app-status"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_active() -> Result<Json, String> {
+    run_kitowall(&["we", "active"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_stop_all() -> Result<Json, String> {
+    run_kitowall(&["we", "stop", "--all"]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_apply(id: String, monitor: String, backend: Option<String>) -> Result<Json, String> {
+    let id_clean = id.trim().to_string();
+    let monitor_clean = monitor.trim().to_string();
+    if id_clean.is_empty() || monitor_clean.is_empty() {
+        return Err("id and monitor are required".to_string());
+    }
+    let backend_clean = backend.unwrap_or_else(|| "auto".to_string());
+    run_kitowall(&["we", "apply", &id_clean, "--monitor", &monitor_clean, "--backend", backend_clean.trim()]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_apply_map(map: String, backend: Option<String>) -> Result<Json, String> {
+    let map_clean = map.trim().to_string();
+    if map_clean.is_empty() {
+        return Err("map is required".to_string());
+    }
+    let backend_clean = backend.unwrap_or_else(|| "auto".to_string());
+    run_kitowall(&["we", "apply", "--map", &map_clean, "--backend", backend_clean.trim()]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_we_stop_monitor(monitor: String) -> Result<Json, String> {
+    let monitor_clean = monitor.trim().to_string();
+    if monitor_clean.is_empty() {
+        return Err("monitor is required".to_string());
+    }
+    run_kitowall(&["we", "stop", "--monitor", &monitor_clean]).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kitowall_file_data_url(path: String) -> Result<Json, String> {
+    let raw = path.trim();
+    if raw.is_empty() {
+        return Err("path is required".to_string());
+    }
+    let p = PathBuf::from(raw);
+    if !p.exists() {
+        return Err(format!("file not found: {}", p.display()));
+    }
+    let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
+    if meta.len() > 8 * 1024 * 1024 {
+        return Err("file too large for preview data url (>8MB)".to_string());
+    }
+    let bytes = fs::read(&p).map_err(|e| e.to_string())?;
+    let ext = p
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        _ => "application/octet-stream",
+    };
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(serde_json::json!({
+      "ok": true,
+      "mime": mime,
+      "data_url": format!("data:{};base64,{}", mime, b64)
+    }))
+}
+
 fn main() {
+    #[cfg(target_os = "linux")]
+    {
+        // WebKitGTK can show decode artifacts/stalls on seek/replay with DMABUF in some GPUs/drivers.
+        // Keep manual overrides respected; only set a default when not provided by the environment.
+        if env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             kitowall_check,
@@ -1699,6 +1935,9 @@ fn main() {
             kitowall_pick_folder,
             kitowall_kitsune_status,
             kitowall_kitsune_run,
+            kitowall_live_run,
+            kitowall_open_path,
+            kitowall_open_url,
             kitowall_we_search,
             kitowall_we_details,
             kitowall_we_download,
@@ -1707,7 +1946,21 @@ fn main() {
             kitowall_we_library,
             kitowall_we_coexist_enter,
             kitowall_we_coexist_exit,
-            kitowall_we_coexist_status
+            kitowall_we_coexist_status,
+            kitowall_we_set_api_key,
+            kitowall_we_get_steam_roots,
+            kitowall_we_set_steam_roots,
+            kitowall_we_scan_steam,
+            kitowall_we_sync_steam,
+            kitowall_we_app_status,
+            kitowall_we_active,
+            kitowall_we_stop_all,
+            kitowall_we_apply,
+            kitowall_we_apply_map,
+            kitowall_we_stop_monitor,
+            kitowall_file_data_url,
+            kitowall_native_preview_start,
+            kitowall_native_preview_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
