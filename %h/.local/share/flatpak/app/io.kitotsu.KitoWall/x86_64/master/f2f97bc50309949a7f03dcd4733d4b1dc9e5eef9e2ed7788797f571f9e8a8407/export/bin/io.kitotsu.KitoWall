@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/flatpak run --branch=master --arch=x86_64 io.kitotsu.KitoWall "$@"

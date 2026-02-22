@@ -1088,6 +1088,28 @@ function killPid(pid?: number): boolean {
   }
 }
 
+async function stopKnownLiveProcesses(): Promise<void> {
+  // Live V2 can run wallpapers without registering pids in workshop active-state.
+  // Stop common runtime processes as best-effort fallback.
+  const patterns = [
+    'mpvpaper',
+    'kitsune-livewallpaper',
+    'kitsune-rendercore'
+  ];
+  for (const pattern of patterns) {
+    try {
+      await run('pkill', ['-f', pattern]);
+    } catch {
+      // best effort
+    }
+  }
+  try {
+    await run('systemctl', ['--user', 'stop', 'kitsune-rendercore.service']);
+  } catch {
+    // best effort
+  }
+}
+
 export function workshopActiveStatus(): {
   ok: true;
   active: boolean;
@@ -1224,8 +1246,13 @@ export async function workshopStop(options?: {monitor?: string; all?: boolean}):
       shouldRestore = true;
     }
   } else if (options?.all) {
+    await stopKnownLiveProcesses();
     clearActiveState();
     shouldRestore = true;
+  }
+
+  if (options?.all) {
+    await stopKnownLiveProcesses();
   }
 
   const coexist = shouldRestore ? await workshopCoexistenceExit() : {ok: true, restored: [] as string[]};

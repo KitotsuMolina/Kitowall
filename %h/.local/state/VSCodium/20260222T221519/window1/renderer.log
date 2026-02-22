@@ -1,0 +1,4 @@
+2026-02-22 22:15:21.071 [info] Started local extension host with pid 74734.
+2026-02-22 22:15:22.008 [error] [Extension Host] (node:74734) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `exe --trace-deprecation ...` to show where the warning was created)
+2026-02-22 22:15:24.141 [info] [perf] Render performance baseline is 17ms

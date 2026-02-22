@@ -28,6 +28,7 @@ export function run(cmd: string, args: string[] = [], options: ExecOptions = {})
       'ffprobe',
       'cargo',
       'kitsune-livewallpaper',
+      'kitsune-rendercore',
       'dd'
     ]);
     const useHost = isFlatpak && hostCommands.has(cmd);

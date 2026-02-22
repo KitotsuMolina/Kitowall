@@ -1,0 +1,5 @@
+[Runtime]
+name=io.kitotsu.KitoWall.Debug
+
+[ExtensionOf]
+ref=app/io.kitotsu.KitoWall/x86_64/master

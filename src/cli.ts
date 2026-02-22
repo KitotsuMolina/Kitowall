@@ -30,6 +30,7 @@ import {StaticUrlAdapter} from './adapters/staticUrl';
 import {listSystemLogs, clearSystemLogs} from './core/logs';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {run} from './utils/exec';
 import {
   workshopSearch,
   workshopDetails,
@@ -70,9 +71,8 @@ import {
   liveResolve,
   liveSearch,
   liveSetApplyDefaults,
-  liveGetWallpaperConfig,
-  liveSetWallpaperConfig,
   liveSetRunner,
+  liveServiceAutostart,
   liveThumbRegen,
   liveViewData
 } from './core/live';
@@ -179,17 +179,11 @@ Commands:
   live remove <id> [--delete-files]
   live thumb regen [--id <id>] [--all]
   live open [--id <id>]                   Print folder path (root or item folder)
+  live service-autostart <install|enable|disable|start|stop|restart|status>
   live config show
-  live config wallpaper-show --id <id>
-  live config wallpaper --id <id> [--keep-services true|false] [--mute-audio true|false] [--profile performance|balanced|quality]
-                        [--display-fps <n|off>] [--seamless-loop true|false] [--loop-crossfade true|false]
-                        [--loop-crossfade-seconds <n>] [--optimize true|false]
-                        [--proxy-width <n>] [--proxy-fps <n>] [--proxy-crf <n>]
   live config runner [--bin-name <name>]
-  live config apply-defaults [--keep-services true|false] [--mute-audio true|false] [--display-fps <n|off>]
-                             [--proxy-width-hd <n>] [--proxy-width-4k <n>] [--proxy-fps <n>] [--proxy-crf-hd <n>] [--proxy-crf-4k <n>]
-                             [--loop-crossfade-seconds <n>] [--profile performance|balanced|quality]
-                             [--seamless-loop true|false] [--loop-crossfade true|false] [--optimize true|false]
+  live config apply-defaults [--video-fps <n>] [--video-speed <n>] [--hwaccel auto|nvdec|vaapi|none]
+                             [--quality low|medium|high|ultra] [--pause-on-steam-game true|false] [--steam-poll-ms <n>]
   live doctor [--fix]
   check [--namespace <ns>] [--json]        Quick system check (no changes)
 
@@ -282,6 +276,20 @@ function formatError(err: unknown): {message: string; hint?: string; code?: stri
   }
 
   return {message, hint, code};
+}
+
+async function switchToStaticWallpaperMode(): Promise<void> {
+  const liveBin = cleanOpt(process.env.KITOWALL_LIVE_RUNNER_BIN ?? null) ?? 'kitsune-rendercore';
+  try {
+    await run(liveBin, ['service', 'disable'], {timeoutMs: 20000});
+  } catch {
+    // best effort
+  }
+  try {
+    await workshopCoexistenceExit();
+  } catch {
+    // best effort
+  }
 }
 
 async function main(): Promise<void> {
@@ -560,7 +568,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'live') {
     const action = cleanOpt(args[1] ?? null);
-    if (!action) throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|config|doctor> ...');
+    if (!action) throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|service-autostart|config|doctor> ...');
 
     if (action === 'init') {
       console.log(JSON.stringify(liveInit(), null, 2));
@@ -705,6 +713,24 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (action === 'service-autostart') {
+      const sub = cleanOpt(args[2] ?? null);
+      if (
+        sub !== 'install' &&
+        sub !== 'enable' &&
+        sub !== 'disable' &&
+        sub !== 'status' &&
+        sub !== 'start' &&
+        sub !== 'stop' &&
+        sub !== 'restart'
+      ) {
+        throw new Error('Usage: live service-autostart <install|enable|disable|start|stop|restart|status>');
+      }
+      const out = await liveServiceAutostart(sub);
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+
     if (action === 'doctor') {
       const out = await liveDoctor({fix: args.includes('--fix')});
       console.log(JSON.stringify(out, null, 2));
@@ -717,40 +743,6 @@ async function main(): Promise<void> {
         console.log(JSON.stringify(liveGetConfig(), null, 2));
         return;
       }
-      if (sub === 'wallpaper-show') {
-        const id = cleanOpt(getOptionValue(args, '--id'));
-        if (!id) throw new Error('Usage: live config wallpaper-show --id <id>');
-        console.log(JSON.stringify(liveGetWallpaperConfig(id), null, 2));
-        return;
-      }
-      if (sub === 'wallpaper') {
-        const id = cleanOpt(getOptionValue(args, '--id'));
-        if (!id) {
-          throw new Error(
-            'Usage: live config wallpaper --id <id> [--keep-services true|false] [--mute-audio true|false] [--profile performance|balanced|quality] [--display-fps <n|off>] [--seamless-loop true|false] [--loop-crossfade true|false] [--loop-crossfade-seconds <n>] [--optimize true|false] [--proxy-width <n>] [--proxy-fps <n>] [--proxy-crf <n>]'
-          );
-        }
-        const profile = cleanOpt(getOptionValue(args, '--profile'));
-        const displayFpsRaw = cleanOpt(getOptionValue(args, '--display-fps'));
-        const display_fps = !displayFpsRaw
-          ? undefined
-          : (displayFpsRaw.toLowerCase() === 'off' ? null : Number(displayFpsRaw));
-        const out = liveSetWallpaperConfig(id, {
-          keep_services: parseBool(getOptionValue(args, '--keep-services')),
-          mute_audio: parseBool(getOptionValue(args, '--mute-audio')),
-          profile: (profile === 'performance' || profile === 'balanced' || profile === 'quality') ? profile : undefined,
-          display_fps: (display_fps === undefined || display_fps === null || Number.isFinite(display_fps)) ? display_fps : undefined,
-          seamless_loop: parseBool(getOptionValue(args, '--seamless-loop')),
-          loop_crossfade: parseBool(getOptionValue(args, '--loop-crossfade')),
-          loop_crossfade_seconds: cleanOpt(getOptionValue(args, '--loop-crossfade-seconds')) ? Number(cleanOpt(getOptionValue(args, '--loop-crossfade-seconds'))) : undefined,
-          optimize: parseBool(getOptionValue(args, '--optimize')),
-          proxy_width: cleanOpt(getOptionValue(args, '--proxy-width')) ? Number(cleanOpt(getOptionValue(args, '--proxy-width'))) : undefined,
-          proxy_fps: cleanOpt(getOptionValue(args, '--proxy-fps')) ? Number(cleanOpt(getOptionValue(args, '--proxy-fps'))) : undefined,
-          proxy_crf: cleanOpt(getOptionValue(args, '--proxy-crf')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf'))) : undefined
-        });
-        console.log(JSON.stringify(out, null, 2));
-        return;
-      }
       if (sub === 'runner') {
         const out = liveSetRunner({
           bin_name: cleanOpt(getOptionValue(args, '--bin-name')) ?? undefined
@@ -759,24 +751,13 @@ async function main(): Promise<void> {
         return;
       }
       if (sub === 'apply-defaults') {
-        const displayFpsRaw = cleanOpt(getOptionValue(args, '--display-fps'));
-        const display_fps = !displayFpsRaw
-          ? undefined
-          : (displayFpsRaw.toLowerCase() === 'off' ? null : Number(displayFpsRaw));
         const out = liveSetApplyDefaults({
-          keep_services: parseBool(getOptionValue(args, '--keep-services')),
-          mute_audio: parseBool(getOptionValue(args, '--mute-audio')),
-          profile: (cleanOpt(getOptionValue(args, '--profile')) as 'performance' | 'balanced' | 'quality' | null) ?? undefined,
-          display_fps: (display_fps === undefined || display_fps === null || Number.isFinite(display_fps)) ? display_fps : undefined,
-          seamless_loop: parseBool(getOptionValue(args, '--seamless-loop')),
-          loop_crossfade: parseBool(getOptionValue(args, '--loop-crossfade')),
-          loop_crossfade_seconds: cleanOpt(getOptionValue(args, '--loop-crossfade-seconds')) ? Number(cleanOpt(getOptionValue(args, '--loop-crossfade-seconds'))) : undefined,
-          optimize: parseBool(getOptionValue(args, '--optimize')),
-          proxy_width_hd: cleanOpt(getOptionValue(args, '--proxy-width-hd')) ? Number(cleanOpt(getOptionValue(args, '--proxy-width-hd'))) : undefined,
-          proxy_width_4k: cleanOpt(getOptionValue(args, '--proxy-width-4k')) ? Number(cleanOpt(getOptionValue(args, '--proxy-width-4k'))) : undefined,
-          proxy_fps: cleanOpt(getOptionValue(args, '--proxy-fps')) ? Number(cleanOpt(getOptionValue(args, '--proxy-fps'))) : undefined,
-          proxy_crf_hd: cleanOpt(getOptionValue(args, '--proxy-crf-hd')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf-hd'))) : undefined,
-          proxy_crf_4k: cleanOpt(getOptionValue(args, '--proxy-crf-4k')) ? Number(cleanOpt(getOptionValue(args, '--proxy-crf-4k'))) : undefined
+          video_fps: cleanOpt(getOptionValue(args, '--video-fps')) ? Number(cleanOpt(getOptionValue(args, '--video-fps'))) : undefined,
+          video_speed: cleanOpt(getOptionValue(args, '--video-speed')) ? Number(cleanOpt(getOptionValue(args, '--video-speed'))) : undefined,
+          hwaccel: (cleanOpt(getOptionValue(args, '--hwaccel')) as 'auto' | 'nvdec' | 'vaapi' | 'none' | null) ?? undefined,
+          quality: (cleanOpt(getOptionValue(args, '--quality')) as 'low' | 'medium' | 'high' | 'ultra' | null) ?? undefined,
+          pause_on_steam_game: parseBool(getOptionValue(args, '--pause-on-steam-game')),
+          steam_poll_ms: cleanOpt(getOptionValue(args, '--steam-poll-ms')) ? Number(cleanOpt(getOptionValue(args, '--steam-poll-ms'))) : undefined
         });
         console.log(JSON.stringify(out, null, 2));
         return;
@@ -789,7 +770,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|config|doctor> ...');
+    throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|service-autostart|config|doctor> ...');
   }
 
   // Regular commands (need config/state)
@@ -1512,6 +1493,7 @@ async function main(): Promise<void> {
     state.mode = value;
     state.last_updated = Date.now();
     saveState(state);
+    await switchToStaticWallpaperMode();
 
     console.log(JSON.stringify({ok: true, mode: state.mode}, null, 2));
     return;
@@ -1537,6 +1519,7 @@ async function main(): Promise<void> {
       return;
     }
 
+    await switchToStaticWallpaperMode();
     const result = await controller.applyNext(pack, namespace);
     console.log(JSON.stringify(
         {
