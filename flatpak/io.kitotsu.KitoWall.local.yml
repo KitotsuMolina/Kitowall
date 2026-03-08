@@ -22,6 +22,7 @@ build-options:
 
 finish-args:
   - --share=network
+  - --share=ipc
   - --filesystem=home
   - --filesystem=xdg-pictures
   - --socket=wayland
@@ -30,7 +31,7 @@ finish-args:
   - --talk-name=org.freedesktop.Flatpak
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
   - --env=LIBGL_ALWAYS_SOFTWARE=1
-  - --env=GDK_BACKEND=x11
+  - --env=GDK_BACKEND=wayland,x11
 
 modules:
   - name: kitowall
