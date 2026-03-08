@@ -275,8 +275,8 @@ fn kitowall_preflight_install(namespace: Option<String>) -> Result<Json, String>
         }));
     }
 
-    let _ = shell_output(&format!("kitowall init --namespace '{}' --apply --force --json", ns.replace('\'', "")));
-    let _ = shell_output("kitowall install-systemd --every 600s");
+    let _ = run_kitowall(&["init", "--namespace", ns.as_str(), "--apply", "--force", "--json"]);
+    let _ = run_kitowall_raw(&["install-systemd", "--every", "600s"]);
     let deps_after = kitowall_preflight_status()?;
 
     Ok(serde_json::json!({
