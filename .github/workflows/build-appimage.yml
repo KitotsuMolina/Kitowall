@@ -58,7 +58,12 @@ jobs:
           fi
 
       - name: Build AppImage
-        run: npm --prefix ui exec -- tauri build --bundles appimage
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ui
+          npm run build
+          npm run tauri:build -- --bundles appimage
 
       - name: Resolve AppImage path
         id: appimage

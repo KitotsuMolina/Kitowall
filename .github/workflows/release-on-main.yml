@@ -89,7 +89,10 @@ jobs:
           else
             npm --prefix ui install --no-audit --progress=false
           fi
-          npm --prefix ui exec -- tauri build --bundles appimage
+          cd ui
+          npm run build
+          npm run tauri:build -- --bundles appimage
+          cd ..
           find ui/src-tauri/target -maxdepth 8 -type f | sort
           APPIMAGE_PATH="$(find ui/src-tauri/target -type f -iname '*.appimage' | head -n1)"
           if [[ -z "${APPIMAGE_PATH:-}" ]]; then

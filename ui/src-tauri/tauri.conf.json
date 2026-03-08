@@ -4,8 +4,8 @@
   "version": "1.0.7",
   "identifier": "com.kitowall.ui",
   "build": {
-    "beforeDevCommand": "npm --prefix .. run dev",
-    "beforeBuildCommand": "npm --prefix .. run build",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
