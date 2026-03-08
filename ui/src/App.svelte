@@ -759,6 +759,28 @@ import {onDestroy, onMount, tick} from 'svelte';
     return preflightDeps.length > 0 && preflightMissingDeps().length > 0;
   }
 
+  function healthNeedsInstaller(): boolean {
+    if (!health) return false;
+    if (String(health.code ?? '') === 'DEPS_MISSING') return true;
+    return Object.values(health.deps ?? {}).some(v => v !== true);
+  }
+
+  function shouldShowPreflightInstaller(): boolean {
+    return preflightNeedsInstaller() || healthNeedsInstaller();
+  }
+
+  function preflightRowsForUi(): PreflightDepUi[] {
+    if (preflightDeps.length > 0) return preflightDeps;
+    if (!health?.deps) return [];
+    return Object.entries(health.deps).map(([name, ok]) => ({
+      id: name,
+      bin: name,
+      installed: ok === true,
+      path: '',
+      state: ok === true ? 'ok' : 'pending'
+    }));
+  }
+
   function syncPreflightDeps(report: PreflightStatus): void {
     const previous = new Map(preflightDeps.map(dep => [dep.id, dep]));
     preflightDeps = (report.deps ?? []).map(dep => {
@@ -4486,7 +4508,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     {/if}
 
     {#if activeSection === 'control'}
-      {#if preflightNeedsInstaller()}
+      {#if shouldShowPreflightInstaller()}
         <h2>{tr('Dependency Installer', 'Instalador de Dependencias')}</h2>
         <div class="preflight-layout">
           <div class="card preflight-main">
@@ -4502,7 +4524,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               )}
             </div>
             <div class="preflight-deps-grid">
-              {#each preflightDeps as dep (dep.id)}
+              {#each preflightRowsForUi() as dep (dep.id)}
                 <div class="preflight-dep-row">
                   <div class="preflight-dep-main">
                     <span class="preflight-dep-name">{dep.bin}</span>
