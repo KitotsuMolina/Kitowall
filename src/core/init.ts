@@ -16,6 +16,95 @@ function esc(a: string): string {
     return JSON.stringify(a);
 }
 
+async function runHostShell(cmd: string) {
+    if (process.env.FLATPAK_ID) {
+        return run('flatpak-spawn', ['--host', 'sh', '-lc', cmd]);
+    }
+    return run('sh', ['-lc', cmd]);
+}
+
+async function hostCmdExists(cmd: string): Promise<boolean> {
+    try {
+        await runHostShell(`command -v ${cmd} >/dev/null 2>&1`);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function ensureHostDeps(): Promise<void> {
+    const required = ['swww', 'swww-daemon', 'hyprctl', 'mpvpaper'];
+    const missing: string[] = [];
+    for (const dep of required) {
+        if (!(await hostCmdExists(dep))) missing.push(dep);
+    }
+
+    if (missing.length === 0) return;
+
+    const pkgSet = new Set<string>();
+    if (missing.includes('swww') || missing.includes('swww-daemon')) pkgSet.add('swww');
+    if (missing.includes('hyprctl')) pkgSet.add('hyprland');
+    if (missing.includes('mpvpaper')) pkgSet.add('mpvpaper');
+    const packages = Array.from(pkgSet);
+
+    // Best effort auto-install on Arch host; if it fails, we keep a clear actionable error.
+    if (packages.length > 0 && await hostCmdExists('pacman')) {
+        const pkgArgs = packages.join(' ');
+        await runHostShell(
+            `if command -v sudo >/dev/null 2>&1; then ` +
+            `(sudo -n pacman -S --needed --noconfirm ${pkgArgs} || sudo pacman -S --needed ${pkgArgs}); ` +
+            `else pacman -S --needed ${pkgArgs}; fi`
+        ).catch(() => {});
+    }
+
+    const stillMissing: string[] = [];
+    for (const dep of required) {
+        if (!(await hostCmdExists(dep))) stillMissing.push(dep);
+    }
+    if (stillMissing.length > 0) {
+        throw new Error(
+            `Missing host dependencies: ${stillMissing.join(', ')}. ` +
+            `Install on host (Arch): sudo pacman -S --needed swww hyprland mpvpaper`
+        );
+    }
+}
+
+async function ensureHostRendercoreBridge(appId: string): Promise<void> {
+    const home = homedir();
+    const localBinDir = join(home, '.local', 'bin');
+    ensureDir(localBinDir);
+
+    const bridgePath = join(localBinDir, 'kitsune-rendercore');
+    const bridgeScript = `#!/usr/bin/env bash
+set -euo pipefail
+exec /usr/bin/flatpak run --command=kitsune-rendercore ${appId} "$@"
+`;
+    writeFileSync(bridgePath, bridgeScript, {encoding: 'utf8', mode: 0o755});
+
+    const userDir = join(home, '.config', 'systemd', 'user');
+    ensureDir(userDir);
+    const unitPath = join(userDir, 'kitsune-rendercore.service');
+    const unit = `
+[Unit]
+Description=Kitsune RenderCore Live Wallpaper (Flatpak bridge)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=${bridgePath}
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target
+`.trimStart();
+    writeFileSync(unitPath, unit, 'utf8');
+
+    await run('systemctl', ['--user', 'daemon-reload']);
+    await run('systemctl', ['--user', 'enable', '--now', 'kitsune-rendercore.service']).catch(() => {});
+}
+
 async function disableIfExists(unit: string) {
     await run('systemctl', ['--user', 'disable', '--now', unit]).catch(() => {});
     await run('systemctl', ['--user', 'reset-failed', unit]).catch(() => {});
@@ -47,23 +136,19 @@ export async function initKitowall(opts: {
     apply?: boolean;
     force?: boolean;
 }): Promise<void> {
-    if (process.env.FLATPAK_ID) {
-        throw new Error(
-            'init/repair cannot be executed from Flatpak UI because it would generate host systemd units with sandbox paths. ' +
-            'Run on host shell: kitowall init --namespace kitowall --apply --force (or, in local dev, node dist/cli.js init --namespace kitowall --apply --force)'
-        );
-    }
-
     const config = loadConfig(); // crea/migra config si hace falta
     const state = loadState();   // crea/migra state si hace falta
 
     const ns = (opts.namespace && opts.namespace.trim()) ? opts.namespace.trim() : 'kitowall';
     const force = !!opts.force;
+    const isFlatpak = Boolean(process.env.FLATPAK_ID);
+    const flatpakAppId = (process.env.FLATPAK_ID || 'io.kitotsu.KitoWall').trim();
 
     // Validaciones mínimas
-    await run('which', ['swww']).catch(() => { throw new Error('Missing dependency: swww'); });
-    await run('which', ['swww-daemon']).catch(() => { throw new Error('Missing dependency: swww-daemon'); });
-    await run('which', ['hyprctl']).catch(() => { throw new Error('Missing dependency: hyprctl'); });
+    await ensureHostDeps();
+    if (isFlatpak) {
+        await ensureHostRendercoreBridge(flatpakAppId);
+    }
 
     // Apagar servicios que pisan el wallpaper
     await detectAndHandleConflicts(force);
@@ -73,6 +158,9 @@ export async function initKitowall(opts: {
 
     const nodePath = process.execPath;
     const cliPath = resolve(process.argv[1]); // dist/cli.js absoluto
+    const cliInvoke = isFlatpak
+        ? `/usr/bin/flatpak run --command=kitowall ${flatpakAppId}`
+        : `${JSON.stringify(nodePath)} ${JSON.stringify(cliPath)}`;
 
     const xdgRuntimeDir = (process.env.XDG_RUNTIME_DIR && process.env.XDG_RUNTIME_DIR.trim())
         ? process.env.XDG_RUNTIME_DIR.trim()
@@ -115,7 +203,7 @@ WantedBy=graphical-session.target
 
     // 2) kitowall-next.service (oneshot)
     // OJO: aunque CLI ignore --namespace en algunos comandos, aquí lo dejamos por compatibilidad.
-    const nextExec = `/bin/sh -lc ${esc(`${waylandBootstrap} exec ${nodePath} ${esc(cliPath)} ${esc('next')} ${esc('--namespace')} ${esc(ns)}`)}`;
+    const nextExec = `/bin/sh -lc ${esc(`${waylandBootstrap} exec ${cliInvoke} next --namespace ${JSON.stringify(ns)}`)}`;
 
     const kitowallNextService = `
 [Unit]
@@ -133,7 +221,7 @@ ExecStart=${nextExec}
     writeFileSync(join(userDir, 'kitowall-next.service'), kitowallNextService, 'utf8');
 
     // 3) kitowall-watch.service (hotplug watcher)
-    const watchExec = `/bin/sh -lc ${esc(`${waylandBootstrap} exec ${nodePath} ${esc(cliPath)} ${esc('watch')} ${esc('--namespace')} ${esc(ns)}`)}`;
+    const watchExec = `/bin/sh -lc ${esc(`${waylandBootstrap} exec ${cliInvoke} watch --namespace ${JSON.stringify(ns)}`)}`;
 
     const kitowallWatchService = `
 [Unit]
@@ -157,7 +245,7 @@ WantedBy=graphical-session.target
     writeFileSync(join(userDir, 'kitowall-watch.service'), kitowallWatchService, 'utf8');
 
     // 4) kitowall-login-apply.service (apply once on login to avoid gray background)
-    const loginApplyExec = `/bin/sh -lc ${esc(`sleep 2; ${waylandBootstrap} exec ${nodePath} ${esc(cliPath)} ${esc('rotate-now')} ${esc('--namespace')} ${esc(ns)} ${esc('--force')}`)}`;
+    const loginApplyExec = `/bin/sh -lc ${esc(`sleep 2; ${waylandBootstrap} exec ${cliInvoke} rotate-now --namespace ${JSON.stringify(ns)} --force`)}`;
 
     const kitowallLoginApplyService = `
 [Unit]
