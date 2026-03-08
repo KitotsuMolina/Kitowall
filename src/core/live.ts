@@ -111,8 +111,8 @@ const LIVE_BROWSER_UA =
 const LIVE_BROWSER_UA_FALLBACK =
   process.env.KITOWALL_LIVE_UA_FALLBACK ||
   'insomnia/12.3.1';
-const INTEGRATED_RENDERCORE_ENV = 'KITOWALL_FLATPAK_INTEGRATED_RENDERCORE';
-const INTEGRATED_RENDERCORE_BIN_FALLBACK = '/app/bin/kitsune-rendercore';
+const INTEGRATED_RENDERCORE_ENV = 'KITOWALL_INTEGRATED_RENDERCORE';
+const INTEGRATED_RENDERCORE_BIN_FALLBACK = 'kitsune-rendercore';
 
 function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
@@ -970,7 +970,6 @@ function rendercoreEnvPath(): string {
 }
 
 function integratedRendercoreMode(): boolean {
-  if (!process.env.FLATPAK_ID) return false;
   const v = clean(process.env[INTEGRATED_RENDERCORE_ENV]).toLowerCase();
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }

@@ -17,9 +17,6 @@ function esc(a: string): string {
 }
 
 async function runHostShell(cmd: string) {
-    if (process.env.FLATPAK_ID) {
-        return run('flatpak-spawn', ['--host', 'sh', '-lc', cmd]);
-    }
     return run('sh', ['-lc', cmd]);
 }
 
@@ -68,49 +65,6 @@ async function ensureHostDeps(): Promise<void> {
     }
 }
 
-async function ensureHostFlatpakBridges(appId: string): Promise<void> {
-    const home = homedir();
-    const localBinDir = join(home, '.local', 'bin');
-    ensureDir(localBinDir);
-
-    const writeBridge = (name: string, command: string) => {
-        const bridgePath = join(localBinDir, name);
-        const bridgeScript = `#!/usr/bin/env bash
-set -euo pipefail
-exec /usr/bin/flatpak run --command=${command} ${appId} "$@"
-`;
-        writeFileSync(bridgePath, bridgeScript, {encoding: 'utf8', mode: 0o755});
-        return bridgePath;
-    };
-
-    writeBridge('kitowall', 'kitowall');
-    writeBridge('kitsune', 'kitsune');
-    const rendercoreBridgePath = writeBridge('kitsune-rendercore', 'kitsune-rendercore');
-
-    const userDir = join(home, '.config', 'systemd', 'user');
-    ensureDir(userDir);
-    const unitPath = join(userDir, 'kitsune-rendercore.service');
-    const unit = `
-[Unit]
-Description=Kitsune RenderCore Live Wallpaper (Flatpak bridge)
-After=graphical-session.target
-PartOf=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=${rendercoreBridgePath}
-Restart=on-failure
-RestartSec=1
-
-[Install]
-WantedBy=default.target
-`.trimStart();
-    writeFileSync(unitPath, unit, 'utf8');
-
-    await run('systemctl', ['--user', 'daemon-reload']);
-    await run('systemctl', ['--user', 'enable', '--now', 'kitsune-rendercore.service']).catch(() => {});
-}
-
 async function disableIfExists(unit: string) {
     await run('systemctl', ['--user', 'disable', '--now', unit]).catch(() => {});
     await run('systemctl', ['--user', 'reset-failed', unit]).catch(() => {});
@@ -147,14 +101,9 @@ export async function initKitowall(opts: {
 
     const ns = (opts.namespace && opts.namespace.trim()) ? opts.namespace.trim() : 'kitowall';
     const force = !!opts.force;
-    const isFlatpak = Boolean(process.env.FLATPAK_ID);
-    const flatpakAppId = (process.env.FLATPAK_ID || 'io.kitotsu.KitoWall').trim();
 
     // Validaciones mínimas
     await ensureHostDeps();
-    if (isFlatpak) {
-        await ensureHostFlatpakBridges(flatpakAppId);
-    }
 
     // Apagar servicios que pisan el wallpaper
     await detectAndHandleConflicts(force);
@@ -164,9 +113,7 @@ export async function initKitowall(opts: {
 
     const nodePath = process.execPath;
     const cliPath = resolve(process.argv[1]); // dist/cli.js absoluto
-    const cliInvoke = isFlatpak
-        ? `/usr/bin/flatpak run --command=kitowall ${flatpakAppId}`
-        : `${JSON.stringify(nodePath)} ${JSON.stringify(cliPath)}`;
+    const cliInvoke = `${JSON.stringify(nodePath)} ${JSON.stringify(cliPath)}`;
 
     const xdgRuntimeDir = (process.env.XDG_RUNTIME_DIR && process.env.XDG_RUNTIME_DIR.trim())
         ? process.env.XDG_RUNTIME_DIR.trim()

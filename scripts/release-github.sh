@@ -21,7 +21,8 @@ Version selection:
 
 Behavior:
   --sync-ui           Also sync UI versions (ui/package.json + ui/src-tauri/Cargo.toml)
-  --with-ui           Build Tauri app and upload kitowall-ui binary asset
+  --with-ui           Legacy alias of --with-appimage
+  --with-appimage     Build Tauri AppImage and upload it as release asset
   --publish-npm       Publish CLI package to npm registry
   --no-commit         Do not create/push version bump commit
   -h, --help          Show this help
@@ -64,6 +65,7 @@ bump_mode=""
 set_version=""
 sync_ui=false
 with_ui=false
+with_appimage=false
 publish_npm=false
 do_commit=true
 while (($#)); do
@@ -77,6 +79,7 @@ while (($#)); do
       ;;
     --sync-ui) sync_ui=true ;;
     --with-ui) with_ui=true ;;
+    --with-appimage) with_appimage=true ;;
     --publish-npm) publish_npm=true ;;
     --no-commit) do_commit=false ;;
     -h|--help)
@@ -91,6 +94,10 @@ while (($#)); do
   esac
   shift
 done
+
+if [[ "$with_ui" == true ]]; then
+  with_appimage=true
+fi
 
 if [[ -n "$bump_mode" && -n "$set_version" ]]; then
   echo "Use either --set or --patch/--minor/--major, not both." >&2
@@ -154,9 +161,9 @@ if [[ "$publish_npm" == true ]]; then
   npm publish --access public
 fi
 
-UI_ASSET=""
-if [[ "$with_ui" == true ]]; then
-  echo "[release] building UI binary"
+APPIMAGE_ASSET=""
+if [[ "$with_appimage" == true ]]; then
+  echo "[release] building UI AppImage"
   if [[ -f "ui/pnpm-lock.yaml" ]]; then
     if command -v pnpm >/dev/null 2>&1; then
       pnpm -C ui install --frozen-lockfile
@@ -172,13 +179,13 @@ if [[ "$with_ui" == true ]]; then
     npm --prefix ui install --no-audit --progress=false
     npm --prefix ui run tauri:build
   fi
-  UI_BIN="ui/src-tauri/target/release/kitowall-ui"
-  if [[ ! -f "$UI_BIN" ]]; then
-    echo "Expected UI binary not found at $UI_BIN" >&2
+  APPIMAGE_PATH="$(ls -1 ui/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n1 || true)"
+  if [[ -z "${APPIMAGE_PATH:-}" || ! -f "$APPIMAGE_PATH" ]]; then
+    echo "Expected AppImage not found in ui/src-tauri/target/release/bundle/appimage/" >&2
     exit 2
   fi
-  UI_ASSET="$ASSET_DIR/kitowall-ui-linux-x86_64"
-  cp -f "$UI_BIN" "$UI_ASSET"
+  APPIMAGE_ASSET="$ASSET_DIR/Kitowall-${VERSION}-x86_64.AppImage"
+  cp -f "$APPIMAGE_PATH" "$APPIMAGE_ASSET"
 fi
 
 if ! git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -187,15 +194,15 @@ fi
 git push origin "$TAG"
 
 echo "[release] creating/updating GitHub release $TAG"
-if [[ -n "$UI_ASSET" ]]; then
+if [[ -n "$APPIMAGE_ASSET" ]]; then
   gh release create "$TAG" \
     "$ASSET_DIR/$TARBALL#$TARBALL" \
-    "$UI_ASSET#kitowall-ui-linux-x86_64" \
+    "$APPIMAGE_ASSET#$(basename "$APPIMAGE_ASSET")" \
     --generate-notes \
     --latest \
     || gh release upload "$TAG" \
       "$ASSET_DIR/$TARBALL#$TARBALL" \
-      "$UI_ASSET#kitowall-ui-linux-x86_64" \
+      "$APPIMAGE_ASSET#$(basename "$APPIMAGE_ASSET")" \
       --clobber
 else
   gh release create "$TAG" \

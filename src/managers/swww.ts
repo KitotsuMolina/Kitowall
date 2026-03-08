@@ -10,12 +10,7 @@ export interface OutputImageMap {
 function startSwwwDaemon(namespace?: string) {
   const args = [];
   if (namespace) args.push('--namespace', namespace);
-
-  const inFlatpak = Boolean(process.env.FLATPAK_ID);
-  const cmd = inFlatpak ? 'flatpak-spawn' : 'swww-daemon';
-  const spawnArgs = inFlatpak ? ['--host', 'swww-daemon', ...args] : args;
-
-  const child = spawn(cmd, spawnArgs, {
+  const child = spawn('swww-daemon', args, {
     stdio: 'ignore',
     detached: true
   });

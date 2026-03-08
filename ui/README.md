@@ -28,6 +28,7 @@ npm run tauri:build
 
 Output bundle:
 - `ui/src-tauri/target/release/bundle/`
+- AppImage: `ui/src-tauri/target/release/bundle/appimage/*.AppImage`
 
 ## Main Modules
 - Control Center

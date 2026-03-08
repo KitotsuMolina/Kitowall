@@ -4,7 +4,7 @@
 
 `Kitowall` is a wallpaper manager for Hyprland/Wayland using `swww`.
 
-Current version: `1.0.7`.
+Current version: `3.5.15`.
 
 ## What You Can Do
 - Rotate wallpapers with transitions.
@@ -43,11 +43,28 @@ If your system needs it on Wayland:
 WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri:dev
 ```
 
+## AppImage (Recommended)
+AppImage is now the primary desktop distribution for `kitowall-ui`.
+
+1) Download the latest `Kitowall-<version>-x86_64.AppImage` from GitHub Releases.
+2) Make it executable:
+```bash
+chmod +x ./Kitowall-*.AppImage
+```
+3) First-time host bootstrap (installs CLI/runtime dependencies on host):
+```bash
+./scripts/bootstrap-host.sh
+```
+4) Initialize services:
+```bash
+kitowall init --namespace kitowall --apply --force
+```
+
 ## Package / Release
 - Release checklist: `RELEASE_CHECKLIST.md`
 - Release notes: `RELEASE_NOTES_1.0.0.md`
 - Dependencies: `DEPENDENCIES.md`
-- Flatpak packaging: `flatpak/`
+- AppImage CI: `.github/workflows/build-appimage.yml`
 
 Main commands:
 ```bash
@@ -64,45 +81,10 @@ npm run package:ui
 npm run package:all
 ```
 
-## Flatpak (Linux)
-```bash
-# 0) Install host deps (Arch Linux)
-./BOOTSTRAP_FLATPAK_BUILD_DEPS.sh
-
-# 1) Build desktop binary
-cd ui
-npm run tauri:build
-cd ..
-
-# 2) Prepare flatpak sources (binary + icon)
-./flatpak/prepare.sh
-
-# 3) Build and install flatpak
-flatpak-builder flatpak/build-dir flatpak/io.kitotsu.KitoWall.yml --user --install --force-clean
-```
-
-For Flathub source pipeline:
-```bash
-./BOOTSTRAP_FLATPAK_BUILD_DEPS.sh
-./GENERATE_FLATHUB_SOURCES.sh 2.1.0 && ./BUILD_FLATPAK_FROMSOURCE.sh
-```
-
-Integrated local Flatpak (Kitowall + Kitsune + Kitsune-RenderCore in one app):
-```bash
-./BOOTSTRAP_FLATPAK_BUILD_DEPS.sh
-./GENERATE_FLATHUB_SOURCES.sh 2.1.0
-./BUILD_FLATPAK_INTEGRATED_LOCAL.sh
-flatpak run io.kitotsu.KitoWall
-```
-
 ## User Docs
 - Current status: `STATUS.md`
 - Config examples: `CONFIG_EXAMPLES.md`
 - UI details: `ui/README.md`
-
-## Known Issues
-- Flatpak watch unit failing with `/app/bin/node` in user systemd:
-  - `issues/flatpak-watch-service-failed.md`
 
 ## Legal
 - License: `LICENSE.md`

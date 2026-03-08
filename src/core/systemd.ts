@@ -36,8 +36,6 @@ export async function installSystemd(opts: {
 
     const every = systemdInterval(opts.every);
     const ns = (opts.namespace && opts.namespace.trim()) ? opts.namespace.trim() : 'kitowall';
-    const isFlatpak = Boolean(process.env.FLATPAK_ID);
-    const flatpakAppId = (process.env.FLATPAK_ID || 'io.kitotsu.KitoWall').trim();
     const nodePath = process.execPath;
     const cliPath = resolve(process.argv[1] || '');
 
@@ -55,9 +53,7 @@ export async function installSystemd(opts: {
         'if [ -z "$WAYLAND_DISPLAY" ]; then WAYLAND_DISPLAY=wayland-1; fi; ' +
         'export WAYLAND_DISPLAY;';
 
-    const nextCmd = isFlatpak
-        ? `${waylandBootstrap} exec /usr/bin/flatpak run --command=kitowall ${flatpakAppId} rotate-now --namespace ${ns} --force`
-        : `${waylandBootstrap} exec ${JSON.stringify(nodePath)} ${JSON.stringify(cliPath)} rotate-now --namespace ${JSON.stringify(ns)} --force`;
+    const nextCmd = `${waylandBootstrap} exec ${JSON.stringify(nodePath)} ${JSON.stringify(cliPath)} rotate-now --namespace ${JSON.stringify(ns)} --force`;
 
     const kitowallNextService = `
         [Unit]

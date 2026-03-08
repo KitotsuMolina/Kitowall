@@ -26,6 +26,7 @@
     "release:check": "npm run build && npm run test:e2e",
     "package:cli": "npm pack",
     "package:ui": "npm --prefix ui run tauri:build",
+    "package:appimage": "npm --prefix ui run tauri:build",
     "package:all": "npm run release:check && npm run package:cli && npm run package:ui",
     "test:smoke": "bash ./tests/smoke.e2e.sh",
     "test:regression": "bash ./tests/regression.e2e.sh",

@@ -24,65 +24,6 @@ fn resolve_kitowall_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
-    // In Flatpak we need a host-side CLI. Prefer known host paths if present.
-    if is_flatpak() {
-        // Try to resolve an absolute Node path on the host.
-        let mut host_node = {
-            let mut cmd = Command::new("flatpak-spawn");
-            cmd.args(["--host", "sh", "-lc", "command -v node || command -v nodejs || true"]);
-            match cmd.output() {
-                Ok(out) if out.status.success() => {
-                    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if p.is_empty() { None } else { Some(p) }
-                }
-                _ => None,
-            }
-        };
-
-        if let Ok(home) = std::env::var("HOME") {
-            if host_node.is_none() {
-                host_node = find_node_from_nvm(&home);
-            }
-            let host_candidates = [
-                PathBuf::from(&home).join("Programacion/Personal/Wallpaper/Kitowall/dist/cli.js"),
-                PathBuf::from(&home).join("Programacion/Personal/Wallpaper/hyprwall/dist/cli.js"),
-                PathBuf::from(&home).join(".local/share/kitowall/dist/cli.js"),
-            ];
-            for candidate in host_candidates {
-                if candidate.exists() {
-                    if let Some(node_bin) = &host_node {
-                        return vec![node_bin.clone(), candidate.to_string_lossy().to_string()];
-                    }
-                }
-            }
-        }
-        // If host has a globally installed CLI, use it.
-        let host_cli = {
-            let mut cmd = Command::new("flatpak-spawn");
-            cmd.args(["--host", "sh", "-lc", "command -v kitowall || true"]);
-            match cmd.output() {
-                Ok(out) if out.status.success() => {
-                    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if p.is_empty() { None } else { Some(p) }
-                }
-                _ => None,
-            }
-        };
-        if let Some(cli_bin) = host_cli {
-            return vec![cli_bin];
-        }
-        if let Some(node_bin) = host_node {
-            // Allow advanced users to point to host CLI script.
-            if let Ok(cli) = std::env::var("KITOWALL_HOST_CLI") {
-                if !cli.trim().is_empty() {
-                    return vec![node_bin, cli];
-                }
-            }
-        }
-        // Sentinel to emit a clear UI error instead of a portal ENOENT.
-        return vec!["__missing_kitowall_cli__".to_string()];
-    }
-
     // Prefer local project CLI (absolute path) to avoid mismatches with globally installed kitowall.
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let local_cli_abs = manifest_dir.join("../../dist/cli.js");
@@ -99,28 +40,12 @@ fn resolve_kitowall_cmd() -> Vec<String> {
     vec!["kitowall".to_string()]
 }
 
-fn find_node_from_nvm(home: &str) -> Option<String> {
-    let versions_dir = PathBuf::from(home).join(".nvm/versions/node");
-    let entries = fs::read_dir(versions_dir).ok()?;
-    let mut candidates: Vec<PathBuf> = vec![];
-    for entry in entries.flatten() {
-        let node_bin = entry.path().join("bin/node");
-        if node_bin.exists() {
-            candidates.push(node_bin);
-        }
-    }
-    candidates.sort();
-    candidates
-        .pop()
-        .map(|p| p.to_string_lossy().to_string())
-}
-
 fn run_kitowall(args: &[&str]) -> Result<Json, UiError> {
     let mut cmd_parts = resolve_kitowall_cmd();
     let base = cmd_parts.remove(0);
     if base == "__missing_kitowall_cli__" {
         return Err(UiError::CommandFailed(
-            "kitowall CLI not found on host. Install it globally (`npm i -g kitowall` when published) or set KITOWALL_HOST_CLI to your host cli.js path.".to_string(),
+            "kitowall CLI not found on host. Run scripts/bootstrap-host.sh or install globally (`npm i -g kitowall`), then retry.".to_string(),
         ));
     }
     let mut command = host_aware_command(&base);
@@ -130,9 +55,9 @@ fn run_kitowall(args: &[&str]) -> Result<Json, UiError> {
     command.args(args);
 
     let output = command.output().map_err(|e| {
-        if is_flatpak() && e.kind() == std::io::ErrorKind::NotFound {
+        if e.kind() == std::io::ErrorKind::NotFound {
             UiError::CommandFailed(
-                "kitowall CLI not found on host. Install host CLI or set KITOWALL_CMD (e.g. `node ~/Programacion/Personal/Wallpaper/Kitowall/dist/cli.js`)".to_string(),
+                "kitowall CLI not found on host. Run scripts/bootstrap-host.sh or install globally (`npm i -g kitowall`).".to_string(),
             )
         } else {
             UiError::CommandFailed(e.to_string())
@@ -164,7 +89,7 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
     let base = cmd_parts.remove(0);
     if base == "__missing_kitowall_cli__" {
         return Err(UiError::CommandFailed(
-            "kitowall CLI not found on host. Install it globally (`npm i -g kitowall` when published) or set KITOWALL_HOST_CLI to your host cli.js path.".to_string(),
+            "kitowall CLI not found on host. Run scripts/bootstrap-host.sh or install globally (`npm i -g kitowall`), then retry.".to_string(),
         ));
     }
     let mut command = host_aware_command(&base);
@@ -174,9 +99,9 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
     command.args(args);
 
     let output = command.output().map_err(|e| {
-        if is_flatpak() && e.kind() == std::io::ErrorKind::NotFound {
+        if e.kind() == std::io::ErrorKind::NotFound {
             UiError::CommandFailed(
-                "kitowall CLI not found on host. Install host CLI or set KITOWALL_CMD (e.g. `node ~/Programacion/Personal/Wallpaper/Kitowall/dist/cli.js`)".to_string(),
+                "kitowall CLI not found on host. Run scripts/bootstrap-host.sh or install globally (`npm i -g kitowall`).".to_string(),
             )
         } else {
             UiError::CommandFailed(e.to_string())
@@ -236,46 +161,6 @@ fn resolve_kitsune_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
-    let integrated = std::env::var("KITOWALL_FLATPAK_INTEGRATED_KITSUNE")
-        .map(|v| {
-            let t = v.trim().to_ascii_lowercase();
-            t == "1" || t == "true" || t == "yes" || t == "on"
-        })
-        .unwrap_or(false);
-    if is_flatpak() && integrated {
-        return vec!["/app/bin/kitsune".to_string()];
-    }
-
-    if is_flatpak() {
-        if let Ok(home) = std::env::var("HOME") {
-            let host_candidates = [
-                PathBuf::from(&home).join("Programacion/Personal/Wallpaper/Kitsune/scripts/kitsune.sh"),
-                PathBuf::from(&home).join(".local/share/kitsune/scripts/kitsune.sh"),
-            ];
-            for candidate in host_candidates {
-                if candidate.exists() {
-                    return vec![candidate.to_string_lossy().to_string()];
-                }
-            }
-        }
-
-        let host_cli = {
-            let mut cmd = Command::new("flatpak-spawn");
-            cmd.args(["--host", "sh", "-lc", "command -v kitsune || true"]);
-            match cmd.output() {
-                Ok(out) if out.status.success() => {
-                    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if p.is_empty() { None } else { Some(p) }
-                }
-                _ => None,
-            }
-        };
-        if let Some(cli_bin) = host_cli {
-            return vec![cli_bin];
-        }
-        return vec!["__missing_kitsune_cli__".to_string()];
-    }
-
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let local_kitsune = manifest_dir.join("../../../Kitsune/scripts/kitsune.sh");
     if local_kitsune.exists() {
@@ -285,21 +170,8 @@ fn resolve_kitsune_cmd() -> Vec<String> {
     vec!["kitsune".to_string()]
 }
 
-fn is_flatpak() -> bool {
-    std::env::var("FLATPAK_ID").is_ok() || PathBuf::from("/.flatpak-info").exists()
-}
-
 fn host_aware_command(base: &str) -> Command {
-    if is_flatpak() {
-        if base.starts_with("/app/") {
-            return Command::new(base);
-        }
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host").arg(base);
-        cmd
-    } else {
-        Command::new(base)
-    }
+    Command::new(base)
 }
 
 static NATIVE_PREVIEW_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();

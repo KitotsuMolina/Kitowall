@@ -5,12 +5,6 @@
 /ui/src-tauri/target/
 /.npm-cache/
 /*.tgz
-/flatpak/build-dir/
-/flatpak/kitowall-ui
-/flatpak/node
-/flatpak/kitowall
-/flatpak/dist/
-/flatpak/kitowall-dist.tar
 /backups/
 /CODEX_RESUME.md
 /ui/.vite/

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Host bootstrap for AppImage/non-Flatpak installations.
+# Installs system dependencies plus kitowall/kitsune/kitsune-rendercore binaries.
+
+KITSUNE_REPO="${KITSUNE_REPO:-https://github.com/KitotsuMolina/Kitsune.git}"
+KITSUNE_RENDERCORE_REPO="${KITSUNE_RENDERCORE_REPO:-https://github.com/KitotsuMolina/Kitsune-RenderCore.git}"
+KITSUNE_TAG="${KITSUNE_TAG:-}"
+KITSUNE_RENDERCORE_TAG="${KITSUNE_RENDERCORE_TAG:-}"
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+run_sudo() {
+  if need_cmd sudo; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+install_arch_deps() {
+  local pkgs=(
+    nodejs npm
+    rust cargo
+    hyprland
+    swww
+    mpvpaper
+    cava
+    jq
+    git
+    base-devel
+  )
+  echo "[bootstrap] installing Arch packages: ${pkgs[*]}"
+  run_sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+}
+
+install_ubuntu_deps() {
+  local pkgs=(
+    nodejs npm
+    rustc cargo
+    jq curl git
+    mpv
+    cava
+  )
+  echo "[bootstrap] installing Debian/Ubuntu packages: ${pkgs[*]}"
+  run_sudo apt-get update
+  run_sudo apt-get install -y "${pkgs[@]}"
+}
+
+install_system_deps() {
+  if need_cmd pacman; then
+    install_arch_deps
+    return
+  fi
+  if need_cmd apt-get; then
+    install_ubuntu_deps
+    return
+  fi
+  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo swww hyprland mpvpaper cava" >&2
+  exit 1
+}
+
+install_kitowall_cli() {
+  if ! need_cmd npm; then
+    echo "[bootstrap] npm is not available after dependency install" >&2
+    exit 1
+  fi
+  echo "[bootstrap] installing/updating kitowall CLI from npm"
+  if need_cmd sudo; then
+    sudo npm i -g kitowall
+  else
+    npm i -g kitowall
+  fi
+}
+
+cargo_install_git_bin() {
+  local repo="$1"
+  local bin="$2"
+  local extra_args="$3"
+  local tag="${4:-}"
+
+  local args=(install --git "$repo" --locked --force "$bin")
+  if [[ -n "$tag" ]]; then
+    args+=(--tag "$tag")
+  fi
+  if [[ -n "$extra_args" ]]; then
+    # shellcheck disable=SC2206
+    local split_extra=($extra_args)
+    args+=("${split_extra[@]}")
+  fi
+
+  echo "[bootstrap] cargo ${args[*]}"
+  cargo "${args[@]}"
+}
+
+install_kitsune_bins() {
+  if ! need_cmd cargo; then
+    echo "[bootstrap] cargo is not available after dependency install" >&2
+    exit 1
+  fi
+
+  cargo_install_git_bin "$KITSUNE_REPO" kitsune "" "$KITSUNE_TAG"
+  cargo_install_git_bin "$KITSUNE_RENDERCORE_REPO" kitsune-rendercore "--features wayland-layer" "$KITSUNE_RENDERCORE_TAG"
+}
+
+verify_bins() {
+  local bins=(kitowall kitsune kitsune-rendercore swww swww-daemon mpvpaper cava)
+  local missing=()
+  for b in "${bins[@]}"; do
+    if ! need_cmd "$b"; then
+      missing+=("$b")
+    fi
+  done
+
+  if ((${#missing[@]} > 0)); then
+    echo "[bootstrap] missing binaries after bootstrap: ${missing[*]}" >&2
+    exit 2
+  fi
+}
+
+main() {
+  install_system_deps
+  install_kitowall_cli
+  install_kitsune_bins
+  verify_bins
+  echo "[ok] host bootstrap complete"
+  echo "[next] run: kitowall init --namespace kitowall --apply --force"
+}
+
+main "$@"

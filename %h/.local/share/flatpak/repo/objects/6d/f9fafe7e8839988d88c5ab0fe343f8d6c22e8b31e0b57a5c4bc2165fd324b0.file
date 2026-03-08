@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=KitoWall
-Exec=kitowall-ui
-Icon=io.kitotsu.KitoWall
-Categories=Utility;Graphics;
-Terminal=false
