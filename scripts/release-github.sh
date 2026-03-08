@@ -147,12 +147,21 @@ mv -f "$TARBALL" "$ASSET_DIR/$TARBALL"
 UI_ASSET=""
 if [[ "$with_ui" == true ]]; then
   echo "[release] building UI binary"
-  if [[ -f "ui/package-lock.json" ]]; then
+  if [[ -f "ui/pnpm-lock.yaml" ]]; then
+    if command -v pnpm >/dev/null 2>&1; then
+      pnpm -C ui install --frozen-lockfile
+      pnpm -C ui run tauri:build
+    else
+      corepack pnpm -C ui install --frozen-lockfile
+      corepack pnpm -C ui run tauri:build
+    fi
+  elif [[ -f "ui/package-lock.json" ]]; then
     npm --prefix ui ci
+    npm --prefix ui run tauri:build
   else
     npm --prefix ui install --no-audit --progress=false
+    npm --prefix ui run tauri:build
   fi
-  npm --prefix ui run tauri:build
   UI_BIN="ui/src-tauri/target/release/kitowall-ui"
   if [[ ! -f "$UI_BIN" ]]; then
     echo "Expected UI binary not found at $UI_BIN" >&2
