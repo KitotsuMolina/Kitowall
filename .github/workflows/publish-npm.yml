@@ -1,0 +1,56 @@
+name: Publish CLI to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install and build CLI
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check if version is already published
+        id: version_check
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          LOCAL_VERSION="$(node -p "require('./package.json').version")"
+          REMOTE_VERSION="$(npm view "$PKG_NAME" version 2>/dev/null || true)"
+
+          echo "package=$PKG_NAME" >> "$GITHUB_OUTPUT"
+          echo "local_version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [[ "$LOCAL_VERSION" == "$REMOTE_VERSION" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Version already published: $PKG_NAME@$LOCAL_VERSION"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will publish: $PKG_NAME@$LOCAL_VERSION (npm has: ${REMOTE_VERSION:-<none>})"
+          fi
+
+      - name: Publish to npm
+        if: steps.version_check.outputs.skip != 'true'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
