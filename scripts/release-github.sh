@@ -144,6 +144,8 @@ npm run build
 
 ASSET_DIR="$ROOT_DIR/dist"
 mkdir -p "$ASSET_DIR"
+# Avoid recursive package bloat: old release artifacts inside dist/ must not be included in npm pack.
+find "$ASSET_DIR" -maxdepth 1 -type f \( -name '*.tgz' -o -name 'kitowall-ui-linux-*' \) -delete
 TARBALL="$(npm pack | tail -n1)"
 mv -f "$TARBALL" "$ASSET_DIR/$TARBALL"
 
