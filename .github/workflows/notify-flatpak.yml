@@ -1,0 +1,17 @@
+name: Notify Flatpak Meta Repo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.FLATPAK_META_REPO_PAT }}
+          repository: KitotsuMolina/Kitowall-flatpak
+          event-type: kitowall_release
+          client-payload: '{"tag":"${{ github.event.release.tag_name }}"}'
