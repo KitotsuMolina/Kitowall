@@ -23,8 +23,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -40,7 +38,17 @@ jobs:
             patchelf
 
       - name: Install UI dependencies
-        run: npm --prefix ui ci
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "ui/pnpm-lock.yaml" ]]; then
+            corepack enable
+            corepack pnpm -C ui install --frozen-lockfile
+          elif [[ -f "ui/package-lock.json" ]]; then
+            npm --prefix ui ci
+          else
+            npm --prefix ui install --no-audit --progress=false
+          fi
 
       - name: Build AppImage
         run: npm --prefix ui run tauri:build

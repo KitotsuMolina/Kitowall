@@ -46,10 +46,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            ui/package-lock.json
           registry-url: https://registry.npmjs.org
 
       - name: Setup Rust
@@ -84,7 +80,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm --prefix ui ci
+          if [[ -f "ui/pnpm-lock.yaml" ]]; then
+            corepack enable
+            corepack pnpm -C ui install --frozen-lockfile
+          elif [[ -f "ui/package-lock.json" ]]; then
+            npm --prefix ui ci
+          else
+            npm --prefix ui install --no-audit --progress=false
+          fi
           npm --prefix ui run tauri:build
           APPIMAGE_PATH="$(ls -1 ui/src-tauri/target/release/bundle/appimage/*.AppImage | head -n1)"
           cp -f "$APPIMAGE_PATH" "dist/Kitowall-${{ steps.version.outputs.version }}-x86_64.AppImage"
