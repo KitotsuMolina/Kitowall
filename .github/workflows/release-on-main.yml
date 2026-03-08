@@ -89,7 +89,11 @@ jobs:
             npm --prefix ui install --no-audit --progress=false
           fi
           npm --prefix ui run tauri:build
-          APPIMAGE_PATH="$(ls -1 ui/src-tauri/target/release/bundle/appimage/*.AppImage | head -n1)"
+          APPIMAGE_PATH="$(find ui/src-tauri/target -type f -iname '*.appimage' | head -n1)"
+          if [[ -z "${APPIMAGE_PATH:-}" ]]; then
+            echo "AppImage was not generated" >&2
+            exit 1
+          fi
           cp -f "$APPIMAGE_PATH" "dist/Kitowall-${{ steps.version.outputs.version }}-x86_64.AppImage"
           echo "appimage=dist/Kitowall-${{ steps.version.outputs.version }}-x86_64.AppImage" >> "$GITHUB_ENV"
 
