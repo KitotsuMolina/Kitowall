@@ -699,6 +699,63 @@ label {
   word-break: break-word;
 }
 
+.preflight-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: start;
+}
+
+.preflight-main {
+  display: grid;
+  gap: 12px;
+}
+
+.preflight-deps-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.preflight-dep-row {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preflight-dep-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.preflight-dep-name {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.preflight-dep-path {
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.preflight-logs {
+  max-height: 78vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.preflight-log-list {
+  overflow: auto;
+  max-height: 66vh;
+}
+
 .syslog-list {
   display: grid;
   gap: 10px;
@@ -874,6 +931,18 @@ label {
     overflow-x: auto;
     flex-wrap: nowrap;
     padding-bottom: 6px;
+  }
+
+  .preflight-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .preflight-logs {
+    max-height: none;
+  }
+
+  .preflight-log-list {
+    max-height: 38vh;
   }
 }
 

@@ -13,6 +13,24 @@ import {onDestroy, onMount, tick} from 'svelte';
     hints: string[];
   };
 
+  type PreflightDep = {
+    id: string;
+    bin: string;
+    installed: boolean;
+    path: string;
+  };
+
+  type PreflightStatus = {
+    ok: boolean;
+    deps: PreflightDep[];
+  };
+
+  type PreflightDepUiState = 'pending' | 'installing' | 'ok' | 'error';
+
+  type PreflightDepUi = PreflightDep & {
+    state: PreflightDepUiState;
+  };
+
   type StatusReport = {
     mode: string;
     pack: string | null;
@@ -313,6 +331,11 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   let namespace = 'kitowall';
   let health: HealthReport | null = null;
+  let preflight: PreflightStatus | null = null;
+  let preflightDeps: PreflightDepUi[] = [];
+  let preflightBusy = false;
+  let preflightLogs: ActionLogItem[] = [];
+  let preflightUpdatedAt: number | null = null;
   let status: StatusReport | null = null;
   let lastError: string | null = null;
   let toasts: ToastItem[] = [];
@@ -709,6 +732,77 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function pushLog(message: string, kind: 'info' | 'success' | 'error' = 'info'): void {
     actionLogs = [{ts: Date.now(), message, kind}, ...actionLogs].slice(0, 40);
+  }
+
+  function pushPreflightLog(message: string, kind: 'info' | 'success' | 'error' = 'info'): void {
+    preflightLogs = [{ts: Date.now(), message, kind}, ...preflightLogs].slice(0, 300);
+  }
+
+  function preflightBadgeState(dep: PreflightDepUi): 'ok' | 'bad' | 'warn' {
+    if (dep.state === 'ok') return 'ok';
+    if (dep.state === 'error') return 'bad';
+    return 'warn';
+  }
+
+  function preflightStatusLabel(dep: PreflightDepUi): string {
+    if (dep.state === 'ok') return tr('installed', 'instalado');
+    if (dep.state === 'installing') return tr('installing...', 'instalando...');
+    if (dep.state === 'error') return tr('failed', 'fallo');
+    return tr('pending', 'pendiente');
+  }
+
+  function preflightMissingDeps(): PreflightDepUi[] {
+    return preflightDeps.filter(dep => dep.state !== 'ok');
+  }
+
+  function preflightNeedsInstaller(): boolean {
+    return preflightDeps.length > 0 && preflightMissingDeps().length > 0;
+  }
+
+  function syncPreflightDeps(report: PreflightStatus): void {
+    const previous = new Map(preflightDeps.map(dep => [dep.id, dep]));
+    preflightDeps = (report.deps ?? []).map(dep => {
+      const old = previous.get(dep.id);
+      let state: PreflightDepUiState = dep.installed ? 'ok' : 'pending';
+      if (old) {
+        if (dep.installed) {
+          state = 'ok';
+        } else if (preflightBusy && (old.state === 'installing' || old.state === 'error')) {
+          state = old.state;
+        } else if (old.state === 'error') {
+          state = 'error';
+        }
+      }
+      return {...dep, state};
+    });
+  }
+
+  async function loadPreflightStatus(): Promise<void> {
+    try {
+      const report = await invoke<PreflightStatus>('kitowall_preflight_status');
+      preflight = report;
+      preflightUpdatedAt = Date.now();
+      syncPreflightDeps(report);
+    } catch (e) {
+      lastError = String(e);
+      pushPreflightLog(`preflight status failed: ${String(e)}`, 'error');
+    }
+  }
+
+  function markMissingDepsInstalling(): void {
+    preflightDeps = preflightDeps.map(dep => (
+      dep.state === 'ok' ? dep : {...dep, state: 'installing'}
+    ));
+  }
+
+  function markInstallingDepsError(): void {
+    preflightDeps = preflightDeps.map(dep => (
+      dep.state === 'installing' ? {...dep, state: 'error'} : dep
+    ));
+  }
+
+  async function sleepMs(ms: number): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, ms));
   }
 
   function selectSection(id: SectionId): void {
@@ -3098,6 +3192,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     lastError = null;
     try {
       health = await invoke<HealthReport>('kitowall_check', {namespace});
+      await loadPreflightStatus();
     } catch (e) {
       lastError = String(e);
     } finally {
@@ -4058,6 +4153,68 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
   }
 
+  async function runPreflightInstall() {
+    if (preflightBusy) return;
+    preflightBusy = true;
+    busy = true;
+    lastError = null;
+    pushPreflightLog(tr('Starting dependency installation flow', 'Iniciando flujo de instalacion de dependencias'), 'info');
+    markMissingDepsInstalling();
+    try {
+      pushPreflightLog('> kitowall init --namespace kitowall --apply --force', 'info');
+      await invoke('kitowall_init_apply', {namespace});
+      pushPreflightLog(tr('init --apply completed', 'init --apply completado'), 'success');
+
+      const current = await invoke<SettingsReport>('kitowall_settings_get');
+      const interval = Math.max(1, Math.floor(Number(current?.rotation_interval_seconds ?? settingsInterval) || 1));
+      const every = `${interval}s`;
+      pushPreflightLog(`> kitowall install-systemd --every ${every}`, 'info');
+      const timerResult = await invoke<Record<string, unknown>>('kitowall_install_timer', {every});
+      ensureCommandOk(timerResult);
+      pushPreflightLog(tr(`timer installed (${every})`, `timer instalado (${every})`), 'success');
+
+      const deadline = Date.now() + 90000;
+      while (Date.now() < deadline) {
+        await loadPreflightStatus();
+        const missing = preflightMissingDeps();
+        if (missing.length === 0) break;
+        pushPreflightLog(
+          `${tr('Waiting for host bins', 'Esperando bins en host')}: ${missing.map(dep => dep.bin).join(', ')}`,
+          'info'
+        );
+        await sleepMs(1500);
+      }
+
+      await runHealth();
+      await runStatus();
+      await loadTimerStatus();
+
+      const missing = preflightMissingDeps();
+      if (missing.length === 0) {
+        pushPreflightLog(tr('All dependencies are ready', 'Todas las dependencias estan listas'), 'success');
+        pushToast(tr('Installation completed', 'Instalacion completada'), 'success');
+      } else {
+        preflightDeps = preflightDeps.map(dep => (
+          dep.state === 'ok' ? dep : {...dep, state: 'error'}
+        ));
+        const bins = missing.map(dep => dep.bin).join(', ');
+        const msg = `${tr('Missing dependencies after install', 'Dependencias faltantes despues de instalar')}: ${bins}`;
+        pushPreflightLog(msg, 'error');
+        pushToast(msg, 'error');
+      }
+    } catch (e) {
+      const msg = String(e);
+      lastError = msg;
+      markInstallingDepsError();
+      pushPreflightLog(msg, 'error');
+      pushToast(msg, 'error');
+    } finally {
+      busy = false;
+      preflightBusy = false;
+      await loadPreflightStatus();
+    }
+  }
+
   async function runHydratePack() {
     const count = Math.floor(hydrateCount);
     if (!Number.isFinite(count) || count <= 0) {
@@ -4186,6 +4343,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     } catch {}
 
     runHealth();
+    loadPreflightStatus();
     runStatus();
     runListPacks();
     loadPacksRaw();
@@ -4328,6 +4486,63 @@ import {onDestroy, onMount, tick} from 'svelte';
     {/if}
 
     {#if activeSection === 'control'}
+      {#if preflightNeedsInstaller()}
+        <h2>{tr('Dependency Installer', 'Instalador de Dependencias')}</h2>
+        <div class="preflight-layout">
+          <div class="card preflight-main">
+            <div class="row actions-input-row">
+              <label for="namespace-input">{tr('Namespace', 'Namespace')}</label>
+              <input id="namespace-input" bind:value={namespace} placeholder="kitowall" />
+              <button class="secondary" on:click={loadPreflightStatus} disabled={preflightBusy}>{tr('Refresh', 'Actualizar')}</button>
+            </div>
+            <div class="banner warn">
+              {tr(
+                'Control Center is paused because required dependencies are missing.',
+                'El Centro de Control esta pausado porque faltan dependencias requeridas.'
+              )}
+            </div>
+            <div class="preflight-deps-grid">
+              {#each preflightDeps as dep (dep.id)}
+                <div class="preflight-dep-row">
+                  <div class="preflight-dep-main">
+                    <span class="preflight-dep-name">{dep.bin}</span>
+                    <span class="preflight-dep-path">{dep.path || tr('not found on host', 'no encontrado en host')}</span>
+                  </div>
+                  <span class={`badge status ${preflightBadgeState(dep)}`}>{preflightStatusLabel(dep)}</span>
+                </div>
+              {/each}
+            </div>
+            <div class="row actions-buttons-row">
+              <button on:click={runPreflightInstall} disabled={preflightBusy || isLiveServicesLocked()}>
+                {preflightBusy ? tr('Installing...', 'Instalando...') : tr('Install Dependencies', 'Instalar Dependencias')}
+              </button>
+              <button class="secondary" on:click={runHealth} disabled={preflightBusy}>{tr('Recheck Health', 'Revisar Health')}</button>
+              {#if preflightUpdatedAt}
+                <span class="badge">{tr('last check', 'ultima revision')}: {formatTimestamp(preflightUpdatedAt)}</span>
+              {/if}
+              <span class={`badge status ${preflightMissingDeps().length === 0 ? 'ok' : 'warn'}`}>
+                {tr('missing', 'faltantes')}: {preflightMissingDeps().length}
+              </span>
+            </div>
+          </div>
+          <div class="card preflight-logs">
+            <h3>{tr('Installation Logs', 'Logs de Instalacion')}</h3>
+            {#if preflightLogs.length === 0}
+              <p class="muted">{tr('No logs yet.', 'Aun no hay logs.')}</p>
+            {:else}
+              <div class="log-list preflight-log-list">
+                {#each preflightLogs as log, i (`${log.ts}-${i}`)}
+                  <div class="log-item">
+                    <span class={`badge status ${log.kind === 'error' ? 'bad' : log.kind === 'success' ? 'ok' : 'warn'}`}>{log.kind}</span>
+                    <span class="log-time">{new Date(log.ts).toLocaleTimeString()}</span>
+                    <span class="log-msg">{log.message}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </div>
+      {:else}
       <div class="card">
         <div class="row actions-input-row">
           <label for="namespace-input">{tr('Namespace', 'Namespace')}</label>
@@ -4538,6 +4753,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           </div>
         {/if}
       </div>
+      {/if}
     {:else if activeSection === 'settings'}
       <h2>{tr('General Settings', 'Configuracion General')}</h2>
       <div class="card">

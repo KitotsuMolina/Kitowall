@@ -197,6 +197,40 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
     Ok(stdout)
 }
 
+#[tauri::command]
+fn kitowall_preflight_status() -> Result<Json, String> {
+    let checks = [
+        ("kitowall", "kitowall"),
+        ("kitsune", "kitsune"),
+        ("kitsune-rendercore", "kitsune-rendercore"),
+        ("swww", "swww"),
+        ("swww-daemon", "swww-daemon"),
+        ("hyprctl", "hyprctl"),
+        ("mpvpaper", "mpvpaper"),
+        ("cava", "cava"),
+    ];
+
+    let mut deps: Vec<Json> = vec![];
+    for (id, bin) in checks {
+        let probe = format!("command -v {} || true", bin);
+        let mut cmd = host_aware_command("sh");
+        cmd.args(["-lc", &probe]);
+        let output = cmd.output().map_err(|e| e.to_string())?;
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        deps.push(serde_json::json!({
+            "id": id,
+            "bin": bin,
+            "installed": !path.is_empty(),
+            "path": path
+        }));
+    }
+
+    Ok(serde_json::json!({
+      "ok": true,
+      "deps": deps
+    }))
+}
+
 fn resolve_kitsune_cmd() -> Vec<String> {
     if let Ok(cmd) = std::env::var("KITSUNE_CMD") {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
@@ -1946,6 +1980,7 @@ fn main() {
             kitowall_pack_upsert_static_url,
             kitowall_pack_upsert_local,
             kitowall_pick_folder,
+            kitowall_preflight_status,
             kitowall_kitsune_status,
             kitowall_kitsune_run,
             kitowall_live_run,
