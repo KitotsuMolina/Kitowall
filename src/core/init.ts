@@ -182,7 +182,10 @@ WantedBy=graphical-session.target
     await run('systemctl', ['--user', 'daemon-reload']);
     await run('systemctl', ['--user', 'enable', '--now', `swww-daemon@${ns}.service`]);
     await run('systemctl', ['--user', 'enable', '--now', 'kitowall-watch.service']);
-    await run('systemctl', ['--user', 'enable', '--now', 'kitowall-login-apply.service']);
+    // login-apply is oneshot and can fail on first run if library is still empty.
+    // Enable it for next graphical session, but do not make init fail here.
+    await run('systemctl', ['--user', 'enable', 'kitowall-login-apply.service']);
+    await run('systemctl', ['--user', 'start', 'kitowall-login-apply.service']).catch(() => {});
 
     // Si quieres: aplicar una vez ahora mismo
     if (opts.apply) {
