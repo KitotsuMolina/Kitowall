@@ -22,6 +22,7 @@ Version selection:
 Behavior:
   --sync-ui           Also sync UI versions (ui/package.json + ui/src-tauri/Cargo.toml)
   --with-ui           Build Tauri app and upload kitowall-ui binary asset
+  --publish-npm       Publish CLI package to npm registry
   --no-commit         Do not create/push version bump commit
   -h, --help          Show this help
 USAGE
@@ -63,6 +64,7 @@ bump_mode=""
 set_version=""
 sync_ui=false
 with_ui=false
+publish_npm=false
 do_commit=true
 while (($#)); do
   case "$1" in
@@ -75,6 +77,7 @@ while (($#)); do
       ;;
     --sync-ui) sync_ui=true ;;
     --with-ui) with_ui=true ;;
+    --publish-npm) publish_npm=true ;;
     --no-commit) do_commit=false ;;
     -h|--help)
       usage
@@ -143,6 +146,11 @@ ASSET_DIR="$ROOT_DIR/dist"
 mkdir -p "$ASSET_DIR"
 TARBALL="$(npm pack | tail -n1)"
 mv -f "$TARBALL" "$ASSET_DIR/$TARBALL"
+
+if [[ "$publish_npm" == true ]]; then
+  echo "[release] publishing CLI to npm"
+  npm publish --access public
+fi
 
 UI_ASSET=""
 if [[ "$with_ui" == true ]]; then
