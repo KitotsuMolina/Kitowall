@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "gh CLI is required. Install github-cli package." >&2
+  exit 1
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage: ./scripts/release-github.sh [OPTIONS]
+
+Version selection:
+  --patch             Bump patch version (x.y.Z -> x.y.Z+1)
+  --minor             Bump minor version (x.Y.z -> x.Y+1.0)
+  --major             Bump major version (X.y.z -> X+1.0.0)
+  --set <VERSION>     Set explicit version (e.g. 3.6.0)
+
+Behavior:
+  --sync-ui           Also sync UI versions (ui/package.json + ui/src-tauri/Cargo.toml)
+  --with-ui           Build Tauri app and upload kitowall-ui binary asset
+  --no-commit         Do not create/push version bump commit
+  -h, --help          Show this help
+USAGE
+}
+
+current_version() {
+  node -p "require('./package.json').version"
+}
+
+is_semver() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+bump_semver() {
+  local v="$1" mode="$2"
+  IFS='.' read -r major minor patch <<<"$v"
+  case "$mode" in
+    patch) patch=$((patch + 1)) ;;
+    minor) minor=$((minor + 1)); patch=0 ;;
+    major) major=$((major + 1)); minor=0; patch=0 ;;
+    *) echo "invalid bump mode: $mode" >&2; exit 1 ;;
+  esac
+  printf "%d.%d.%d\n" "$major" "$minor" "$patch"
+}
+
+set_root_version() {
+  local version="$1"
+  npm version --no-git-tag-version "$version" >/dev/null
+}
+
+set_ui_version() {
+  local version="$1"
+  npm --prefix ui version --no-git-tag-version "$version" >/dev/null
+  sed -i "0,/^version = \".*\"/s//version = \"${version}\"/" ui/src-tauri/Cargo.toml
+  (cd ui/src-tauri && cargo generate-lockfile)
+}
+
+bump_mode=""
+set_version=""
+sync_ui=false
+with_ui=false
+do_commit=true
+while (($#)); do
+  case "$1" in
+    --patch) bump_mode="patch" ;;
+    --minor) bump_mode="minor" ;;
+    --major) bump_mode="major" ;;
+    --set)
+      shift
+      set_version="${1:-}"
+      ;;
+    --sync-ui) sync_ui=true ;;
+    --with-ui) with_ui=true ;;
+    --no-commit) do_commit=false ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+if [[ -n "$bump_mode" && -n "$set_version" ]]; then
+  echo "Use either --set or --patch/--minor/--major, not both." >&2
+  exit 1
+fi
+
+CURRENT_VERSION="$(current_version)"
+if [[ -z "$CURRENT_VERSION" ]]; then
+  echo "Could not determine version from package.json" >&2
+  exit 2
+fi
+
+if ! is_semver "$CURRENT_VERSION"; then
+  echo "Current package.json version is not simple semver (x.y.z): $CURRENT_VERSION" >&2
+  exit 2
+fi
+
+VERSION="$CURRENT_VERSION"
+if [[ -n "$set_version" ]]; then
+  if ! is_semver "$set_version"; then
+    echo "Invalid --set version (expected x.y.z): $set_version" >&2
+    exit 1
+  fi
+  VERSION="$set_version"
+elif [[ -n "$bump_mode" ]]; then
+  VERSION="$(bump_semver "$CURRENT_VERSION" "$bump_mode")"
+fi
+
+if [[ "$VERSION" != "$CURRENT_VERSION" ]]; then
+  echo "[release] version bump: $CURRENT_VERSION -> $VERSION"
+  set_root_version "$VERSION"
+  if [[ "$sync_ui" == true ]]; then
+    set_ui_version "$VERSION"
+  fi
+
+  if [[ "$do_commit" == true ]]; then
+    git add package.json package-lock.json
+    if [[ "$sync_ui" == true ]]; then
+      git add ui/package.json ui/package-lock.json ui/src-tauri/Cargo.toml ui/src-tauri/Cargo.lock
+    fi
+    git commit -m "chore(release): ${VERSION}" || true
+    git push origin main
+  fi
+fi
+
+TAG="$VERSION"
+
+echo "[release] building CLI package"
+npm ci
+npm run build
+
+ASSET_DIR="$ROOT_DIR/dist"
+mkdir -p "$ASSET_DIR"
+TARBALL="$(npm pack | tail -n1)"
+mv -f "$TARBALL" "$ASSET_DIR/$TARBALL"
+
+UI_ASSET=""
+if [[ "$with_ui" == true ]]; then
+  echo "[release] building UI binary"
+  npm --prefix ui ci
+  npm --prefix ui run tauri:build
+  UI_BIN="ui/src-tauri/target/release/kitowall-ui"
+  if [[ ! -f "$UI_BIN" ]]; then
+    echo "Expected UI binary not found at $UI_BIN" >&2
+    exit 2
+  fi
+  UI_ASSET="$ASSET_DIR/kitowall-ui-linux-x86_64"
+  cp -f "$UI_BIN" "$UI_ASSET"
+fi
+
+if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+  git tag "$TAG"
+fi
+git push origin "$TAG"
+
+echo "[release] creating/updating GitHub release $TAG"
+if [[ -n "$UI_ASSET" ]]; then
+  gh release create "$TAG" \
+    "$ASSET_DIR/$TARBALL#$TARBALL" \
+    "$UI_ASSET#kitowall-ui-linux-x86_64" \
+    --generate-notes \
+    --latest \
+    || gh release upload "$TAG" \
+      "$ASSET_DIR/$TARBALL#$TARBALL" \
+      "$UI_ASSET#kitowall-ui-linux-x86_64" \
+      --clobber
+else
+  gh release create "$TAG" \
+    "$ASSET_DIR/$TARBALL#$TARBALL" \
+    --generate-notes \
+    --latest \
+    || gh release upload "$TAG" \
+      "$ASSET_DIR/$TARBALL#$TARBALL" \
+      --clobber
+fi
+
+echo "[ok] release published: $TAG"
