@@ -9,6 +9,12 @@
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon-square.png"
+    ]
+  },
   "app": {
     "security": {
       "csp": null,
