@@ -61,6 +61,7 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
+            libfuse2t64 \
             patchelf
 
       - name: Build CLI package
@@ -88,7 +89,8 @@ jobs:
           else
             npm --prefix ui install --no-audit --progress=false
           fi
-          npm --prefix ui run tauri:build
+          npm --prefix ui exec -- tauri build --bundles appimage
+          find ui/src-tauri/target -maxdepth 8 -type f | sort
           APPIMAGE_PATH="$(find ui/src-tauri/target -type f -iname '*.appimage' | head -n1)"
           if [[ -z "${APPIMAGE_PATH:-}" ]]; then
             echo "AppImage was not generated" >&2
