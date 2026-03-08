@@ -112,6 +112,7 @@ const LIVE_BROWSER_UA_FALLBACK =
   process.env.KITOWALL_LIVE_UA_FALLBACK ||
   'insomnia/12.3.1';
 const INTEGRATED_RENDERCORE_ENV = 'KITOWALL_FLATPAK_INTEGRATED_RENDERCORE';
+const INTEGRATED_RENDERCORE_BIN_FALLBACK = '/app/bin/kitsune-rendercore';
 
 function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
@@ -179,10 +180,13 @@ function getLiveLockPath(): string {
 }
 
 function defaultRunnerConfig(): LiveRunnerConfig {
+  const integratedBin = clean(process.env.KITOWALL_LIVE_RUNNER_BIN) || INTEGRATED_RENDERCORE_BIN_FALLBACK;
   return {
     mode: 'bin',
     cargo_project_dir: process.env.KITOWALL_LIVE_RUNNER_PROJECT?.trim() || '',
-    bin_name: process.env.KITOWALL_LIVE_RUNNER_BIN?.trim() || 'kitsune-rendercore'
+    bin_name: integratedRendercoreMode()
+      ? integratedBin
+      : (process.env.KITOWALL_LIVE_RUNNER_BIN?.trim() || 'kitsune-rendercore')
   };
 }
 
@@ -969,6 +973,13 @@ function integratedRendercoreMode(): boolean {
   if (!process.env.FLATPAK_ID) return false;
   const v = clean(process.env[INTEGRATED_RENDERCORE_ENV]).toLowerCase();
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+function resolveRendercoreBin(index: LiveIndex): string {
+  if (integratedRendercoreMode()) {
+    return clean(process.env.KITOWALL_LIVE_RUNNER_BIN) || INTEGRATED_RENDERCORE_BIN_FALLBACK;
+  }
+  return clean(index.runner.bin_name) || 'kitsune-rendercore';
 }
 
 function integratedRendercorePidPath(): string {
@@ -1762,7 +1773,7 @@ export async function liveApply(opts: {
     throw new Error(`Live file not found for ${idRaw}. Re-download it with live fetch.`);
   }
 
-  const bin = index.runner.bin_name;
+  const bin = resolveRendercoreBin(index);
 
   const setVideoArgs = [
     'set-video',
@@ -1930,18 +1941,25 @@ export async function liveDoctor(opts?: {fix?: boolean}): Promise<{
     deps.hyprctl = false;
   }
 
-  try {
-    await run('which', [index.runner.bin_name], {timeoutMs: 4000});
-    deps.runner_bin = true;
-  } catch {
-    deps.runner_bin = false;
-    fix.push(`Install ${index.runner.bin_name} and ensure it is available in PATH`);
+  const runnerBin = resolveRendercoreBin(index);
+  if (runnerBin.startsWith('/')) {
+    deps.runner_bin = fs.existsSync(runnerBin);
+  } else {
+    try {
+      await run('which', [runnerBin], {timeoutMs: 4000});
+      deps.runner_bin = true;
+    } catch {
+      deps.runner_bin = false;
+    }
+  }
+  if (!deps.runner_bin) {
+    fix.push(`Install ${runnerBin} and ensure it is available in PATH`);
   }
 
   if (opts?.fix && deps.runner_bin) {
     try {
-      await run(index.runner.bin_name, ['install-deps'], {timeoutMs: 180000});
-      fix.push(`Executed: ${index.runner.bin_name} install-deps`);
+      await run(runnerBin, ['install-deps'], {timeoutMs: 180000});
+      fix.push(`Executed: ${runnerBin} install-deps`);
       try {
         await run('ffmpeg', ['-version'], {timeoutMs: 4000});
         deps.ffmpeg = true;
@@ -1958,7 +1976,7 @@ export async function liveDoctor(opts?: {fix?: boolean}): Promise<{
       fix.push(`Failed to execute '${index.runner.bin_name} install-deps': ${String(e)}`);
     }
   } else if (!deps.ffmpeg || !deps.hyprctl) {
-    fix.push(`Run '${index.runner.bin_name} install-deps' to install missing runtime dependencies`);
+    fix.push(`Run '${runnerBin} install-deps' to install missing runtime dependencies`);
   }
 
   return {
@@ -1974,7 +1992,7 @@ export async function liveServiceAutostart(
   action: 'install' | 'enable' | 'disable' | 'start' | 'stop' | 'restart' | 'status'
 ): Promise<{ok: true; action: string; runner: string; stdout: string; stderr: string; code: number}> {
   const index = readIndex();
-  let bin = index.runner.bin_name;
+  let bin = resolveRendercoreBin(index);
   if (integratedRendercoreMode()) {
     let out: {stdout: string; stderr: string; code: number};
     if (action === 'status') {
