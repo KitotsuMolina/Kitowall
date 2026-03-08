@@ -147,7 +147,11 @@ mv -f "$TARBALL" "$ASSET_DIR/$TARBALL"
 UI_ASSET=""
 if [[ "$with_ui" == true ]]; then
   echo "[release] building UI binary"
-  npm --prefix ui ci
+  if [[ -f "ui/package-lock.json" ]]; then
+    npm --prefix ui ci
+  else
+    npm --prefix ui install --no-audit --progress=false
+  fi
   npm --prefix ui run tauri:build
   UI_BIN="ui/src-tauri/target/release/kitowall-ui"
   if [[ ! -f "$UI_BIN" ]]; then
