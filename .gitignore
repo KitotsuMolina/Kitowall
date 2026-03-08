@@ -7,9 +7,6 @@
 /*.tgz
 /flatpak/build-dir/
 /flatpak/kitowall-ui
-/flatpak/io.kitotsu.KitoWall-64.png
-/flatpak/io.kitotsu.KitoWall-128.png
-/flatpak/io.kitotsu.KitoWall-256.png
 /flatpak/node
 /flatpak/kitowall
 /flatpak/dist/
