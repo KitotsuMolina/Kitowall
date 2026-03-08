@@ -89,9 +89,22 @@ jobs:
           else
             npm --prefix ui install --no-audit --progress=false
           fi
+          export CARGO_BUILD_JOBS=1
+          export CARGO_INCREMENTAL=0
+          export RUSTFLAGS="-C debuginfo=0 -C codegen-units=1"
           cd ui
           npm run build
-          npm run tauri:build -- --bundles appimage
+          for i in 1 2; do
+            if npm run tauri:build -- --bundles appimage; then
+              break
+            fi
+            if [[ "$i" -eq 2 ]]; then
+              echo "tauri appimage build failed after retries"
+              exit 1
+            fi
+            echo "tauri appimage build failed (attempt $i), retrying..."
+            sleep 15
+          done
           cd ..
           find ui/src-tauri/target -maxdepth 8 -type f | sort
           APPIMAGE_PATH="$(find ui/src-tauri/target -type f -iname '*.appimage' | head -n1)"

@@ -61,9 +61,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export CARGO_BUILD_JOBS=1
+          export CARGO_INCREMENTAL=0
+          export RUSTFLAGS="-C debuginfo=0 -C codegen-units=1"
           cd ui
           npm run build
-          npm run tauri:build -- --bundles appimage
+          for i in 1 2; do
+            if npm run tauri:build -- --bundles appimage; then
+              exit 0
+            fi
+            echo "tauri appimage build failed (attempt $i), retrying..."
+            sleep 15
+          done
+          echo "tauri appimage build failed after retries"
+          exit 1
 
       - name: Resolve AppImage path
         id: appimage
