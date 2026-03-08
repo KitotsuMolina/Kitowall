@@ -24,6 +24,7 @@ need_cmd python3
 need_cmd pip3
 need_cmd sha256sum
 need_cmd npm
+need_cmd sed
 
 cleanup() {
   if [[ -n "$TMP_UI_DIR" && -d "$TMP_UI_DIR" ]]; then
@@ -117,6 +118,12 @@ fi
 cp "$UI_LOCK" "$GEN_DIR/ui-package-lock.json"
 
 echo "==> Generate Cargo sources (ui/src-tauri)"
+if [[ ! -f "$ROOT_DIR/ui/src-tauri/Cargo.lock" ]]; then
+  echo "Missing file: $ROOT_DIR/ui/src-tauri/Cargo.lock"
+  echo "Generate it with: (cd ui/src-tauri && cargo generate-lockfile)"
+  exit 1
+fi
+
 "$NODE_GEN_PYTHON" "$TOOLS_DIR/cargo/flatpak-cargo-generator.py" \
   -o "$GEN_DIR/cargo-deps.json" \
   "$ROOT_DIR/ui/src-tauri/Cargo.lock"

@@ -66,6 +66,9 @@ npm run package:all
 
 ## Flatpak (Linux)
 ```bash
+# 0) Install host deps (Arch Linux)
+./BOOTSTRAP_FLATPAK_BUILD_DEPS.sh
+
 # 1) Build desktop binary
 cd ui
 npm run tauri:build
@@ -76,6 +79,12 @@ cd ..
 
 # 3) Build and install flatpak
 flatpak-builder flatpak/build-dir flatpak/io.kitotsu.KitoWall.yml --user --install --force-clean
+```
+
+For Flathub source pipeline:
+```bash
+./BOOTSTRAP_FLATPAK_BUILD_DEPS.sh
+./GENERATE_FLATHUB_SOURCES.sh 2.1.0 && ./BUILD_FLATPAK_FROMSOURCE.sh
 ```
 
 ## User Docs

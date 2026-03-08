@@ -6,10 +6,24 @@ MANIFEST="$ROOT_DIR/flatpak/io.kitotsu.KitoWall.flathub.yml"
 GEN_DIR="$ROOT_DIR/flatpak/generated-sources"
 TMP_MANIFEST=""
 
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing command: $1"
+    exit 1
+  fi
+}
+
 if [[ ! -f "$MANIFEST" ]]; then
   echo "Missing manifest: $MANIFEST"
   exit 1
 fi
+
+need_cmd flatpak
+need_cmd flatpak-builder
+need_cmd curl
+need_cmd sha256sum
+need_cmd sed
+need_cmd rg
 
 for f in node-deps-root.json node-deps-ui.json cargo-deps.json ui-package-lock.json; do
   if [[ ! -f "$GEN_DIR/$f" ]]; then
