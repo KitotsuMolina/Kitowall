@@ -9,9 +9,12 @@ finish-args:
   - --filesystem=home
   - --filesystem=xdg-pictures
   - --socket=wayland
+  - --socket=x11
   - --device=dri
   - --talk-name=org.freedesktop.Flatpak
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+  - --env=LIBGL_ALWAYS_SOFTWARE=1
+  - --env=GDK_BACKEND=x11
 
 modules:
   - name: kitowall-ui

@@ -1503,6 +1503,7 @@ async function main(): Promise<void> {
     const pack = cleanOpt(getOptionValue(args, '--pack'));
     const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
     const force = cmd === 'rotate-now' || args.includes('--force');
+    const forceStatic = args.includes('--force-static');
 
     if (state.mode === 'manual' && !force) {
       console.log(JSON.stringify(
@@ -1517,6 +1518,25 @@ async function main(): Promise<void> {
           2
       ));
       return;
+    }
+
+    // If live mode currently owns wallpaper state, skip static rotation unless explicitly forced.
+    if (!forceStatic) {
+      const coexist = await workshopCoexistenceStatus().catch(() => ({ok: true as const, snapshot: [], current: {}}));
+      if (Array.isArray(coexist.snapshot) && coexist.snapshot.length > 0) {
+        console.log(JSON.stringify(
+            {
+              ok: true,
+              skipped: true,
+              reason: 'livewallpaper_active',
+              hint: 'Use: kitowall next --force-static (or rotate-now --force-static) to switch back to static mode',
+              namespace
+            },
+            null,
+            2
+        ));
+        return;
+      }
     }
 
     await switchToStaticWallpaperMode();

@@ -1657,17 +1657,11 @@ export async function liveApply(opts: {
   await run(bin, setVideoArgs, {timeoutMs: 120000});
 
   // Live mode owns wallpaper state: stop static rotation services while live is active.
-  try {
-    await workshopCoexistenceEnter();
-  } catch {}
+  await workshopCoexistenceEnter();
 
   // Keep live authority persistent across session restarts.
-  try {
-    await run(bin, ['service', 'install'], {timeoutMs: 20000});
-  } catch {}
-  try {
-    await run(bin, ['service', 'enable'], {timeoutMs: 20000});
-  } catch {}
+  await run(bin, ['service', 'install'], {timeoutMs: 20000});
+  await run(bin, ['service', 'enable'], {timeoutMs: 20000});
 
   withLiveLock(() => {
     const current = readIndex();

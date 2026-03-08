@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$ROOT_DIR/flatpak/io.kitotsu.KitoWall.flathub.yml"
 GEN_DIR="$ROOT_DIR/flatpak/generated-sources"
+TMP_MANIFEST=""
 
 if [[ ! -f "$MANIFEST" ]]; then
   echo "Missing manifest: $MANIFEST"
@@ -17,6 +18,13 @@ for f in node-deps-root.json node-deps-ui.json cargo-deps.json ui-package-lock.j
     exit 1
   fi
 done
+
+cleanup() {
+  if [[ -n "$TMP_MANIFEST" && -f "$TMP_MANIFEST" ]]; then
+    rm -f "$TMP_MANIFEST"
+  fi
+}
+trap cleanup EXIT
 
 echo "==> Ensure flathub remote"
 if ! flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo; then
@@ -47,9 +55,37 @@ require_runtime "org.gnome.Sdk" "48"
 require_runtime "org.freedesktop.Sdk.Extension.rust-stable" "24.08"
 require_runtime "org.freedesktop.Sdk.Extension.node20" "24.08"
 
+SOURCE_URL="$(sed -n 's/^[[:space:]]*url:[[:space:]]*//p' "$MANIFEST" | head -n1)"
+SOURCE_SHA="$(sed -n 's/^[[:space:]]*sha256:[[:space:]]*//p' "$MANIFEST" | head -n1)"
+if [[ -z "$SOURCE_URL" || -z "$SOURCE_SHA" ]]; then
+  echo "Could not read source url/sha256 from manifest: $MANIFEST"
+  exit 1
+fi
+
+SOURCE_NAME="kitowall-release.tar.gz"
+SOURCE_TAR="$GEN_DIR/$SOURCE_NAME"
+
+if [[ ! -f "$SOURCE_TAR" ]]; then
+  echo "==> Cache release tarball locally"
+  curl --fail --location --retry 6 --retry-all-errors --retry-delay 2 "$SOURCE_URL" -o "$SOURCE_TAR"
+fi
+
+ACTUAL_SHA="$(sha256sum "$SOURCE_TAR" | awk '{print $1}')"
+if [[ "$ACTUAL_SHA" != "$SOURCE_SHA" ]]; then
+  echo "Cached tarball sha256 mismatch."
+  echo "Expected: $SOURCE_SHA"
+  echo "Actual:   $ACTUAL_SHA"
+  echo "Remove and regenerate: rm -f $SOURCE_TAR && ./GENERATE_FLATHUB_SOURCES.sh <tag>"
+  exit 1
+fi
+
+TMP_MANIFEST="$(mktemp "$ROOT_DIR/flatpak/.tmp-build-manifest.XXXXXX.yml")"
+cp "$MANIFEST" "$TMP_MANIFEST"
+sed -i "s|^[[:space:]]*url:.*|        path: generated-sources/${SOURCE_NAME}|" "$TMP_MANIFEST"
+
 echo "==> Build from source in sandbox (offline deps vendored)"
 cd "$ROOT_DIR"
-flatpak-builder flatpak/build-dir-src "$MANIFEST" --user --install --force-clean
+flatpak-builder flatpak/build-dir-src "$TMP_MANIFEST" --user --install --force-clean
 
 echo "==> Done"
 echo "Run: flatpak run io.kitotsu.KitoWall"

@@ -227,9 +227,13 @@ function getCoexistServices(): string[] {
   const defaults = [
     'swww-daemon.service',
     'swww-daemon@kitowall.service',
+    'kitowall-login-apply.service',
+    'kitowall-watch.service',
+    'kitowall-next.service',
+    'kitowall-next.timer',
     'hyprwall-watch.service',
-    'hyprwall-next.timer',
-    'kitowall-next.timer'
+    'hyprwall-next.service',
+    'hyprwall-next.timer'
   ];
   const configured = Array.isArray(cfg.coexistServices) ? cfg.coexistServices.map(v => String(v).trim()).filter(Boolean) : [];
   return configured.length > 0 ? configured : defaults;
@@ -1144,13 +1148,24 @@ async function isUnitActive(unit: string): Promise<boolean> {
   }
 }
 
+async function isUnitEnabled(unit: string): Promise<boolean> {
+  try {
+    const out = await run('systemctl', ['--user', 'is-enabled', unit], {timeoutMs: 4000});
+    return out.stdout.trim() === 'enabled';
+  } catch {
+    return false;
+  }
+}
+
 export async function workshopCoexistenceEnter(): Promise<{ok: true; stopped: string[]; snapshot: string[]; snapshot_id: string}> {
   const paths = getWePaths();
   ensureWePaths(paths);
   const units = getCoexistServices();
   const active: string[] = [];
+  const enabled: string[] = [];
   for (const unit of units) {
     if (await isUnitActive(unit)) active.push(unit);
+    if (await isUnitEnabled(unit)) enabled.push(unit);
   }
   for (const unit of active) {
     try {
@@ -1159,8 +1174,15 @@ export async function workshopCoexistenceEnter(): Promise<{ok: true; stopped: st
       // best effort
     }
   }
+  for (const unit of enabled) {
+    try {
+      await run('systemctl', ['--user', 'disable', unit]);
+    } catch {
+      // best effort
+    }
+  }
   const snapshotId = String(now());
-  const snap = {id: snapshotId, ts: now(), active};
+  const snap = {id: snapshotId, ts: now(), active, enabled};
   writeJson(path.join(snapshotDir(paths), `${snapshotId}.json`), snap);
   writeJson(snapshotFile(paths), {id: snapshotId, ts: snap.ts});
   return {ok: true, stopped: active, snapshot: active, snapshot_id: snapshotId};
@@ -1171,17 +1193,27 @@ export async function workshopCoexistenceExit(): Promise<{ok: true; restored: st
   ensureWePaths(paths);
   const snapPath = snapshotFile(paths);
   if (!fs.existsSync(snapPath)) return {ok: true, restored: []};
-  const raw = JSON.parse(fs.readFileSync(snapPath, 'utf8')) as {active?: string[]; id?: string};
+  const raw = JSON.parse(fs.readFileSync(snapPath, 'utf8')) as {active?: string[]; enabled?: string[]; id?: string};
   let active = Array.isArray(raw.active) ? raw.active.map(v => String(v)) : [];
+  let enabled = Array.isArray(raw.enabled) ? raw.enabled.map(v => String(v)) : [];
   if ((!active || active.length === 0) && raw.id) {
     const historical = path.join(snapshotDir(paths), `${raw.id}.json`);
     if (fs.existsSync(historical)) {
       try {
-        const snap = JSON.parse(fs.readFileSync(historical, 'utf8')) as {active?: string[]};
+        const snap = JSON.parse(fs.readFileSync(historical, 'utf8')) as {active?: string[]; enabled?: string[]};
         active = Array.isArray(snap.active) ? snap.active.map(v => String(v)) : [];
+        enabled = Array.isArray(snap.enabled) ? snap.enabled.map(v => String(v)) : [];
       } catch {
         active = [];
+        enabled = [];
       }
+    }
+  }
+  for (const unit of enabled) {
+    try {
+      await run('systemctl', ['--user', 'enable', unit]);
+    } catch {
+      // best effort
     }
   }
   const restored: string[] = [];

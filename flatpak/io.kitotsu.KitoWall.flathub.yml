@@ -25,9 +25,12 @@ finish-args:
   - --filesystem=home
   - --filesystem=xdg-pictures
   - --socket=wayland
+  - --socket=x11
   - --device=dri
   - --talk-name=org.freedesktop.Flatpak
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+  - --env=LIBGL_ALWAYS_SOFTWARE=1
+  - --env=GDK_BACKEND=x11
 
 modules:
   - name: kitowall
@@ -55,8 +58,8 @@ modules:
       - install -Dm644 io.kitotsu.KitoWall-256.png /app/share/icons/hicolor/256x256/apps/io.kitotsu.KitoWall.png
     sources:
       - type: archive
-        url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/v2.0.0.tar.gz
-        sha256: 0ee5dc88b60b6e5b6fbc668991bf214a752941a9f7649a62540a2f8dd9ff9946
+        url: https://github.com/KitotsuMolina/Kitowall/archive/refs/tags/2.1.0.tar.gz
+        sha256: 8b5a9e687c226e25b6830c4ab046fc32d18fd0b671b427742f47ed419d49aa14
         strip-components: 1
       - type: file
         path: io.kitotsu.KitoWall.desktop
