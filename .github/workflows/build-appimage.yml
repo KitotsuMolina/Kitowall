@@ -27,6 +27,12 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install root dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+
       - name: Install Linux deps for Tauri
         run: |
           sudo apt-get update
