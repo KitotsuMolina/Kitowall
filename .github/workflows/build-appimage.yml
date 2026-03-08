@@ -6,8 +6,6 @@ on:
     paths:
       - 'ui/**'
       - '.github/workflows/build-appimage.yml'
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -65,9 +63,3 @@ jobs:
           name: kitowall-ui-appimage
           path: ${{ steps.appimage.outputs.path }}
           if-no-files-found: error
-
-      - name: Attach AppImage to release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.appimage.outputs.path }}
