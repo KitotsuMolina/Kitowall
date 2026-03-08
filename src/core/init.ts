@@ -33,7 +33,7 @@ async function hostCmdExists(cmd: string): Promise<boolean> {
 }
 
 async function ensureHostDeps(): Promise<void> {
-    const required = ['swww', 'swww-daemon', 'hyprctl', 'mpvpaper'];
+    const required = ['swww', 'swww-daemon', 'hyprctl'];
     const missing: string[] = [];
     for (const dep of required) {
         if (!(await hostCmdExists(dep))) missing.push(dep);
@@ -44,7 +44,6 @@ async function ensureHostDeps(): Promise<void> {
     const pkgSet = new Set<string>();
     if (missing.includes('swww') || missing.includes('swww-daemon')) pkgSet.add('swww');
     if (missing.includes('hyprctl')) pkgSet.add('hyprland');
-    if (missing.includes('mpvpaper')) pkgSet.add('mpvpaper');
     const packages = Array.from(pkgSet);
 
     // Best effort auto-install on Arch host; if it fails, we keep a clear actionable error.
@@ -64,22 +63,29 @@ async function ensureHostDeps(): Promise<void> {
     if (stillMissing.length > 0) {
         throw new Error(
             `Missing host dependencies: ${stillMissing.join(', ')}. ` +
-            `Install on host (Arch): sudo pacman -S --needed swww hyprland mpvpaper`
+            `Install on host (Arch): sudo pacman -S --needed swww hyprland`
         );
     }
 }
 
-async function ensureHostRendercoreBridge(appId: string): Promise<void> {
+async function ensureHostFlatpakBridges(appId: string): Promise<void> {
     const home = homedir();
     const localBinDir = join(home, '.local', 'bin');
     ensureDir(localBinDir);
 
-    const bridgePath = join(localBinDir, 'kitsune-rendercore');
-    const bridgeScript = `#!/usr/bin/env bash
+    const writeBridge = (name: string, command: string) => {
+        const bridgePath = join(localBinDir, name);
+        const bridgeScript = `#!/usr/bin/env bash
 set -euo pipefail
-exec /usr/bin/flatpak run --command=kitsune-rendercore ${appId} "$@"
+exec /usr/bin/flatpak run --command=${command} ${appId} "$@"
 `;
-    writeFileSync(bridgePath, bridgeScript, {encoding: 'utf8', mode: 0o755});
+        writeFileSync(bridgePath, bridgeScript, {encoding: 'utf8', mode: 0o755});
+        return bridgePath;
+    };
+
+    writeBridge('kitowall', 'kitowall');
+    writeBridge('kitsune', 'kitsune');
+    const rendercoreBridgePath = writeBridge('kitsune-rendercore', 'kitsune-rendercore');
 
     const userDir = join(home, '.config', 'systemd', 'user');
     ensureDir(userDir);
@@ -92,7 +98,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=${bridgePath}
+ExecStart=${rendercoreBridgePath}
 Restart=on-failure
 RestartSec=1
 
@@ -147,7 +153,7 @@ export async function initKitowall(opts: {
     // Validaciones mínimas
     await ensureHostDeps();
     if (isFlatpak) {
-        await ensureHostRendercoreBridge(flatpakAppId);
+        await ensureHostFlatpakBridges(flatpakAppId);
     }
 
     // Apagar servicios que pisan el wallpaper
