@@ -21,6 +21,12 @@ run_sudo() {
   fi
 }
 
+ensure_user_bin_dirs() {
+  local home_dir
+  home_dir="${HOME:?HOME is required}"
+  mkdir -p "$home_dir/.local/bin" "$home_dir/.cargo/bin"
+}
+
 install_arch_deps() {
   local pkgs=(
     nodejs npm
@@ -68,12 +74,10 @@ install_kitowall_cli() {
     echo "[bootstrap] npm is not available after dependency install" >&2
     exit 1
   fi
-  echo "[bootstrap] installing/updating kitowall CLI from npm"
-  if need_cmd sudo; then
-    sudo npm i -g kitowall
-  else
-    npm i -g kitowall
-  fi
+  local home_dir
+  home_dir="${HOME:?HOME is required}"
+  echo "[bootstrap] installing/updating kitowall CLI in user prefix ($home_dir/.local)"
+  npm i -g --prefix "$home_dir/.local" kitowall
 }
 
 cargo_install_git_bin() {
@@ -122,11 +126,16 @@ verify_bins() {
 }
 
 main() {
+  ensure_user_bin_dirs
   install_system_deps
   install_kitowall_cli
   install_kitsune_bins
   verify_bins
   echo "[ok] host bootstrap complete"
+  echo "[paths] HOME=$HOME"
+  echo "[paths] kitowall=$(command -v kitowall || echo '<missing>')"
+  echo "[paths] kitsune=$(command -v kitsune || echo '<missing>')"
+  echo "[paths] kitsune-rendercore=$(command -v kitsune-rendercore || echo '<missing>')"
   echo "[next] run: kitowall init --namespace kitowall --apply --force"
 }
 

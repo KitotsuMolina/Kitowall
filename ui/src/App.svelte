@@ -25,6 +25,16 @@ import {onDestroy, onMount, tick} from 'svelte';
     deps: PreflightDep[];
   };
 
+  type PreflightInstallResult = {
+    ok: boolean;
+    step: string;
+    code?: number;
+    namespace: string;
+    logs?: string;
+    deps?: PreflightStatus;
+    paths?: Record<string, string>;
+  };
+
   type PreflightDepUiState = 'pending' | 'installing' | 'ok' | 'error';
 
   type PreflightDepUi = PreflightDep & {
@@ -4183,17 +4193,34 @@ import {onDestroy, onMount, tick} from 'svelte';
     pushPreflightLog(tr('Starting dependency installation flow', 'Iniciando flujo de instalacion de dependencias'), 'info');
     markMissingDepsInstalling();
     try {
-      pushPreflightLog('> kitowall init --namespace kitowall --apply --force', 'info');
-      await invoke('kitowall_init_apply', {namespace});
-      pushPreflightLog(tr('init --apply completed', 'init --apply completado'), 'success');
+      pushPreflightLog('> bootstrap-host.sh', 'info');
+      const bootstrap = await invoke<PreflightInstallResult>('kitowall_preflight_install', {namespace});
+      const rawLogs = String(bootstrap.logs ?? '').trim();
+      if (rawLogs) {
+        for (const line of rawLogs.split('\n')) {
+          const text = line.trim();
+          if (!text) continue;
+          const kind: 'info' | 'success' | 'error' =
+            text.includes('[ok]') ? 'success' :
+            text.includes('missing') || text.includes('error') || text.includes('failed') ? 'error' :
+            'info';
+          pushPreflightLog(text, kind);
+        }
+      }
 
-      const current = await invoke<SettingsReport>('kitowall_settings_get');
-      const interval = Math.max(1, Math.floor(Number(current?.rotation_interval_seconds ?? settingsInterval) || 1));
-      const every = `${interval}s`;
-      pushPreflightLog(`> kitowall install-systemd --every ${every}`, 'info');
-      const timerResult = await invoke<Record<string, unknown>>('kitowall_install_timer', {every});
-      ensureCommandOk(timerResult);
-      pushPreflightLog(tr(`timer installed (${every})`, `timer instalado (${every})`), 'success');
+      if (bootstrap.paths) {
+        pushPreflightLog(
+          `HOME=${bootstrap.paths.home ?? '<unknown>'} local_bin=${bootstrap.paths.local_bin ?? '<unknown>'} cargo_bin=${bootstrap.paths.cargo_bin ?? '<unknown>'}`,
+          'info'
+        );
+      }
+      if (!bootstrap.ok) {
+        throw new Error(
+          `bootstrap failed (code=${bootstrap.code ?? 1}). ` +
+          tr('Check installer logs in the right panel.', 'Revisa los logs del instalador en el panel derecho.')
+        );
+      }
+      pushPreflightLog(tr('bootstrap-host completed', 'bootstrap-host completado'), 'success');
 
       const deadline = Date.now() + 90000;
       while (Date.now() < deadline) {

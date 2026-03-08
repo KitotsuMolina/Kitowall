@@ -17,10 +17,7 @@
         "scope": [
           "$HOME/**",
           "$HOME/Videos/LiveWallpapers/**",
-          "$HOME/Videos/LiveWallpapers/.kitowall/tmp/previews/**",
-          "/home/kitotsu/**",
-          "/home/kitotsu/Videos/LiveWallpapers/**",
-          "/home/kitotsu/Videos/LiveWallpapers/.kitowall/tmp/previews/**"
+          "$HOME/Videos/LiveWallpapers/.kitowall/tmp/previews/**"
         ]
       }
     },

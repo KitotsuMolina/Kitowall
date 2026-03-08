@@ -5,10 +5,13 @@ use std::process::{Child, Command};
 use std::collections::HashSet;
 use std::env;
 use std::sync::{Mutex, OnceLock};
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use base64::Engine as _;
 use thiserror::Error;
 
 type Json = Value;
+const BOOTSTRAP_HOST_SH: &str = include_str!("../../../scripts/bootstrap-host.sh");
 
 #[derive(Debug, Error)]
 enum UiError {
@@ -16,6 +19,58 @@ enum UiError {
     CommandFailed(String),
     #[error("invalid json: {0}")]
     InvalidJson(String),
+}
+
+fn host_home_dir() -> Result<String, String> {
+    std::env::var("HOME").map_err(|e| format!("HOME is not available: {e}"))
+}
+
+fn host_user_path() -> Result<String, String> {
+    let home = host_home_dir()?;
+    Ok(format!(
+        "{home}/.local/bin:{home}/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+    ))
+}
+
+fn shell_output(cmdline: &str) -> Result<std::process::Output, String> {
+    let path = host_user_path()?;
+    host_aware_command("sh")
+        .env("PATH", path)
+        .args(["-lc", cmdline])
+        .output()
+        .map_err(|e| e.to_string())
+}
+
+fn resolve_host_bin_path(bin: &str) -> Result<Option<String>, String> {
+    let out = shell_output(&format!("command -v {bin} || true"))?;
+    let by_path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !by_path.is_empty() {
+        return Ok(Some(by_path));
+    }
+
+    let home = host_home_dir()?;
+    let fallback = match bin {
+        "kitowall" => vec![
+            format!("{home}/.local/bin/kitowall"),
+            format!("{home}/.npm-global/bin/kitowall"),
+        ],
+        "kitsune" => vec![
+            format!("{home}/.cargo/bin/kitsune"),
+            format!("{home}/.local/bin/kitsune"),
+        ],
+        "kitsune-rendercore" => vec![
+            format!("{home}/.cargo/bin/kitsune-rendercore"),
+            format!("{home}/.local/bin/kitsune-rendercore"),
+        ],
+        _ => vec![format!("{home}/.local/bin/{bin}")],
+    };
+
+    for candidate in fallback {
+        if PathBuf::from(&candidate).exists() {
+            return Ok(Some(candidate));
+        }
+    }
+    Ok(None)
 }
 
 fn resolve_kitowall_cmd() -> Vec<String> {
@@ -35,6 +90,10 @@ fn resolve_kitowall_cmd() -> Vec<String> {
     let local_cli_rel = PathBuf::from("../../dist/cli.js");
     if local_cli_rel.exists() {
         return vec!["node".to_string(), local_cli_rel.to_string_lossy().to_string()];
+    }
+
+    if let Ok(Some(host_cli)) = resolve_host_bin_path("kitowall") {
+        return vec![host_cli];
     }
 
     vec!["kitowall".to_string()]
@@ -137,11 +196,7 @@ fn kitowall_preflight_status() -> Result<Json, String> {
 
     let mut deps: Vec<Json> = vec![];
     for (id, bin) in checks {
-        let probe = format!("command -v {} || true", bin);
-        let mut cmd = host_aware_command("sh");
-        cmd.args(["-lc", &probe]);
-        let output = cmd.output().map_err(|e| e.to_string())?;
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let path = resolve_host_bin_path(bin)?.unwrap_or_default();
         deps.push(serde_json::json!({
             "id": id,
             "bin": bin,
@@ -167,7 +222,77 @@ fn resolve_kitsune_cmd() -> Vec<String> {
         return vec![local_kitsune.to_string_lossy().to_string()];
     }
 
+    if let Ok(Some(host_bin)) = resolve_host_bin_path("kitsune") {
+        return vec![host_bin];
+    }
+
     vec!["kitsune".to_string()]
+}
+
+#[tauri::command]
+fn kitowall_preflight_install(namespace: Option<String>) -> Result<Json, String> {
+    let ns = namespace.unwrap_or_else(|| "kitowall".to_string());
+    let home = host_home_dir()?;
+    let tmp_script = PathBuf::from(format!("/tmp/kitowall-bootstrap-{}.sh", std::process::id()));
+
+    {
+        let mut f = fs::File::create(&tmp_script).map_err(|e| e.to_string())?;
+        f.write_all(BOOTSTRAP_HOST_SH.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let mut perms = fs::metadata(&tmp_script).map_err(|e| e.to_string())?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&tmp_script, perms).map_err(|e| e.to_string())?;
+
+    let path = host_user_path()?;
+    let bootstrap_out = host_aware_command("bash")
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .arg(tmp_script.to_string_lossy().to_string())
+        .output()
+        .map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&tmp_script);
+
+    let mut logs = String::new();
+    logs.push_str(&String::from_utf8_lossy(&bootstrap_out.stdout));
+    logs.push_str(&String::from_utf8_lossy(&bootstrap_out.stderr));
+
+    let deps = kitowall_preflight_status()?;
+    if !bootstrap_out.status.success() {
+        return Ok(serde_json::json!({
+            "ok": false,
+            "step": "bootstrap-host",
+            "code": bootstrap_out.status.code().unwrap_or(1),
+            "namespace": ns,
+            "logs": logs,
+            "deps": deps,
+            "paths": {
+              "home": home,
+              "local_bin": format!("{}/.local/bin", home),
+              "cargo_bin": format!("{}/.cargo/bin", home),
+              "kitowall_config": format!("{}/.config/kitowall", home),
+              "rendercore_env": format!("{}/.config/kitsune-rendercore/env", home)
+            }
+        }));
+    }
+
+    let _ = shell_output(&format!("kitowall init --namespace '{}' --apply --force --json", ns.replace('\'', "")));
+    let _ = shell_output("kitowall install-systemd --every 600s");
+    let deps_after = kitowall_preflight_status()?;
+
+    Ok(serde_json::json!({
+      "ok": true,
+      "step": "bootstrap-host",
+      "namespace": ns,
+      "logs": logs,
+      "deps": deps_after,
+      "paths": {
+        "home": home,
+        "local_bin": format!("{}/.local/bin", home),
+        "cargo_bin": format!("{}/.cargo/bin", home),
+        "kitowall_config": format!("{}/.config/kitowall", home),
+        "rendercore_env": format!("{}/.config/kitsune-rendercore/env", home)
+      }
+    }))
 }
 
 fn host_aware_command(base: &str) -> Command {
@@ -1853,6 +1978,7 @@ fn main() {
             kitowall_pack_upsert_local,
             kitowall_pick_folder,
             kitowall_preflight_status,
+            kitowall_preflight_install,
             kitowall_kitsune_status,
             kitowall_kitsune_run,
             kitowall_live_run,
