@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {spawn} from 'node:child_process';
 import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {run} from '../utils/exec';
@@ -110,6 +111,7 @@ const LIVE_BROWSER_UA =
 const LIVE_BROWSER_UA_FALLBACK =
   process.env.KITOWALL_LIVE_UA_FALLBACK ||
   'insomnia/12.3.1';
+const INTEGRATED_RENDERCORE_ENV = 'KITOWALL_FLATPAK_INTEGRATED_RENDERCORE';
 
 function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
@@ -963,6 +965,119 @@ function rendercoreEnvPath(): string {
   return path.join(os.homedir(), '.config', 'kitsune-rendercore', 'env');
 }
 
+function integratedRendercoreMode(): boolean {
+  if (!process.env.FLATPAK_ID) return false;
+  const v = clean(process.env[INTEGRATED_RENDERCORE_ENV]).toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+function integratedRendercorePidPath(): string {
+  return path.join(getLiveInternalRoot(), 'rendercore.pid');
+}
+
+function integratedRendercoreLogPath(): string {
+  return path.join(getLiveInternalRoot(), 'rendercore.log');
+}
+
+function readIntegratedRendercorePid(): number | null {
+  const p = integratedRendercorePidPath();
+  try {
+    const raw = clean(fs.readFileSync(p, 'utf8'));
+    const pid = Number(raw);
+    if (!Number.isInteger(pid) || pid <= 1) return null;
+    return pid;
+  } catch {
+    return null;
+  }
+}
+
+function processRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function integratedRendercoreStatus(bin: string): {stdout: string; stderr: string; code: number} {
+  const pid = readIntegratedRendercorePid();
+  if (!pid) {
+    return {
+      stdout: `Integrated rendercore inactive (bin=${bin})`,
+      stderr: '',
+      code: 3
+    };
+  }
+  if (!processRunning(pid)) {
+    try { fs.rmSync(integratedRendercorePidPath(), {force: true}); } catch {}
+    return {
+      stdout: `Integrated rendercore stale pid file removed (pid=${pid})`,
+      stderr: '',
+      code: 3
+    };
+  }
+  return {
+    stdout: `Integrated rendercore active (pid=${pid}, bin=${bin})`,
+    stderr: '',
+    code: 0
+  };
+}
+
+function integratedRendercoreStart(bin: string): {stdout: string; stderr: string; code: number} {
+  ensureLiveDirs();
+  const current = integratedRendercoreStatus(bin);
+  if (current.code === 0) return current;
+
+  const outFd = fs.openSync(integratedRendercoreLogPath(), 'a');
+  const child = spawn(bin, [], {
+    cwd: os.homedir(),
+    env: process.env,
+    detached: true,
+    stdio: ['ignore', outFd, outFd]
+  });
+  child.unref();
+  fs.closeSync(outFd);
+  fs.writeFileSync(integratedRendercorePidPath(), `${child.pid}\n`, 'utf8');
+
+  return {
+    stdout: `Integrated rendercore started (pid=${child.pid}, bin=${bin})`,
+    stderr: '',
+    code: 0
+  };
+}
+
+function integratedRendercoreStop(bin: string): {stdout: string; stderr: string; code: number} {
+  const pid = readIntegratedRendercorePid();
+  if (!pid) {
+    return {
+      stdout: `Integrated rendercore already stopped (bin=${bin})`,
+      stderr: '',
+      code: 0
+    };
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {}
+
+  const until = Date.now() + 2000;
+  while (Date.now() < until) {
+    if (!processRunning(pid)) break;
+  }
+
+  if (processRunning(pid)) {
+    try { process.kill(pid, 'SIGKILL'); } catch {}
+  }
+  try { fs.rmSync(integratedRendercorePidPath(), {force: true}); } catch {}
+
+  return {
+    stdout: `Integrated rendercore stopped (pid=${pid}, bin=${bin})`,
+    stderr: '',
+    code: 0
+  };
+}
+
 function syncRendercoreEnv(defaults: LiveApplyDefaults): void {
   const p = rendercoreEnvPath();
   ensureDir(path.dirname(p));
@@ -1660,8 +1775,12 @@ export async function liveApply(opts: {
   await workshopCoexistenceEnter();
 
   // Keep live authority persistent across session restarts.
-  await run(bin, ['service', 'install'], {timeoutMs: 20000});
-  await run(bin, ['service', 'enable'], {timeoutMs: 20000});
+  if (integratedRendercoreMode()) {
+    integratedRendercoreStart(bin);
+  } else {
+    await run(bin, ['service', 'install'], {timeoutMs: 20000});
+    await run(bin, ['service', 'enable'], {timeoutMs: 20000});
+  }
 
   withLiveLock(() => {
     const current = readIndex();
@@ -1856,6 +1975,28 @@ export async function liveServiceAutostart(
 ): Promise<{ok: true; action: string; runner: string; stdout: string; stderr: string; code: number}> {
   const index = readIndex();
   let bin = index.runner.bin_name;
+  if (integratedRendercoreMode()) {
+    let out: {stdout: string; stderr: string; code: number};
+    if (action === 'status') {
+      out = integratedRendercoreStatus(bin);
+    } else if (action === 'start' || action === 'enable' || action === 'install') {
+      out = integratedRendercoreStart(bin);
+    } else if (action === 'stop' || action === 'disable') {
+      out = integratedRendercoreStop(bin);
+    } else {
+      integratedRendercoreStop(bin);
+      out = integratedRendercoreStart(bin);
+    }
+    return {
+      ok: true,
+      action,
+      runner: `${bin} (integrated)`,
+      stdout: out.stdout.trim(),
+      stderr: out.stderr.trim(),
+      code: out.code
+    };
+  }
+
   let out: Awaited<ReturnType<typeof run>>;
   const extractResult = (err: unknown): Awaited<ReturnType<typeof run>> | null => {
     const result = (err as {result?: {stdout?: string; stderr?: string; code?: number}})?.result;

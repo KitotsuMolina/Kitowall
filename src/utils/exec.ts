@@ -16,21 +16,27 @@ export interface ExecOptions {
 export function run(cmd: string, args: string[] = [], options: ExecOptions = {}): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const isFlatpak = Boolean(process.env.FLATPAK_ID);
+    const integratedRendercore = isFlatpak && (
+      process.env.KITOWALL_FLATPAK_INTEGRATED_RENDERCORE === '1'
+      || process.env.KITOWALL_FLATPAK_INTEGRATED_RENDERCORE === 'true'
+    );
     const hostCommands = new Set([
       'swww',
       'swww-daemon',
       'hyprctl',
       'systemctl',
-      'which',
       'xdg-open',
       'steamcmd',
       'ffmpeg',
       'ffprobe',
       'cargo',
       'kitsune-livewallpaper',
-      'kitsune-rendercore',
       'dd'
     ]);
+    if (!integratedRendercore) {
+      hostCommands.add('which');
+      hostCommands.add('kitsune-rendercore');
+    }
     const useHost = isFlatpak && hostCommands.has(cmd);
     const finalCmd = useHost ? 'flatpak-spawn' : cmd;
     const finalArgs = useHost ? ['--host', cmd, ...args] : args;

@@ -87,6 +87,14 @@ For Flathub source pipeline:
 ./GENERATE_FLATHUB_SOURCES.sh 2.1.0 && ./BUILD_FLATPAK_FROMSOURCE.sh
 ```
 
+Integrated local Flatpak (Kitowall + Kitsune + Kitsune-RenderCore in one app):
+```bash
+./BOOTSTRAP_FLATPAK_BUILD_DEPS.sh
+./GENERATE_FLATHUB_SOURCES.sh 2.1.0
+./BUILD_FLATPAK_INTEGRATED_LOCAL.sh
+flatpak run io.kitotsu.KitoWall
+```
+
 ## User Docs
 - Current status: `STATUS.md`
 - Config examples: `CONFIG_EXAMPLES.md`

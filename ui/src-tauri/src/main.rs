@@ -202,6 +202,16 @@ fn resolve_kitsune_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
+    let integrated = std::env::var("KITOWALL_FLATPAK_INTEGRATED_KITSUNE")
+        .map(|v| {
+            let t = v.trim().to_ascii_lowercase();
+            t == "1" || t == "true" || t == "yes" || t == "on"
+        })
+        .unwrap_or(false);
+    if is_flatpak() && integrated {
+        return vec!["/app/bin/kitsune".to_string()];
+    }
+
     if is_flatpak() {
         if let Ok(home) = std::env::var("HOME") {
             let host_candidates = [
@@ -247,6 +257,9 @@ fn is_flatpak() -> bool {
 
 fn host_aware_command(base: &str) -> Command {
     if is_flatpak() {
+        if base.starts_with("/app/") {
+            return Command::new(base);
+        }
         let mut cmd = Command::new("flatpak-spawn");
         cmd.arg("--host").arg(base);
         cmd
