@@ -1,7 +1,7 @@
 // src/core/systemd.ts
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {run} from '../utils/exec';
 
 function ensureDir(path: string) {
@@ -35,6 +35,42 @@ export async function installSystemd(opts: {
     ensureDir(userDir);
 
     const every = systemdInterval(opts.every);
+    const ns = (opts.namespace && opts.namespace.trim()) ? opts.namespace.trim() : 'kitowall';
+    const isFlatpak = Boolean(process.env.FLATPAK_ID);
+    const flatpakAppId = (process.env.FLATPAK_ID || 'io.kitotsu.KitoWall').trim();
+    const nodePath = process.execPath;
+    const cliPath = resolve(process.argv[1] || '');
+
+    const xdgRuntimeDir = (process.env.XDG_RUNTIME_DIR && process.env.XDG_RUNTIME_DIR.trim())
+        ? process.env.XDG_RUNTIME_DIR.trim()
+        : `/run/user/${process.getuid?.() ?? 1000}`;
+    const pathEnv = [
+        `${homedir()}/.local/bin`,
+        '/usr/local/bin',
+        '/usr/bin',
+        '/bin'
+    ].join(':');
+    const waylandBootstrap =
+        'WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-$(ls \\"$XDG_RUNTIME_DIR\\"/wayland-* 2>/dev/null | xargs -r -n1 basename | sort | tail -n1)}"; ' +
+        'if [ -z "$WAYLAND_DISPLAY" ]; then WAYLAND_DISPLAY=wayland-1; fi; ' +
+        'export WAYLAND_DISPLAY;';
+
+    const nextCmd = isFlatpak
+        ? `${waylandBootstrap} exec /usr/bin/flatpak run --command=kitowall ${flatpakAppId} rotate-now --namespace ${ns} --force`
+        : `${waylandBootstrap} exec ${JSON.stringify(nodePath)} ${JSON.stringify(cliPath)} rotate-now --namespace ${JSON.stringify(ns)} --force`;
+
+    const kitowallNextService = `
+        [Unit]
+        Description=Kitowall apply next wallpapers
+
+        [Service]
+        Type=oneshot
+        Environment=PATH=${pathEnv}
+        Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
+        ExecStart=/bin/sh -lc ${JSON.stringify(nextCmd)}
+    `.trimStart();
+
+    writeFileSync(join(userDir, 'kitowall-next.service'), kitowallNextService, 'utf8');
 
     const kitowallTimer = `
         [Unit]
@@ -56,6 +92,8 @@ export async function installSystemd(opts: {
     writeFileSync(join(userDir, 'kitowall-next.timer'), kitowallTimer, 'utf8');
 
     await run('systemctl', ['--user', 'daemon-reload']);
+    await run('systemctl', ['--user', 'reset-failed', 'kitowall-next.service']).catch(() => {});
+    await run('systemctl', ['--user', 'reset-failed', 'kitowall-next.timer']).catch(() => {});
     await run('systemctl', ['--user', 'enable', '--now', 'kitowall-next.timer']);
 }
 
