@@ -3,7 +3,6 @@
 /ui/dist
 /ui/node_modules
 /ui/src-tauri/target/
-/ui/src-tauri/Cargo.lock
 /.npm-cache/
 /*.tgz
 /flatpak/build-dir/
