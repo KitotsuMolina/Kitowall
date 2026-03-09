@@ -28,19 +28,39 @@ ensure_user_bin_dirs() {
 }
 
 install_arch_deps() {
-  local pkgs=(
+  local repo_pkgs=(
     nodejs npm
     rust cargo
     hyprland
     swww
-    mpvpaper
     cava
     jq
     git
     base-devel
   )
-  echo "[bootstrap] installing Arch packages: ${pkgs[*]}"
-  run_sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+  echo "[bootstrap] installing Arch repo packages: ${repo_pkgs[*]}"
+  run_sudo pacman -S --needed --noconfirm "${repo_pkgs[@]}"
+
+  if need_cmd mpvpaper; then
+    echo "[bootstrap] mpvpaper already installed"
+    return
+  fi
+
+  # mpvpaper is typically distributed via AUR on Arch.
+  if need_cmd yay; then
+    echo "[bootstrap] installing AUR package: mpvpaper (yay)"
+    yay -S --needed --noconfirm mpvpaper
+    return
+  fi
+  if need_cmd paru; then
+    echo "[bootstrap] installing AUR package: mpvpaper (paru)"
+    paru -S --needed --noconfirm mpvpaper
+    return
+  fi
+
+  echo "[bootstrap] mpvpaper is missing and no AUR helper was found (yay/paru)." >&2
+  echo "[bootstrap] install an AUR helper, or install mpvpaper manually, then retry." >&2
+  exit 1
 }
 
 install_ubuntu_deps() {
