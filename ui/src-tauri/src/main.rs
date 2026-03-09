@@ -1954,6 +1954,23 @@ fn kitowall_file_data_url(path: String) -> Result<Json, String> {
     }))
 }
 
+#[cfg(target_os = "linux")]
+fn ensure_ui_autostart_entry() -> Result<(), String> {
+    let home = host_home_dir()?;
+    let autostart_dir = PathBuf::from(format!("{home}/.config/autostart"));
+    fs::create_dir_all(&autostart_dir).map_err(|e| e.to_string())?;
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_str = exe.to_string_lossy();
+    let desktop_path = autostart_dir.join("kitowall-ui.desktop");
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName=Kitowall UI\nComment=Start Kitowall tray on login\nExec=env KITOWALL_START_MINIMIZED=1 {exe}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        exe = exe_str
+    );
+    fs::write(desktop_path, desktop).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
     #[cfg(target_os = "linux")]
     {
@@ -1970,6 +1987,12 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .on_menu_event(|app, event| {
             let id = event.id().0.clone();
             match id.as_str() {
@@ -2022,6 +2045,10 @@ fn main() {
         .setup(|app| {
             #[cfg(target_os = "linux")]
             {
+                if let Err(err) = ensure_ui_autostart_entry() {
+                    eprintln!("[kitowall-ui] failed to ensure autostart entry: {err}");
+                }
+
                 let open_item = MenuItem::with_id(app, "tray_open", "Open Kitowall", true, None::<&str>)?;
                 let rotate_item = MenuItem::with_id(app, "tray_rotate_now", "Rotate Now", true, None::<&str>)?;
                 let live_start = MenuItem::with_id(app, "tray_live_start", "Live Wallpapers: Start", true, None::<&str>)?;
