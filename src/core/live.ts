@@ -1138,6 +1138,155 @@ function syncRendercoreEnv(defaults: LiveApplyDefaults): void {
   fs.writeFileSync(p, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function shSingleQuote(v: string): string {
+  return `'${String(v).replace(/'/g, `'\\''`)}'`;
+}
+
+async function hostCommandExists(cmd: string): Promise<boolean> {
+  try {
+    await run('sh', ['-lc', `command -v ${cmd} >/dev/null 2>&1`], {timeoutMs: 5000});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveHostExecutablePath(bin: string): Promise<string> {
+  const raw = clean(bin);
+  if (!raw) throw new Error('empty binary name');
+  if (raw.includes('/')) {
+    if (!fs.existsSync(raw)) throw new Error(`binary not found: ${raw}`);
+    return raw;
+  }
+  const out = await run('sh', ['-lc', `command -v ${raw}`], {timeoutMs: 5000});
+  const resolved = clean(out.stdout.split('\n')[0]);
+  if (!resolved) throw new Error(`binary not found in PATH: ${raw}`);
+  return resolved;
+}
+
+async function installHostPackagesArch(packages: string[]): Promise<void> {
+  if (packages.length === 0) return;
+  const quoted = packages.map(shSingleQuote).join(' ');
+  const cmd =
+    `if command -v sudo >/dev/null 2>&1; then ` +
+    `(sudo -n pacman -S --needed --noconfirm ${quoted} || sudo pacman -S --needed ${quoted}); ` +
+    `else pacman -S --needed ${quoted}; fi`;
+  await run('sh', ['-lc', cmd], {timeoutMs: 240000});
+}
+
+async function ensureRendercoreHostRuntimeDeps(): Promise<{installed: string[]; missing: string[]}> {
+  const missing: string[] = [];
+  if (!(await hostCommandExists('ffmpeg'))) missing.push('ffmpeg');
+  if (!(await hostCommandExists('hyprctl'))) missing.push('hyprctl');
+  if (!(await hostCommandExists('systemctl'))) missing.push('systemctl');
+  if (missing.length === 0) return {installed: [], missing: []};
+
+  const canPacman = await hostCommandExists('pacman');
+  const toInstall = new Set<string>();
+  if (missing.includes('ffmpeg')) toInstall.add('ffmpeg');
+  if (missing.includes('hyprctl')) toInstall.add('hyprland');
+  if (canPacman && toInstall.size > 0) {
+    await installHostPackagesArch(Array.from(toInstall));
+  }
+
+  const afterMissing: string[] = [];
+  if (!(await hostCommandExists('ffmpeg'))) afterMissing.push('ffmpeg');
+  if (!(await hostCommandExists('hyprctl'))) afterMissing.push('hyprctl');
+  if (!(await hostCommandExists('systemctl'))) afterMissing.push('systemctl');
+  return {installed: Array.from(toInstall), missing: afterMissing};
+}
+
+function rendercoreVideoMapPath(): string {
+  return path.join(os.homedir(), '.config', 'kitsune-rendercore', 'video-map.conf');
+}
+
+function rendercoreUserServicePath(): string {
+  return path.join(os.homedir(), '.config', 'systemd', 'user', 'kitsune-rendercore.service');
+}
+
+function readEnvPairs(p: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!fs.existsSync(p)) return out;
+  const raw = fs.readFileSync(p, 'utf8');
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq <= 0) continue;
+    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+  }
+  return out;
+}
+
+function writeEnvPairs(p: string, pairs: Record<string, string>): void {
+  const keys = Object.keys(pairs).sort((a, b) => a.localeCompare(b));
+  const lines = keys.map((k) => `${k}=${pairs[k]}`);
+  fs.writeFileSync(p, `${lines.join('\n')}\n`, 'utf8');
+}
+
+function ensureRendercoreServiceFiles(bin: string, defaults: LiveApplyDefaults): {service_path: string; env_path: string; map_path: string} {
+  const envPath = rendercoreEnvPath();
+  const mapPath = rendercoreVideoMapPath();
+  const servicePath = rendercoreUserServicePath();
+  ensureDir(path.dirname(envPath));
+  ensureDir(path.dirname(servicePath));
+  if (!fs.existsSync(mapPath)) fs.writeFileSync(mapPath, '', 'utf8');
+
+  const envPairs = readEnvPairs(envPath);
+  envPairs.KRC_VIDEO_MAP_FILE = mapPath;
+  envPairs.KRC_VIDEO_FPS = String(defaults.video_fps);
+  envPairs.KRC_VIDEO_SPEED = String(defaults.video_speed);
+  envPairs.KRC_HWACCEL = defaults.hwaccel;
+  envPairs.KRC_QUALITY = defaults.quality;
+  envPairs.KRC_PAUSE_ON_STEAM_GAME = defaults.pause_on_steam_game ? 'true' : 'false';
+  envPairs.KRC_STEAM_POLL_MS = String(defaults.steam_poll_ms);
+  writeEnvPairs(envPath, envPairs);
+
+  const home = os.homedir();
+  const pathEnv = `${home}/.local/bin:${home}/.cargo/bin:/usr/local/bin:/usr/bin:/bin`;
+  const serviceBody = [
+    '[Unit]',
+    'Description=Kitsune RenderCore Live Wallpaper',
+    'After=graphical-session.target',
+    'PartOf=graphical-session.target',
+    '',
+    '[Service]',
+    'Type=simple',
+    `Environment=PATH=${pathEnv}`,
+    `EnvironmentFile=-${envPath}`,
+    `ExecStart=${bin}`,
+    'Restart=on-failure',
+    'RestartSec=1',
+    '',
+    '[Install]',
+    'WantedBy=graphical-session.target',
+    ''
+  ].join('\n');
+  fs.writeFileSync(servicePath, serviceBody, 'utf8');
+
+  return {service_path: servicePath, env_path: envPath, map_path: mapPath};
+}
+
+function extractExecResult(err: unknown): {stdout: string; stderr: string; code: number} | null {
+  const result = (err as {result?: {stdout?: string; stderr?: string; code?: number}})?.result;
+  if (!result) return null;
+  return {
+    stdout: String(result.stdout ?? ''),
+    stderr: String(result.stderr ?? ''),
+    code: Number(result.code ?? 1)
+  };
+}
+
+async function runSystemctlUser(args: string[], acceptNonZero = false): Promise<{stdout: string; stderr: string; code: number}> {
+  try {
+    return await run('systemctl', ['--user', ...args], {timeoutMs: 30000});
+  } catch (err) {
+    const partial = extractExecResult(err);
+    if (acceptNonZero && partial) return partial;
+    throw err;
+  }
+}
+
 async function resolvePost(provider: LiveProvider, pageUrl: string): Promise<LiveResolvedPost> {
   const html = await fetchHtml(pageUrl, pageUrl);
   const parsed = liveParsePostFromHtml(provider, pageUrl, html);
@@ -1788,8 +1937,18 @@ export async function liveApply(opts: {
   if (integratedRendercoreMode()) {
     integratedRendercoreStart(bin);
   } else {
-    await run(bin, ['service', 'install'], {timeoutMs: 20000});
-    await run(bin, ['service', 'enable'], {timeoutMs: 20000});
+    const deps = await ensureRendercoreHostRuntimeDeps();
+    if (deps.missing.length > 0) {
+      throw new Error(
+        `Missing host dependencies: ${deps.missing.join(', ')}. ` +
+        'Install on host (Arch): sudo pacman -S --needed ffmpeg hyprland'
+      );
+    }
+    const binPath = await resolveHostExecutablePath(bin);
+    ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+    await runSystemctlUser(['daemon-reload']);
+    await runSystemctlUser(['enable', 'kitsune-rendercore.service']);
+    await runSystemctlUser(['start', 'kitsune-rendercore.service']);
   }
 
   withLiveLock(() => {
@@ -1955,10 +2114,15 @@ export async function liveDoctor(opts?: {fix?: boolean}): Promise<{
     fix.push(`Install ${runnerBin} and ensure it is available in PATH`);
   }
 
-  if (opts?.fix && deps.runner_bin) {
+  if (opts?.fix) {
     try {
-      await run(runnerBin, ['install-deps'], {timeoutMs: 180000});
-      fix.push(`Executed: ${runnerBin} install-deps`);
+      const ensured = await ensureRendercoreHostRuntimeDeps();
+      if (ensured.installed.length > 0) {
+        fix.push(`Installed host packages: ${ensured.installed.join(', ')}`);
+      }
+      if (ensured.missing.length > 0) {
+        fix.push(`Still missing host dependencies: ${ensured.missing.join(', ')}`);
+      }
       try {
         await run('ffmpeg', ['-version'], {timeoutMs: 4000});
         deps.ffmpeg = true;
@@ -1972,10 +2136,10 @@ export async function liveDoctor(opts?: {fix?: boolean}): Promise<{
         deps.hyprctl = false;
       }
     } catch (e) {
-      fix.push(`Failed to execute '${index.runner.bin_name} install-deps': ${String(e)}`);
+      fix.push(`Failed to install host dependencies: ${String(e)}`);
     }
   } else if (!deps.ffmpeg || !deps.hyprctl) {
-    fix.push(`Run '${runnerBin} install-deps' to install missing runtime dependencies`);
+    fix.push('Run `kitowall live doctor --fix` to install missing runtime dependencies');
   }
 
   return {
@@ -2014,59 +2178,57 @@ export async function liveServiceAutostart(
     };
   }
 
-  let out: Awaited<ReturnType<typeof run>>;
-  const extractResult = (err: unknown): Awaited<ReturnType<typeof run>> | null => {
-    const result = (err as {result?: {stdout?: string; stderr?: string; code?: number}})?.result;
-    if (!result) return null;
-    return {
-      stdout: String(result.stdout ?? ''),
-      stderr: String(result.stderr ?? ''),
-      code: Number(result.code ?? 1)
-    };
-  };
-  try {
-    out = await run(bin, ['service', action], {timeoutMs: 30000});
-  } catch (err) {
-    const partial = extractResult(err);
-    if (action === 'status' && partial) {
-      out = partial;
-      return {
-        ok: true,
-        action,
-        runner: bin,
-        stdout: out.stdout.trim(),
-        stderr: out.stderr.trim(),
-        code: out.code
+  let out: {stdout: string; stderr: string; code: number};
+  if (action === 'install') {
+    const deps = await ensureRendercoreHostRuntimeDeps();
+    if (deps.missing.length > 0) {
+      const message =
+        `Missing host dependencies: ${deps.missing.join(', ')}. ` +
+        'Install on host (Arch): sudo pacman -S --needed ffmpeg hyprland';
+      out = {stdout: '', stderr: message, code: 1};
+    } else {
+      const binPath = await resolveHostExecutablePath(bin);
+      const installed = ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+      await runSystemctlUser(['daemon-reload']);
+      out = {
+        stdout: `Installed user service at ${installed.service_path}`,
+        stderr: '',
+        code: 0
       };
     }
-    // Legacy compatibility: if user still points to kitsune-livewallpaper,
-    // map to its older subcommand to avoid hard failure.
-    if (clean(bin) === 'kitsune-livewallpaper') {
-      try {
-        out = await run(bin, ['service-autostart', action], {timeoutMs: 30000});
-      } catch (legacyErr) {
-        const legacyPartial = extractResult(legacyErr);
-        if (action === 'status' && legacyPartial) {
-          out = legacyPartial;
-          return {
-            ok: true,
-            action,
-            runner: bin,
-            stdout: out.stdout.trim(),
-            stderr: out.stderr.trim(),
-            code: out.code
-          };
-        }
-        throw legacyErr;
-      }
-    } else {
-      throw err;
+  } else if (action === 'status') {
+    out = await runSystemctlUser(['status', '--no-pager', 'kitsune-rendercore.service'], true);
+  } else if (action === 'enable') {
+    if (!fs.existsSync(rendercoreUserServicePath())) {
+      const binPath = await resolveHostExecutablePath(bin);
+      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+      await runSystemctlUser(['daemon-reload']);
     }
+    out = await runSystemctlUser(['enable', 'kitsune-rendercore.service']);
+  } else if (action === 'disable') {
+    out = await runSystemctlUser(['disable', '--now', 'kitsune-rendercore.service'], true);
+  } else if (action === 'start') {
+    if (!fs.existsSync(rendercoreUserServicePath())) {
+      const binPath = await resolveHostExecutablePath(bin);
+      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+      await runSystemctlUser(['daemon-reload']);
+    }
+    out = await runSystemctlUser(['start', 'kitsune-rendercore.service']);
+  } else if (action === 'stop') {
+    out = await runSystemctlUser(['stop', 'kitsune-rendercore.service'], true);
+  } else {
+    if (!fs.existsSync(rendercoreUserServicePath())) {
+      const binPath = await resolveHostExecutablePath(bin);
+      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+      await runSystemctlUser(['daemon-reload']);
+    }
+    out = await runSystemctlUser(['restart', 'kitsune-rendercore.service']);
   }
+
   return {
     ok: true,
     action,
-    runner: bin,
+    runner: `${bin} (systemd-user)`,
     stdout: out.stdout.trim(),
     stderr: out.stderr.trim(),
     code: out.code
