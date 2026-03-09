@@ -763,6 +763,17 @@ import {onDestroy, onMount, tick} from 'svelte';
     return tr('pending', 'pendiente');
   }
 
+  function preflightPathLabel(dep: PreflightDepUi): string {
+    if (dep.path) return dep.path;
+    if (dep.bin === 'mpvpaper') {
+      return tr(
+        'not found on host (install manually with yay -S mpvpaper)',
+        'no encontrado en host (instalar manualmente con yay -S mpvpaper)'
+      );
+    }
+    return tr('not found on host', 'no encontrado en host');
+  }
+
   function preflightMissingDeps(): PreflightDepUi[] {
     return preflightDeps.filter(dep => dep.state !== 'ok' && !dep.optional);
   }
@@ -4559,7 +4570,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <div class="preflight-dep-row">
                   <div class="preflight-dep-main">
                     <span class="preflight-dep-name">{dep.bin}</span>
-                    <span class="preflight-dep-path">{dep.path || tr('not found on host', 'no encontrado en host')}</span>
+                    <span class="preflight-dep-path">{preflightPathLabel(dep)}</span>
                   </div>
                   <span class={`badge status ${preflightBadgeState(dep)}`}>{preflightStatusLabel(dep)}</span>
                 </div>
