@@ -55,6 +55,13 @@ chmod +x ./Kitowall-*.AppImage
 ```bash
 ./scripts/bootstrap-host.sh
 ```
+If `bootstrap-host.sh` fails on Arch with errors like `zstd: undefined symbol: POOL_free` or `bsdtar: Write error`, repair core compression/archive libs and retry:
+```bash
+sudo pacman -Syu
+sudo pacman -S --overwrite '*' zstd libarchive
+```
+Reason: this fixes host library mismatches (partial/out-of-sync updates) that break AUR package builds and package compression.
+
 4) Initialize services:
 ```bash
 kitowall init --namespace kitowall --apply --force
