@@ -184,22 +184,23 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
 #[tauri::command]
 fn kitowall_preflight_status() -> Result<Json, String> {
     let checks = [
-        ("kitowall", "kitowall"),
-        ("kitsune", "kitsune"),
-        ("kitsune-rendercore", "kitsune-rendercore"),
-        ("swww", "swww"),
-        ("swww-daemon", "swww-daemon"),
-        ("hyprctl", "hyprctl"),
-        ("mpvpaper", "mpvpaper"),
-        ("cava", "cava"),
+        ("kitowall", "kitowall", false),
+        ("kitsune", "kitsune", false),
+        ("kitsune-rendercore", "kitsune-rendercore", false),
+        ("swww", "swww", false),
+        ("swww-daemon", "swww-daemon", false),
+        ("hyprctl", "hyprctl", false),
+        ("mpvpaper", "mpvpaper", true),
+        ("cava", "cava", false),
     ];
 
     let mut deps: Vec<Json> = vec![];
-    for (id, bin) in checks {
+    for (id, bin, optional) in checks {
         let path = resolve_host_bin_path(bin)?.unwrap_or_default();
         deps.push(serde_json::json!({
             "id": id,
             "bin": bin,
+            "optional": optional,
             "installed": !path.is_empty(),
             "path": path
         }));

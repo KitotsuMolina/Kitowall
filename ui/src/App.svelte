@@ -16,6 +16,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   type PreflightDep = {
     id: string;
     bin: string;
+    optional?: boolean;
     installed: boolean;
     path: string;
   };
@@ -758,11 +759,12 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (dep.state === 'ok') return tr('installed', 'instalado');
     if (dep.state === 'installing') return tr('installing...', 'instalando...');
     if (dep.state === 'error') return tr('failed', 'fallo');
+    if (dep.optional) return tr('optional', 'opcional');
     return tr('pending', 'pendiente');
   }
 
   function preflightMissingDeps(): PreflightDepUi[] {
-    return preflightDeps.filter(dep => dep.state !== 'ok');
+    return preflightDeps.filter(dep => dep.state !== 'ok' && !dep.optional);
   }
 
   function preflightNeedsInstaller(): boolean {
@@ -799,6 +801,8 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (old) {
         if (dep.installed) {
           state = 'ok';
+        } else if (dep.optional) {
+          state = 'pending';
         } else if (preflightBusy && (old.state === 'installing' || old.state === 'error')) {
           state = old.state;
         } else if (old.state === 'error') {
@@ -823,13 +827,13 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function markMissingDepsInstalling(): void {
     preflightDeps = preflightDeps.map(dep => (
-      dep.state === 'ok' ? dep : {...dep, state: 'installing'}
+      dep.state === 'ok' || dep.optional ? dep : {...dep, state: 'installing'}
     ));
   }
 
   function markInstallingDepsError(): void {
     preflightDeps = preflightDeps.map(dep => (
-      dep.state === 'installing' ? {...dep, state: 'error'} : dep
+      dep.state === 'installing' && !dep.optional ? {...dep, state: 'error'} : dep
     ));
   }
 
