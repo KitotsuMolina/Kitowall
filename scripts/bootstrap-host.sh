@@ -145,6 +145,31 @@ install_kitowall_cli() {
   npm i -g --prefix "$home_dir/.local" kitowall
 }
 
+install_github_release_bin() {
+  local repo="$1"         # owner/name
+  local asset_name="$2"   # exact asset name
+  local out_bin="$3"      # absolute output path
+
+  if ! need_cmd curl || ! need_cmd jq; then
+    echo "[bootstrap] missing curl/jq for GitHub release install" >&2
+    return 1
+  fi
+
+  local api_url="https://api.github.com/repos/${repo}/releases/latest"
+  local asset_url
+  asset_url="$(
+    curl -fsSL "$api_url" | jq -r --arg n "$asset_name" '.assets[] | select(.name == $n) | .browser_download_url' | head -n1
+  )"
+  if [[ -z "${asset_url:-}" || "$asset_url" == "null" ]]; then
+    echo "[bootstrap] release asset not found: ${repo} -> ${asset_name}" >&2
+    return 1
+  fi
+
+  echo "[bootstrap] downloading ${repo} asset: ${asset_name}"
+  curl -fL --retry 3 --retry-delay 2 "$asset_url" -o "$out_bin"
+  chmod 755 "$out_bin"
+}
+
 cargo_install_git_bin() {
   local repo="$1"
   local bin="$2"
@@ -166,11 +191,26 @@ cargo_install_git_bin() {
 }
 
 install_kitsune_bins() {
+  local home_dir="${HOME:?HOME is required}"
+  local bin_dir="$home_dir/.local/bin"
+  local release_ok=0
+
+  # Prefer prebuilt binaries from GitHub Releases to avoid local toolchain/submodule issues.
+  if install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-linux-x86_64" "$bin_dir/kitsune" && \
+     install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-layer-linux-x86_64" "$bin_dir/kitsune-layer" && \
+     install_github_release_bin "KitotsuMolina/Kitsune-RenderCore" "kitsune-rendercore-linux-x86_64" "$bin_dir/kitsune-rendercore"; then
+    release_ok=1
+  fi
+
+  if [[ "$release_ok" -eq 1 ]]; then
+    return
+  fi
+
+  echo "[bootstrap] warning: release binary install failed, falling back to cargo install" >&2
   if ! need_cmd cargo; then
     echo "[bootstrap] cargo is not available after dependency install" >&2
     exit 1
   fi
-
   cargo_install_git_bin "$KITSUNE_REPO" kitsune "" "$KITSUNE_TAG"
   cargo_install_git_bin "$KITSUNE_RENDERCORE_REPO" kitsune-rendercore "--features wayland-layer" "$KITSUNE_RENDERCORE_TAG"
 }
