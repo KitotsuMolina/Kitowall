@@ -217,14 +217,14 @@ fn resolve_kitsune_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
+    if let Ok(Some(host_bin)) = resolve_host_bin_path("kitsune") {
+        return vec![host_bin];
+    }
+
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let local_kitsune = manifest_dir.join("../../../Kitsune/scripts/kitsune.sh");
     if local_kitsune.exists() {
         return vec![local_kitsune.to_string_lossy().to_string()];
-    }
-
-    if let Ok(Some(host_bin)) = resolve_host_bin_path("kitsune") {
-        return vec![host_bin];
     }
 
     vec!["kitsune".to_string()]
@@ -297,7 +297,14 @@ fn kitowall_preflight_install(namespace: Option<String>) -> Result<Json, String>
 }
 
 fn host_aware_command(base: &str) -> Command {
-    Command::new(base)
+    let mut cmd = Command::new(base);
+    if let Ok(path) = host_user_path() {
+        cmd.env("PATH", path);
+    }
+    if let Ok(home) = host_home_dir() {
+        cmd.env("HOME", home);
+    }
+    cmd
 }
 
 static NATIVE_PREVIEW_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();

@@ -215,6 +215,20 @@ install_kitsune_bins() {
   cargo_install_git_bin "$KITSUNE_RENDERCORE_REPO" kitsune-rendercore "--features wayland-layer" "$KITSUNE_RENDERCORE_TAG"
 }
 
+ensure_rendercore_service() {
+  if ! need_cmd kitsune-rendercore; then
+    echo "[bootstrap] warning: kitsune-rendercore binary not found; skipping service install" >&2
+    return
+  fi
+
+  # Best effort: service may not be available in non-systemd environments.
+  if kitsune-rendercore install-service; then
+    kitsune-rendercore service enable || true
+  else
+    echo "[bootstrap] warning: failed to install kitsune-rendercore service (optional)" >&2
+  fi
+}
+
 verify_bins() {
   local required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
   local optional_bins=(mpvpaper)
@@ -252,6 +266,7 @@ main() {
   install_system_deps
   install_kitowall_cli
   install_kitsune_bins
+  ensure_rendercore_service
   verify_bins
   echo "[ok] host bootstrap complete"
   echo "[paths] HOME=$HOME"
