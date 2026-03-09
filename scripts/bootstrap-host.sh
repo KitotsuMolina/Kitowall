@@ -21,6 +21,34 @@ run_sudo() {
   fi
 }
 
+wait_pacman_lock() {
+  local lock_file="/var/lib/pacman/db.lck"
+  local tries=0
+  local max_tries=40
+
+  while [[ -e "$lock_file" ]]; do
+    # If a package manager is still running, just wait.
+    if pgrep -x pacman >/dev/null 2>&1 || \
+       pgrep -x yay >/dev/null 2>&1 || \
+       pgrep -x paru >/dev/null 2>&1 || \
+       pgrep -x makepkg >/dev/null 2>&1; then
+      tries=$((tries + 1))
+      if ((tries > max_tries)); then
+        echo "[bootstrap] pacman lock is busy for too long: $lock_file" >&2
+        return 1
+      fi
+      echo "[bootstrap] waiting for pacman lock (${tries}/${max_tries})..."
+      sleep 3
+      continue
+    fi
+
+    # No package process alive: stale lock, safe to remove.
+    echo "[bootstrap] removing stale pacman lock: $lock_file"
+    run_sudo rm -f "$lock_file"
+    break
+  done
+}
+
 ensure_user_bin_dirs() {
   local home_dir
   home_dir="${HOME:?HOME is required}"
@@ -47,6 +75,7 @@ install_arch_deps() {
   fi
 
   echo "[bootstrap] installing Arch repo packages: ${repo_pkgs[*]}"
+  wait_pacman_lock
   run_sudo pacman -S --needed --noconfirm "${repo_pkgs[@]}"
 
   if need_cmd mpvpaper; then
