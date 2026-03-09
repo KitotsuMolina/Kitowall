@@ -4503,22 +4503,22 @@ import {onDestroy, onMount, tick} from 'svelte';
       {tr('Logs', 'Logs')}
     </button>
     <button class={`menu-item ${activeSection === 'kitsune' ? 'active' : ''}`} on:click={() => selectSection('kitsune')}>
-      Kitsune
+      {tr('Kitsune', 'Kitsune')}
     </button>
     <button class={`menu-item ${activeSection === 'kitsune-live' ? 'active' : ''}`} on:click={() => selectSection('kitsune-live')}>
-      LiveWallpapers
+      {tr('LiveWallpapers', 'LiveWallpapers')}
     </button>
     </div>
     <div class="sidebar-footer">
       <img class="sidebar-logo" src={logo} alt="Kitotsu logo" />
       <div class="sidebar-author">Kitotsu</div>
-      <div class="sidebar-disclaimer">Original code by Kitotsu</div>
+      <div class="sidebar-disclaimer">{tr('Original code by Kitotsu', 'Codigo original por Kitotsu')}</div>
       <div class="sidebar-disclaimer muted-note">{tr('Attribution required by project license.', 'Atribucion obligatoria por la licencia del proyecto.')}</div>
     </div>
   </aside>
 
   <main>
-    <h1>Kitowall UI</h1>
+    <h1>{tr('Kitowall UI', 'Interfaz Kitowall')}</h1>
     <p>{tr('Minimal dashboard wired to the CLI contract.', 'Panel minimal conectado al contrato del CLI.')}</p>
 
     {#if lastError}
@@ -4533,10 +4533,10 @@ import {onDestroy, onMount, tick} from 'svelte';
         <div class="row actions-buttons-row">
           <button class="secondary" on:click={stopLiveAuthority} disabled={liveBusy}>{tr('Stop LiveWallpapers', 'Detener LiveWallpapers')}</button>
           {#if liveAuthority?.state?.started_at}
-            <span class="badge">since: {formatTimestamp(liveAuthority.state.started_at)}</span>
+            <span class="badge">{tr('since', 'desde')}: {formatTimestamp(liveAuthority.state.started_at)}</span>
           {/if}
           {#if liveAuthority?.state?.snapshot_id}
-            <span class="badge">snapshot: {liveAuthority.state.snapshot_id}</span>
+            <span class="badge">{tr('snapshot', 'snapshot')}: {liveAuthority.state.snapshot_id}</span>
           {/if}
         </div>
       </div>
@@ -4785,8 +4785,8 @@ import {onDestroy, onMount, tick} from 'svelte';
                       class={`star-btn monitor-fav-btn ${isFavorite(status.last_set?.[output]) ? 'on' : ''}`}
                       on:click={() => toggleFavoritePath(status.last_set?.[output])}
                       disabled={busy}
-                      aria-label={isFavorite(status.last_set?.[output]) ? 'Remove favorite' : 'Add favorite'}
-                      title={isFavorite(status.last_set?.[output]) ? 'Remove favorite' : 'Add favorite'}
+                      aria-label={isFavorite(status.last_set?.[output]) ? tr('Remove favorite', 'Quitar favorito') : tr('Add favorite', 'Agregar favorito')}
+                      title={isFavorite(status.last_set?.[output]) ? tr('Remove favorite', 'Quitar favorito') : tr('Add favorite', 'Agregar favorito')}
                     >
                       {isFavorite(status.last_set?.[output]) ? '★' : '☆'}
                     </button>
@@ -5706,8 +5706,8 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <span class="badge">{row.pack.differentImages ? 'different' : 'single-repeat'}</span>
                   </div>
                   <div class="row">
-                    <button class="secondary" on:click={() => editStaticUrlPack(row.name, row.pack)} disabled={busyPacks}>Edit</button>
-                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>Delete</button>
+                    <button class="secondary" on:click={() => editStaticUrlPack(row.name, row.pack)} disabled={busyPacks}>{tr('Edit', 'Editar')}</button>
+                    <button class="secondary danger-outline" on:click={() => removePack(row.name)} disabled={busyPacks}>{tr('Delete', 'Eliminar')}</button>
                   </div>
                 </div>
               {/each}
@@ -5716,7 +5716,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         </div>
       {:else}
         <div class="card">
-          <p class="muted">This source tab will be implemented next. Starting point is ready.</p>
+          <p class="muted">{tr('This source tab will be implemented next. Starting point is ready.', 'Esta pestaña de fuente sera implementada despues. El punto de partida ya esta listo.')}</p>
         </div>
       {/if}
     {:else if activeSection === 'logs'}
@@ -5725,9 +5725,9 @@ import {onDestroy, onMount, tick} from 'svelte';
         <div class="row actions-input-row">
           <label for="logs-limit">{tr('Limit', 'Limite')}</label>
           <input id="logs-limit" type="number" min="1" bind:value={logsLimit} />
-          <label for="logs-source">{tr('Source', 'Source')}</label>
+          <label for="logs-source">{tr('Source', 'Fuente')}</label>
           <select id="logs-source" bind:value={logsSource}>
-            <option value="all">all</option>
+            <option value="all">{tr('all', 'todas')}</option>
             <option value="wallhaven">wallhaven</option>
             <option value="unsplash">unsplash</option>
             <option value="reddit">reddit</option>
@@ -5736,10 +5736,10 @@ import {onDestroy, onMount, tick} from 'svelte';
           </select>
           <label for="logs-level">{tr('Level', 'Nivel')}</label>
           <select id="logs-level" bind:value={logsLevel}>
-            <option value="all">all</option>
-            <option value="info">info</option>
-            <option value="warn">warn</option>
-            <option value="error">error</option>
+            <option value="all">{tr('all', 'todas')}</option>
+            <option value="info">{tr('info', 'info')}</option>
+            <option value="warn">{tr('warn', 'aviso')}</option>
+            <option value="error">{tr('error', 'error')}</option>
           </select>
           <label for="logs-pack">{tr('Pack', 'Pack')}</label>
           <input id="logs-pack" bind:value={logsPack} placeholder={tr('optional pack name', 'nombre de pack opcional')} />
@@ -5790,7 +5790,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           <input id="history-limit" type="number" min="1" bind:value={historyLimit} />
           <label for="history-output">{tr('Output', 'Salida')}</label>
           <select id="history-output" value={historyOutputFilter} on:change={onHistoryFilterChange}>
-            <option value="all">all</option>
+            <option value="all">{tr('all', 'todas')}</option>
             {#each historyOutputOptions as o}
               <option value={o}>{o}</option>
             {/each}
@@ -5806,7 +5806,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               <div class="history-group">
                 <div class="history-group-header">
                   <span class="badge">{group.output}</span>
-                  <span class="badge">{group.items.length} items</span>
+                  <span class="badge">{group.items.length} {tr('items', 'items')}</span>
                 </div>
                 <div class="history-list">
                   {#each group.items as item, idx (`${item.path}-${item.timestamp}-${idx}`)}
@@ -5815,7 +5815,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                         {#if imageSrc(item.path)}
                           <img class="history-thumb" src={imageSrc(item.path) ?? ''} alt={`history wallpaper ${item.output}`} />
                         {:else}
-                          <div class="monitor-placeholder">No preview</div>
+                          <div class="monitor-placeholder">{tr('No preview', 'Sin preview')}</div>
                         {/if}
                       </div>
                       <div class="history-meta">
@@ -5829,8 +5829,8 @@ import {onDestroy, onMount, tick} from 'svelte';
                         class={`star-btn ${isFavorite(item.path) ? 'on' : ''}`}
                         on:click={() => toggleFavorite(item)}
                         disabled={busyHistory}
-                        aria-label={isFavorite(item.path) ? 'Remove favorite' : 'Add favorite'}
-                        title={isFavorite(item.path) ? 'Remove favorite' : 'Add favorite'}
+                        aria-label={isFavorite(item.path) ? tr('Remove favorite', 'Quitar favorito') : tr('Add favorite', 'Agregar favorito')}
+                        title={isFavorite(item.path) ? tr('Remove favorite', 'Quitar favorito') : tr('Add favorite', 'Agregar favorito')}
                       >
                         {isFavorite(item.path) ? '★' : '☆'}
                       </button>
@@ -5851,25 +5851,25 @@ import {onDestroy, onMount, tick} from 'svelte';
       <h2>{tr('Wallpapers', 'Wallpapers')}</h2>
       <div class="card">
         <div class="row actions-buttons-row">
-          <span class="badge">total: {galleryItems.length}</span>
-          <span class="badge">showing: {galleryFiltered.length}</span>
+          <span class="badge">{tr('total', 'total')}: {galleryItems.length}</span>
+          <span class="badge">{tr('showing', 'mostrando')}: {galleryFiltered.length}</span>
           {#if galleryRoot}
-            <span class="badge">root: {galleryRoot}</span>
+            <span class="badge">{tr('root', 'raiz')}: {galleryRoot}</span>
           {/if}
         </div>
         <div class="row actions-input-row">
           <label for="gallery-pack">{tr('Pack', 'Pack')}</label>
           <select id="gallery-pack" bind:value={galleryPackFilter}>
-            <option value="all">all</option>
+            <option value="all">{tr('all', 'todas')}</option>
             {#each galleryPackOptions() as p}
               <option value={p}>{p}</option>
             {/each}
           </select>
           <label for="gallery-sort">{tr('Sort', 'Orden')}</label>
           <select id="gallery-sort" bind:value={gallerySort}>
-            <option value="newest">newest</option>
-            <option value="oldest">oldest</option>
-            <option value="name">name</option>
+            <option value="newest">{tr('newest', 'mas nuevas')}</option>
+            <option value="oldest">{tr('oldest', 'mas antiguas')}</option>
+            <option value="name">{tr('name', 'nombre')}</option>
           </select>
           <label for="gallery-search">{tr('Search', 'Buscar')}</label>
           <input id="gallery-search" bind:value={gallerySearch} placeholder={tr('file name or path', 'nombre o ruta del archivo')} />
@@ -5891,14 +5891,14 @@ import {onDestroy, onMount, tick} from 'svelte';
                       on:error={(e) => onGalleryImageError(e, item.path)}
                     />
                   {:else}
-                    <div class="monitor-placeholder">No preview</div>
+                    <div class="monitor-placeholder">{tr('No preview', 'Sin preview')}</div>
                   {/if}
                   <button
                     class={`star-btn gallery-fav-btn ${isFavorite(item.path) ? 'on' : ''}`}
                     on:click={() => toggleFavoritePath(item.path)}
                     disabled={galleryBusy}
-                    aria-label={isFavorite(item.path) ? 'Remove favorite' : 'Add favorite'}
-                    title={isFavorite(item.path) ? 'Remove favorite' : 'Add favorite'}
+                    aria-label={isFavorite(item.path) ? tr('Remove favorite', 'Quitar favorito') : tr('Add favorite', 'Agregar favorito')}
+                    title={isFavorite(item.path) ? tr('Remove favorite', 'Quitar favorito') : tr('Add favorite', 'Agregar favorito')}
                   >
                     {isFavorite(item.path) ? '★' : '☆'}
                   </button>
@@ -5955,7 +5955,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               <button class={`kitsune-tab ${kitsuneTab === 'render' ? 'active' : ''}`} on:click={() => selectKitsuneTab('render')}>Render</button>
               <button class={`kitsune-tab ${kitsuneTab === 'monitors' ? 'active' : ''}`} on:click={() => selectKitsuneTab('monitors')}>Monitors & Color</button>
               <button class={`kitsune-tab ${kitsuneTab === 'system' ? 'active' : ''}`} on:click={() => selectKitsuneTab('system')}>System & Instances</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'logs' ? 'active' : ''}`} on:click={() => selectKitsuneTab('logs')}>Logs & Diagnostics</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'logs' ? 'active' : ''}`} on:click={() => selectKitsuneTab('logs')}>{tr('Logs & Diagnostics', 'Logs y Diagnostico')}</button>
             </div>
 
             {#if kitsuneTab === 'core'}
@@ -6027,7 +6027,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                       <button type="button" class="multi-select-trigger" on:click|stopPropagation={() => (kitsuneStartProfilesOpen = !kitsuneStartProfilesOpen)}>
                         <div class="multi-select-badges">
                           {#if kitsuneStartProfilesSelected.length === 0}
-                            <span class="muted">--profiles (optional)</span>
+                            <span class="muted">{tr('--profiles (optional)', '--profiles (opcional)')}</span>
                           {:else}
                             {#each kitsuneStartProfilesSelected as profileName}
                               <span class="badge">{profileName}</span>
@@ -6039,7 +6039,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                       {#if kitsuneStartProfilesOpen}
                         <div class="multi-select-menu">
                           {#if kitsuneProfileOptions.length === 0}
-                            <div class="muted">No profiles detected</div>
+                            <div class="muted">{tr('No profiles detected', 'No se detectaron perfiles')}</div>
                           {:else}
                             {#each kitsuneProfileOptions as profileName}
                               <button
@@ -6057,9 +6057,9 @@ import {onDestroy, onMount, tick} from 'svelte';
                         </div>
                       {/if}
                     </div>
-                    <span class="field-label">target</span>
+                    <span class="field-label">{tr('target', 'objetivo')}</span>
                     <select bind:value={kitsuneStartTarget}><option value="mpvpaper">mpvpaper</option><option value="layer-shell">layer-shell</option></select>
-                    <span class="field-label">mode</span>
+                    <span class="field-label">{tr('mode', 'modo')}</span>
                     <select bind:value={kitsuneStartMode}><option value="bars">bars</option><option value="ring">ring</option></select>
                   </div>
                   <div class="row">
@@ -6070,14 +6070,14 @@ import {onDestroy, onMount, tick} from 'svelte';
                       if (kitsuneStartProfilesSelected.length > 0) { args.push('--profiles', kitsuneStartProfilesSelected.join(',')); }
                       args.push('--target', kitsuneStartTarget, '--mode', kitsuneStartMode);
                       void runKitsuneCommand(args);
-                    }} disabled={kitsuneBusy || isLiveServicesLocked()}>Start</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>Stop</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['restart'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Restart</button>
+                    }} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Start', 'Iniciar')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Stop', 'Detener')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['restart'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Restart', 'Reiniciar')}</button>
                   </div>
                   <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>Status</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>Doctor</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--fix'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Doctor --fix</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>{tr('Status', 'Estado')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>{tr('Doctor', 'Doctor')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor', '--fix'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Doctor --fix', 'Doctor --fix')}</button>
                   </div>
                 </div>
               </div>
@@ -6086,60 +6086,60 @@ import {onDestroy, onMount, tick} from 'svelte';
             {#if kitsuneTab === 'profiles'}
               <div class="grid kitsune-grid kitsune-profiles-grid">
                 <div class="card">
-                  <h3>Profiles</h3>
+                  <h3>{tr('Profiles', 'Perfiles')}</h3>
                   <div class="row">
-                    <select bind:value={kitsuneProfilesMode}><option value="all">all</option><option value="bars">bars</option><option value="ring">ring</option></select>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'list', ...(kitsuneProfilesMode === 'all' ? [] : [kitsuneProfilesMode])])} disabled={kitsuneBusy}>List</button>
+                    <select bind:value={kitsuneProfilesMode}><option value="all">{tr('all', 'todas')}</option><option value="bars">{tr('bars', 'barras')}</option><option value="ring">{tr('ring', 'anillo')}</option></select>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'list', ...(kitsuneProfilesMode === 'all' ? [] : [kitsuneProfilesMode])])} disabled={kitsuneBusy}>{tr('List', 'Listar')}</button>
                     <select bind:value={kitsuneProfileName}>
-                      <option value="">profile name</option>
+                      <option value="">{tr('profile name', 'nombre del perfil')}</option>
                       {#each kitsuneProfileOptions as profileName}
                         <option value={profileName}>{profileName}</option>
                       {/each}
                     </select>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'show', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>Show</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'show', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>{tr('Show', 'Mostrar')}</button>
                   </div>
                   <div class="row">
                     <select bind:value={kitsuneProfileBase}>
-                      <option value="">clone base</option>
+                      <option value="">{tr('clone base', 'base a clonar')}</option>
                       {#each kitsuneProfileOptions as profileName}
                         <option value={profileName}>{profileName}</option>
                       {/each}
                     </select>
-                    <input bind:value={kitsuneProfileNew} placeholder="clone new" />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'clone', kitsuneProfileBase.trim(), kitsuneProfileNew.trim()])} disabled={kitsuneBusy || !kitsuneProfileBase.trim() || !kitsuneProfileNew.trim()}>Clone</button>
+                    <input bind:value={kitsuneProfileNew} placeholder={tr('clone new', 'nuevo clon')} />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'clone', kitsuneProfileBase.trim(), kitsuneProfileNew.trim()])} disabled={kitsuneBusy || !kitsuneProfileBase.trim() || !kitsuneProfileNew.trim()}>{tr('Clone', 'Clonar')}</button>
                   </div>
                   <div class="row">
-                    <input bind:value={kitsuneProfileKey} placeholder="key" />
-                    <input bind:value={kitsuneProfileValue} placeholder="value" />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set', kitsuneProfileName.trim(), kitsuneProfileKey.trim(), kitsuneProfileValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim() || !kitsuneProfileKey.trim() || !kitsuneProfileValue.trim()}>Set</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['test-load', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>Test Load</button>
+                    <input bind:value={kitsuneProfileKey} placeholder={tr('key', 'clave')} />
+                    <input bind:value={kitsuneProfileValue} placeholder={tr('value', 'valor')} />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set', kitsuneProfileName.trim(), kitsuneProfileKey.trim(), kitsuneProfileValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim() || !kitsuneProfileKey.trim() || !kitsuneProfileValue.trim()}>{tr('Set', 'Asignar')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['test-load', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>{tr('Test Load', 'Probar Carga')}</button>
                   </div>
                 </div>
                 <div class="card">
-                  <h3>Spectrum Lab</h3>
+                  <h3>{tr('Spectrum Lab', 'Laboratorio de Espectro')}</h3>
                   <p class="muted">{tr('Use runtime test + test-load to validate profile changes before standard run.', 'Usa runtime test + test-load para validar cambios antes de usar modo standard.')}</p>
                   <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Runtime Test</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Runtime Standard</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Runtime Test', 'Runtime Test')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Runtime Standard', 'Runtime Standard')}</button>
                   </div>
                   <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Rotate Next</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'prev', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Rotate Prev</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'shuffle'])} disabled={kitsuneBusy || isLiveServicesLocked()}>Rotate Shuffle</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Rotate Next', 'Rotar Siguiente')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'prev', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Rotate Prev', 'Rotar Anterior')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'shuffle'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Rotate Shuffle', 'Rotar Aleatorio')}</button>
                   </div>
                   <div class="row">
                     <input type="number" bind:value={kitsuneRotationSeconds} min="1" />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotation', String(Math.max(1, Math.floor(Number(kitsuneRotationSeconds) || 1)))])} disabled={kitsuneBusy || isLiveServicesLocked()}>Set Rotation Seconds</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotation', String(Math.max(1, Math.floor(Number(kitsuneRotationSeconds) || 1)))])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Set Rotation Seconds', 'Definir Segundos de Rotacion')}</button>
                   </div>
                   <div class="row">
-                    <input bind:value={kitsuneProfileListValue} placeholder="p1,p2,p3" />
+                    <input bind:value={kitsuneProfileListValue} placeholder={tr('p1,p2,p3', 'p1,p2,p3')} />
                     <select bind:value={kitsuneProfileListMode}><option value="bars">bars</option><option value="ring">ring</option></select>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set-list', kitsuneProfileListMode, kitsuneProfileListValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileListValue.trim()}>Set Profile List</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set-list', kitsuneProfileListMode, kitsuneProfileListValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileListValue.trim()}>{tr('Set Profile List', 'Definir Lista de Perfiles')}</button>
                   </div>
                   <div class="row">
                     <select bind:value={kitsuneTuneMode}><option value="bars">bars</option><option value="ring">ring</option></select>
-                    <input bind:value={kitsuneTunePreset} placeholder="preset" />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['tune', kitsuneTunePreset.trim(), kitsuneTuneMode])} disabled={kitsuneBusy || !kitsuneTunePreset.trim()}>Tune</button>
+                    <input bind:value={kitsuneTunePreset} placeholder={tr('preset', 'preset')} />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['tune', kitsuneTunePreset.trim(), kitsuneTuneMode])} disabled={kitsuneBusy || !kitsuneTunePreset.trim()}>{tr('Tune', 'Ajustar')}</button>
                   </div>
                 </div>
               </div>
@@ -6575,10 +6575,10 @@ import {onDestroy, onMount, tick} from 'svelte';
             {#if kitsuneTab === 'logs'}
               <div class="grid kitsune-grid">
                 <div class="card">
-                  <h3>Logs & Diagnostics</h3>
+                  <h3>{tr('Logs & Diagnostics', 'Logs y Diagnostico')}</h3>
                   <div class="row">
                     <select bind:value={kitsuneLogSource}>
-                      <option value="all">all</option>
+                      <option value="all">{tr('all', 'todas')}</option>
                       <option value="renderer">renderer</option>
                       <option value="cava">cava</option>
                       <option value="layer">layer</option>
@@ -6587,8 +6587,8 @@ import {onDestroy, onMount, tick} from 'svelte';
                       <option value="monitorwatch">monitorwatch</option>
                     </select>
                     <input type="number" bind:value={kitsuneLogLines} min="1" />
-                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogAllInstances} /> all instances</label>
-                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogFollow} /> follow</label>
+                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogAllInstances} /> {tr('all instances', 'todas las instancias')}</label>
+                    <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogFollow} /> {tr('follow', 'seguir')}</label>
                     <button class="secondary" on:click={() => {
                       const args = ['logs', kitsuneLogSource, '--lines', String(Math.max(1, Math.floor(Number(kitsuneLogLines) || 1)))];
                       if (kitsuneLogAllInstances) args.push('--all-instances');
@@ -6620,11 +6620,11 @@ import {onDestroy, onMount, tick} from 'svelte';
       </div>
     {:else if activeSection === 'kitsune-live'}
       <section class="live-module">
-      <h2>LiveWallpapers</h2>
+      <h2>{tr('LiveWallpapers', 'LiveWallpapers')}</h2>
       <div class="card">
         <h3>{tr('Runtime Status', 'Estado del Runtime')}</h3>
         <div class="row">
-          <span class="badge">bin: {liveV2RunnerBin || 'kitsune-rendercore'}</span>
+          <span class="badge">{tr('bin', 'bin')}: {liveV2RunnerBin || 'kitsune-rendercore'}</span>
         </div>
       </div>
       <div class="card">
@@ -6653,15 +6653,15 @@ import {onDestroy, onMount, tick} from 'svelte';
             </select>
             <label for="livev2-library-quality">{tr('Quality', 'Calidad')}</label>
             <select id="livev2-library-quality" bind:value={liveV2Quality}>
-              <option value="auto">auto</option>
-              <option value="hd">hd</option>
-              <option value="4k">4k</option>
+              <option value="auto">{tr('auto', 'auto')}</option>
+              <option value="hd">{tr('hd', 'hd')}</option>
+              <option value="4k">{tr('4k', '4k')}</option>
             </select>
             <label class="inline-check"><input type="checkbox" bind:checked={liveV2FavoritesOnly} on:change={() => loadLiveV2Library()} /> {tr('favorites only', 'solo favoritos')}</label>
             <button class="secondary" on:click={loadLiveV2Library} disabled={liveV2Busy}>{tr('Refresh Library', 'Actualizar Biblioteca')}</button>
           </div>
           <div class="row">
-            <span class="badge">items: {liveV2Items.length}</span>
+            <span class="badge">{tr('items', 'items')}: {liveV2Items.length}</span>
           </div>
           {#if liveV2Items.length === 0}
             <p class="muted">{tr('No downloaded live wallpapers yet.', 'Aun no hay live wallpapers descargados.')}</p>
@@ -6706,7 +6706,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                             on:error={onLiveLibraryPreviewError}
                           />
                         {:else}
-                          <div class="monitor-placeholder">No preview</div>
+                          <div class="monitor-placeholder">{tr('No preview', 'Sin preview')}</div>
                         {/if}
                       </div>
                     </div>
@@ -6763,7 +6763,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                     on:error={onLiveLibraryPreviewError}
                   />
                 {:else}
-                  <div class="monitor-placeholder">No preview</div>
+                  <div class="monitor-placeholder">{tr('No preview', 'Sin preview')}</div>
                 {/if}
               </div>
             </div>
@@ -6916,7 +6916,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             <input id="livev2-default-steam-poll" type="number" min="200" step="100" bind:value={liveV2ApplyDefaults.steam_poll_ms} />
           </div>
           <div class="row">
-            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.pause_on_steam_game} /> pause_on_steam_game</label>
+            <label class="inline-check"><input type="checkbox" bind:checked={liveV2ApplyDefaults.pause_on_steam_game} /> {tr('pause_on_steam_game', 'pausar_en_juego_steam')}</label>
             <button on:click={saveLiveV2ApplyDefaults} disabled={liveV2Busy}>{tr('Save Defaults', 'Guardar Defaults')}</button>
           </div>
         </div>
@@ -6927,11 +6927,11 @@ import {onDestroy, onMount, tick} from 'svelte';
           <div class="row actions-input-row">
             <label for="livev2-explore-provider">{tr('Provider', 'Provider')}</label>
             <select id="livev2-explore-provider" bind:value={liveV2Provider}>
-              <option value="all">all</option>
+              <option value="all">{tr('all', 'todas')}</option>
               <option value="moewalls">moewalls</option>
               <option value="motionbgs">motionbgs</option>
             </select>
-            <label for="livev2-explore-page">page</label>
+            <label for="livev2-explore-page">{tr('page', 'pagina')}</label>
             <input id="livev2-explore-page" type="number" min="1" bind:value={liveV2Page} />
             <label for="livev2-explore-search">{tr('Search', 'Buscar')}</label>
             <input id="livev2-explore-search" bind:value={liveV2Query} placeholder={tr('query', 'consulta')} />
@@ -7209,9 +7209,9 @@ import {onDestroy, onMount, tick} from 'svelte';
           {/if}
           {#if liveDepsStatus}
             <div class="row">
-              <span class={`badge status ${liveDepsStatus.ok ? 'ok' : 'bad'}`}>ready: {liveDepsStatus.ok ? 'true' : 'false'}</span>
-              <span class="badge">required: {liveDepsStatus.required.length}</span>
-              <span class="badge">missing: {liveDepsStatus.missing.length}</span>
+              <span class={`badge status ${liveDepsStatus.ok ? 'ok' : 'bad'}`}>{tr('ready', 'listo')}: {liveDepsStatus.ok ? 'true' : 'false'}</span>
+              <span class="badge">{tr('required', 'requeridas')}: {liveDepsStatus.required.length}</span>
+              <span class="badge">{tr('missing', 'faltantes')}: {liveDepsStatus.missing.length}</span>
             </div>
             {#if !liveDepsStatus.ok}
               <div class="banner error">
@@ -7221,7 +7221,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             {/if}
             <div class="row">
               {#each Object.entries(liveDepsStatus.deps) as [dep, ok]}
-                <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? 'ok' : 'missing'}</span>
+                <span class={`badge status ${ok ? 'ok' : 'bad'}`}>{dep}: {ok ? tr('ok', 'ok') : tr('missing', 'faltante')}</span>
               {/each}
             </div>
           {/if}
@@ -7236,7 +7236,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           </p>
           <div class="row">
             <span class={`badge status ${liveAppStatus?.installed ? 'ok' : 'bad'}`}>
-              wallpaper engine: {liveAppStatus?.installed ? 'installed' : 'missing'}
+              wallpaper engine: {liveAppStatus?.installed ? tr('installed', 'instalado') : tr('missing', 'faltante')}
             </span>
           </div>
           {#if liveAppStatus && !liveAppStatus.installed}
@@ -7250,8 +7250,8 @@ import {onDestroy, onMount, tick} from 'svelte';
           <div class="row">
             <button class="secondary" on:click={scanLiveSteam} disabled={liveBusy}>{tr('Detect Steam Paths', 'Detectar rutas Steam')}</button>
             <button class="secondary" on:click={syncLiveSteam} disabled={liveBusy || (liveAppStatus ? !liveAppStatus.installed : false)}>{tr('Sync Downloads', 'Sincronizar Descargas')}</button>
-            <span class="badge">sources: {liveSteamDetectedSources.length}</span>
-            <span class="badge">detected items: {liveSteamDetectedCount}</span>
+            <span class="badge">{tr('sources', 'fuentes')}: {liveSteamDetectedSources.length}</span>
+            <span class="badge">{tr('detected items', 'items detectados')}: {liveSteamDetectedCount}</span>
           </div>
           <div class="row">
             {#each liveSteamDetectedSources as source}
@@ -7269,7 +7269,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             <button on:click={addLiveSteamRootManual} disabled={liveBusy}>{tr('Add Path', 'Agregar Ruta')}</button>
           </div>
           <div class="row">
-            <span class="badge">manual paths: {liveSteamRoots.length}</span>
+            <span class="badge">{tr('manual paths', 'rutas manuales')}: {liveSteamRoots.length}</span>
           </div>
           {#if liveSteamRoots.length > 0}
             <div class="row">
@@ -7299,18 +7299,18 @@ import {onDestroy, onMount, tick} from 'svelte';
           <div class="row actions-input-row">
             <label for="live-filter-type">{tr('Type', 'Tipo')}</label>
             <select id="live-filter-type" bind:value={liveFilterType}>
-              <option value="all">all</option>
-              <option value="video">video</option>
-              <option value="scene">scene</option>
-              <option value="web">web</option>
-              <option value="application">application</option>
-              <option value="unknown">unknown</option>
+              <option value="all">{tr('all', 'todas')}</option>
+              <option value="video">{tr('video', 'video')}</option>
+              <option value="scene">{tr('scene', 'escena')}</option>
+              <option value="web">{tr('web', 'web')}</option>
+              <option value="application">{tr('application', 'aplicacion')}</option>
+              <option value="unknown">{tr('unknown', 'desconocido')}</option>
             </select>
             <label for="live-filter-audio">{tr('Audio', 'Audio')}</label>
             <select id="live-filter-audio" bind:value={liveFilterAudio}>
-              <option value="all">all</option>
-              <option value="reactive">reactive</option>
-              <option value="static">static</option>
+              <option value="all">{tr('all', 'todas')}</option>
+              <option value="reactive">{tr('reactive', 'reactivo')}</option>
+              <option value="static">{tr('static', 'estatico')}</option>
             </select>
             <label for="live-filter-query">{tr('Search', 'Buscar')}</label>
             <input id="live-filter-query" bind:value={liveFilterQuery} placeholder={tr('id, title or path', 'id, titulo o ruta')} />
@@ -7330,9 +7330,9 @@ import {onDestroy, onMount, tick} from 'svelte';
             <button class="secondary" on:click={loadLiveLibrary} disabled={liveBusy}>{tr('Refresh Downloaded', 'Actualizar Descargados')}</button>
           </div>
           <div class="row">
-            <span class="badge">root: {liveLibraryRoot || '-'}</span>
-            <span class="badge">items: {liveLibraryItems.length}</span>
-            <span class="badge">filtered: {filteredLiveLibraryItems().length}</span>
+            <span class="badge">{tr('root', 'raiz')}: {liveLibraryRoot || '-'}</span>
+            <span class="badge">{tr('items', 'items')}: {liveLibraryItems.length}</span>
+            <span class="badge">{tr('filtered', 'filtrados')}: {filteredLiveLibraryItems().length}</span>
           </div>
           {#if filteredLiveLibraryItems().length === 0}
             <p class="muted">{tr('No downloaded live wallpapers yet.', 'Aun no hay live wallpapers descargados.')}</p>
@@ -7358,16 +7358,16 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <div class="live-title" title={entry.meta?.title ?? entry.id}>{entry.meta?.title ?? entry.id}</div>
                     <div class="row">
                       <span class="badge">{entry.id}</span>
-                      <span class="badge">type: {entry.meta?.wallpaper_type ?? 'unknown'}</span>
+                      <span class="badge">{tr('type', 'tipo')}: {entry.meta?.wallpaper_type ?? tr('unknown', 'desconocido')}</span>
                       <span class={`badge status ${entry.meta?.audio_reactive ? 'ok' : 'warn'}`}>
-                        audio: {entry.meta?.audio_reactive ? 'reactive' : 'static'}
+                        {tr('audio', 'audio')}: {entry.meta?.audio_reactive ? tr('reactive', 'reactivo') : tr('static', 'estatico')}
                       </span>
                       <span class="badge live-path-badge" title={entry.path}>{entry.path}</span>
                     </div>
                     {#if activeMonitorsForWallpaper(entry.id).length > 0}
                       <div class="row">
                         {#each activeMonitorsForWallpaper(entry.id) as mon}
-                          <span class="badge status ok">active on {mon}</span>
+                          <span class="badge status ok">{tr('active on', 'activo en')} {mon}</span>
                         {/each}
                       </div>
                     {/if}
@@ -7406,7 +7406,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       {#if liveSideOpen}
         <aside class="live-sidepanel">
           <div class="row">
-            <h3>{liveSelected?.title ?? 'LiveWallpaper'}</h3>
+            <h3>{liveSelected?.title ?? tr('LiveWallpaper', 'LiveWallpaper')}</h3>
             <button class="secondary" on:click={() => (liveSideOpen = false)}>{tr('Close', 'Cerrar')}</button>
           </div>
           <div class="live-monitor-skeleton">
@@ -7432,22 +7432,22 @@ import {onDestroy, onMount, tick} from 'svelte';
                   on:error={onLiveLibraryPreviewError}
                 />
               {:else}
-                <div class="monitor-placeholder">No preview</div>
+                <div class="monitor-placeholder">{tr('No preview', 'Sin preview')}</div>
               {/if}
             </div>
           </div>
           <div class="live-details">
             <div class="row"><span class="badge">id: {liveSelected?.id ?? '-'}</span></div>
-            <div class="row"><span class="badge">type: {liveSelected?.wallpaper_type ?? 'unknown'}</span></div>
+            <div class="row"><span class="badge">{tr('type', 'tipo')}: {liveSelected?.wallpaper_type ?? tr('unknown', 'desconocido')}</span></div>
             <div class="row">
               <span class={`badge status ${liveSelected?.audio_reactive ? 'ok' : 'warn'}`}>
-                audio: {liveSelected?.audio_reactive ? 'reactive' : 'static'}
+                {tr('audio', 'audio')}: {liveSelected?.audio_reactive ? tr('reactive', 'reactivo') : tr('static', 'estatico')}
               </span>
             </div>
-            <div class="row"><span class="badge">author: {liveSelected?.author_name ?? '-'}</span></div>
-            <div class="row"><span class="badge">updated: {liveSelected?.time_updated ? formatTimestamp(liveSelected.time_updated * 1000) : '-'}</span></div>
+            <div class="row"><span class="badge">{tr('author', 'autor')}: {liveSelected?.author_name ?? '-'}</span></div>
+            <div class="row"><span class="badge">{tr('updated', 'actualizado')}: {liveSelected?.time_updated ? formatTimestamp(liveSelected.time_updated * 1000) : '-'}</span></div>
             {#if liveSelected && 'file_size' in liveSelected && liveSelected.file_size}
-              <div class="row"><span class="badge">size: {(liveSelected.file_size / (1024 * 1024)).toFixed(1)} MB</span></div>
+              <div class="row"><span class="badge">{tr('size', 'tamano')}: {(liveSelected.file_size / (1024 * 1024)).toFixed(1)} MB</span></div>
             {/if}
             <div class="row">
               {#each liveSelected?.tags ?? [] as tag}
@@ -7476,7 +7476,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               {#if liveSelected && 'item_url' in liveSelected && liveSelected.item_url}
                 <a class="secondary live-link" href={liveSelected.item_url} target="_blank" rel="noreferrer">Steam</a>
               {/if}
-              <span class="badge">source: {liveSelectedSource ?? '-'}</span>
+              <span class="badge">{tr('source', 'fuente')}: {liveSelectedSource ?? '-'}</span>
             </div>
           </div>
         </aside>
@@ -7495,7 +7495,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') showResolutionModal = false;
         }}
       >
-        <div class="modal-card resolution-modal" role="dialog" aria-modal="true" aria-label="Wallhaven resolution picker">
+        <div class="modal-card resolution-modal" role="dialog" aria-modal="true" aria-label={tr('Wallhaven resolution picker', 'Selector de resolucion de Wallhaven')}>
           <h3>{tr('Pick a resolution', 'Selecciona una resolucion')} ({wallhavenRatioMode})</h3>
           <div class="resolution-grid">
             {#each wallhavenResByRatio[wallhavenRatioMode] ?? [] as r}
@@ -7521,7 +7521,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') showColorModal = false;
         }}
       >
-        <div class="modal-card resolution-modal" role="dialog" aria-modal="true" aria-label="Wallhaven color picker">
+        <div class="modal-card resolution-modal" role="dialog" aria-modal="true" aria-label={tr('Wallhaven color picker', 'Selector de color de Wallhaven')}>
           <h3>{tr('Pick a color', 'Selecciona un color')}</h3>
           <div class="color-grid-modal">
             {#each wallhavenColorOptions as color}
@@ -7529,7 +7529,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                 type="button"
                 class={`color-option ${wallhavenColors === color ? 'active' : ''}`}
                 style={wallhavenColorStyle(color)}
-                title={color || 'none'}
+                title={color || tr('none', 'ninguno')}
                 on:click={() => { wallhavenColors = color; showColorModal = false; }}
               ></button>
             {/each}
@@ -7555,7 +7555,7 @@ import {onDestroy, onMount, tick} from 'svelte';
           class="modal-card"
           role="dialog"
           aria-modal="true"
-          aria-label="Clean wallpapers confirmation"
+          aria-label={tr('Clean wallpapers confirmation', 'Confirmacion de limpieza de wallpapers')}
         >
           <h3>{tr('Clean Wallpapers Cache', 'Limpiar Cache de Wallpapers')}</h3>
           <p class="muted">

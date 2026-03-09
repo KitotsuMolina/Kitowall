@@ -112,8 +112,8 @@ jobs:
             echo "AppImage was not generated" >&2
             exit 1
           fi
-          cp -f "$APPIMAGE_PATH" "dist/Kitowall-${{ steps.version.outputs.version }}-x86_64.AppImage"
-          echo "appimage=dist/Kitowall-${{ steps.version.outputs.version }}-x86_64.AppImage" >> "$GITHUB_ENV"
+          cp -f "$APPIMAGE_PATH" "dist/Kitowall-x86_64.AppImage"
+          echo "appimage=dist/Kitowall-x86_64.AppImage" >> "$GITHUB_ENV"
 
       - name: Create and push tag
         if: steps.version.outputs.exists != 'true'

@@ -9,6 +9,8 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use base64::Engine as _;
 use thiserror::Error;
+use tauri::Manager;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
 type Json = Value;
 const BOOTSTRAP_HOST_SH: &str = include_str!("../../../scripts/bootstrap-host.sh");
@@ -144,6 +146,11 @@ fn run_kitowall(args: &[&str]) -> Result<Json, UiError> {
 }
 
 fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
+    let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    run_kitowall_raw_owned(owned)
+}
+
+fn run_kitowall_raw_owned(args: Vec<String>) -> Result<String, UiError> {
     let mut cmd_parts = resolve_kitowall_cmd();
     let base = cmd_parts.remove(0);
     if base == "__missing_kitowall_cli__" {
@@ -155,7 +162,7 @@ fn run_kitowall_raw(args: &[&str]) -> Result<String, UiError> {
     if !cmd_parts.is_empty() {
         command.args(cmd_parts);
     }
-    command.args(args);
+    command.args(&args);
 
     let output = command.output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -1950,14 +1957,110 @@ fn kitowall_file_data_url(path: String) -> Result<Json, String> {
 fn main() {
     #[cfg(target_os = "linux")]
     {
-        // WebKitGTK can show decode artifacts/stalls on seek/replay with DMABUF in some GPUs/drivers.
-        // Keep manual overrides respected; only set a default when not provided by the environment.
+        // WebKitGTK can fail to initialize EGL on some driver stacks (common in AppImage contexts).
+        // Keep manual overrides respected; only set defaults when not provided.
         if env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
             env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        if env::var_os("APPIMAGE").is_some()
+            && env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none()
+        {
+            env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         }
     }
 
     tauri::Builder::default()
+        .on_menu_event(|app, event| {
+            let id = event.id().0.clone();
+            match id.as_str() {
+                "tray_open" => {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.show();
+                        let _ = win.unminimize();
+                        let _ = win.set_focus();
+                    }
+                }
+                "tray_rotate_now" => {
+                    std::thread::spawn(|| {
+                        let _ = run_kitowall_raw_owned(vec![
+                            "rotate-now".to_string(),
+                            "--force".to_string(),
+                        ]);
+                    });
+                }
+                "tray_live_start" => {
+                    std::thread::spawn(|| {
+                        let _ = run_kitowall_raw_owned(vec![
+                            "live".to_string(),
+                            "service-autostart".to_string(),
+                            "start".to_string(),
+                        ]);
+                    });
+                }
+                "tray_live_restart" => {
+                    std::thread::spawn(|| {
+                        let _ = run_kitowall_raw_owned(vec![
+                            "live".to_string(),
+                            "service-autostart".to_string(),
+                            "restart".to_string(),
+                        ]);
+                    });
+                }
+                "tray_live_stop" => {
+                    std::thread::spawn(|| {
+                        let _ = run_kitowall_raw_owned(vec![
+                            "live".to_string(),
+                            "service-autostart".to_string(),
+                            "stop".to_string(),
+                        ]);
+                    });
+                }
+                "tray_quit" => app.exit(0),
+                _ => {}
+            }
+        })
+        .setup(|app| {
+            #[cfg(target_os = "linux")]
+            {
+                let open_item = MenuItem::with_id(app, "tray_open", "Open Kitowall", true, None::<&str>)?;
+                let rotate_item = MenuItem::with_id(app, "tray_rotate_now", "Rotate Now", true, None::<&str>)?;
+                let live_start = MenuItem::with_id(app, "tray_live_start", "Live Wallpapers: Start", true, None::<&str>)?;
+                let live_restart = MenuItem::with_id(app, "tray_live_restart", "Live Wallpapers: Restart", true, None::<&str>)?;
+                let live_stop = MenuItem::with_id(app, "tray_live_stop", "Live Wallpapers: Stop", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "tray_quit", "Quit", true, None::<&str>)?;
+                let sep1 = PredefinedMenuItem::separator(app)?;
+                let sep2 = PredefinedMenuItem::separator(app)?;
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &open_item,
+                        &sep1,
+                        &rotate_item,
+                        &live_start,
+                        &live_restart,
+                        &live_stop,
+                        &sep2,
+                        &quit_item,
+                    ],
+                )?;
+
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = tauri::tray::TrayIconBuilder::with_id("kitowall-tray")
+                        .icon(icon.clone())
+                        .tooltip("Kitowall")
+                        .menu(&menu)
+                        .show_menu_on_left_click(true)
+                        .build(app);
+                }
+
+                if matches!(env::var("KITOWALL_START_MINIMIZED").as_deref(), Ok("1" | "true" | "yes")) {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.hide();
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             kitowall_check,
             kitowall_status,

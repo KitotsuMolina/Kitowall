@@ -216,6 +216,7 @@ install_kitsune_bundle() {
     -e '/^cargo build --release --bins$/d' \
     -e 's|\./target/release/kitsune-layer|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-layer|g' \
     -e 's|\./target/release/kitsune|"${KITSUNE_BIN_DIR:-./bin}"/kitsune|g' \
+    -e 's|"${KITSUNE_BIN_DIR:-./bin}"/kitsune --config|"${KITSUNE_BIN_DIR:-./bin}"/kitsune run --config|g' \
     "$share_dir/scripts/start.sh" \
     "$share_dir/scripts/kitsune.sh"
   sed -i -e '/^cargo build --release$/d' "$share_dir/scripts/install.sh" || true
