@@ -30,7 +30,6 @@ ensure_user_bin_dirs() {
 install_arch_deps() {
   local repo_pkgs=(
     nodejs npm
-    rust cargo
     hyprland
     swww
     cava
@@ -38,6 +37,15 @@ install_arch_deps() {
     git
     base-devel
   )
+  # Avoid rust/rustup conflicts on Arch.
+  if need_cmd rustup; then
+    repo_pkgs+=(rustup)
+  elif need_cmd rustc && need_cmd cargo; then
+    :
+  else
+    repo_pkgs+=(rustup)
+  fi
+
   echo "[bootstrap] installing Arch repo packages: ${repo_pkgs[*]}"
   run_sudo pacman -S --needed --noconfirm "${repo_pkgs[@]}"
 
@@ -49,12 +57,14 @@ install_arch_deps() {
   # mpvpaper is typically distributed via AUR on Arch.
   if need_cmd yay; then
     echo "[bootstrap] installing AUR package: mpvpaper (yay)"
-    yay -S --needed --noconfirm mpvpaper
+    env -u PYTHONHOME -u PYTHONPATH HOME="${HOME}" \
+      yay -S --needed --noconfirm --answerclean None --answerdiff None mpvpaper
     return
   fi
   if need_cmd paru; then
     echo "[bootstrap] installing AUR package: mpvpaper (paru)"
-    paru -S --needed --noconfirm mpvpaper
+    env -u PYTHONHOME -u PYTHONPATH HOME="${HOME}" \
+      paru -S --needed --noconfirm --skipreview mpvpaper
     return
   fi
 
@@ -146,6 +156,12 @@ verify_bins() {
 }
 
 main() {
+  # Some launchers provide a stale/non-existent CWD; recover to HOME.
+  cd "${HOME:?HOME is required}" || true
+  # Clean host Python env that can break AUR build tools (meson/python).
+  unset PYTHONHOME || true
+  unset PYTHONPATH || true
+
   ensure_user_bin_dirs
   install_system_deps
   install_kitowall_cli
