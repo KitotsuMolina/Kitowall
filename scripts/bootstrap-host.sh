@@ -221,12 +221,54 @@ ensure_rendercore_service() {
     return
   fi
 
-  # Best effort: service may not be available in non-systemd environments.
-  if kitsune-rendercore install-service; then
-    kitsune-rendercore service enable || true
-  else
-    echo "[bootstrap] warning: failed to install kitsune-rendercore service (optional)" >&2
+  local home_dir="${HOME:?HOME is required}"
+  local user_systemd_dir="$home_dir/.config/systemd/user"
+  local app_config_dir="$home_dir/.config/kitsune-rendercore"
+  local env_dst="$app_config_dir/env"
+  local map_dst="$app_config_dir/video-map.conf"
+  local bin_path
+  bin_path="$(command -v kitsune-rendercore || true)"
+  if [[ -z "$bin_path" ]]; then
+    echo "[bootstrap] warning: kitsune-rendercore binary path not found; skipping service install" >&2
+    return
   fi
+
+  mkdir -p "$user_systemd_dir" "$app_config_dir"
+  if [[ ! -f "$env_dst" ]]; then
+    cat > "$env_dst" <<EOF
+# Kitsune RenderCore user env
+KRC_VIDEO_MAP_FILE=$map_dst
+KRC_VIDEO_FPS=30
+KRC_VIDEO_SPEED=1.0
+KRC_QUALITY=high
+KRC_PAUSE_ON_STEAM_GAME=true
+KRC_STEAM_POLL_MS=1000
+EOF
+  fi
+  if [[ ! -f "$map_dst" ]]; then
+    : > "$map_dst"
+  fi
+
+  cat > "$user_systemd_dir/kitsune-rendercore.service" <<EOF
+[Unit]
+Description=Kitsune RenderCore Live Wallpaper
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+Environment=PATH=$home_dir/.local/bin:$home_dir/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-$env_dst
+ExecStart=$bin_path
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+
+  systemctl --user daemon-reload || true
+  systemctl --user enable kitsune-rendercore.service || true
 }
 
 verify_bins() {
