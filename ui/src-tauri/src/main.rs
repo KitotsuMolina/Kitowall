@@ -217,14 +217,21 @@ fn resolve_kitsune_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
-    if let Ok(Some(host_bin)) = resolve_host_bin_path("kitsune") {
-        return vec![host_bin];
+    if let Ok(home) = host_home_dir() {
+        let user_script = PathBuf::from(format!("{home}/.local/share/kitsune/scripts/kitsune.sh"));
+        if user_script.exists() {
+            return vec![user_script.to_string_lossy().to_string()];
+        }
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let local_kitsune = manifest_dir.join("../../../Kitsune/scripts/kitsune.sh");
     if local_kitsune.exists() {
         return vec![local_kitsune.to_string_lossy().to_string()];
+    }
+
+    if let Ok(Some(host_bin)) = resolve_host_bin_path("kitsune") {
+        return vec![host_bin];
     }
 
     vec!["kitsune".to_string()]

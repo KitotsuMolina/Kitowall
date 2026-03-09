@@ -170,6 +170,66 @@ install_github_release_bin() {
   chmod 755 "$out_bin"
 }
 
+install_kitsune_bundle() {
+  local home_dir="${HOME:?HOME is required}"
+  local share_dir="$home_dir/.local/share/kitsune"
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  if ! need_cmd curl || ! need_cmd jq || ! need_cmd tar; then
+    echo "[bootstrap] missing curl/jq/tar for kitsune bundle install" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  local api_url="https://api.github.com/repos/KitotsuMolina/Kitsune/releases/latest"
+  local tar_url
+  tar_url="$(curl -fsSL "$api_url" | jq -r '.tarball_url // empty')"
+  if [[ -z "${tar_url:-}" || "$tar_url" == "null" ]]; then
+    echo "[bootstrap] kitsune release tarball URL not found" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  echo "[bootstrap] downloading kitsune bundle sources"
+  curl -fL --retry 3 --retry-delay 2 "$tar_url" -o "$tmp_dir/kitsune.tar.gz"
+  tar -xzf "$tmp_dir/kitsune.tar.gz" -C "$tmp_dir"
+  local src_dir
+  src_dir="$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  if [[ -z "${src_dir:-}" || ! -d "$src_dir/scripts" || ! -d "$src_dir/config" ]]; then
+    echo "[bootstrap] invalid kitsune source layout in tarball" >&2
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
+  mkdir -p "$share_dir"
+  rm -rf "$share_dir/scripts" "$share_dir/config" "$share_dir/completions"
+  cp -a "$src_dir/scripts" "$share_dir/"
+  cp -a "$src_dir/config" "$share_dir/"
+  [[ -d "$src_dir/completions" ]] && cp -a "$src_dir/completions" "$share_dir/" || true
+  mkdir -p "$share_dir/bin"
+
+  # Ensure scripts point to prebuilt binaries instead of local cargo build paths.
+  sed -i \
+    -e '/^echo "\[i\] Building Rust renderer\.\.\."$/d' \
+    -e '/^cargo build --release --locked --bins$/d' \
+    -e '/^cargo build --release --bins$/d' \
+    -e 's|\./target/release/kitsune-layer|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-layer|g' \
+    -e 's|\./target/release/kitsune|"${KITSUNE_BIN_DIR:-./bin}"/kitsune|g' \
+    "$share_dir/scripts/start.sh" \
+    "$share_dir/scripts/kitsune.sh"
+  sed -i -e '/^cargo build --release$/d' "$share_dir/scripts/install.sh" || true
+
+  cat > "$home_dir/.local/bin/kitsune" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$share_dir/scripts/kitsune.sh" "\$@"
+EOF
+  chmod 755 "$home_dir/.local/bin/kitsune"
+
+  rm -rf "$tmp_dir"
+}
+
 cargo_install_git_bin() {
   local repo="$1"
   local bin="$2"
@@ -193,16 +253,21 @@ cargo_install_git_bin() {
 install_kitsune_bins() {
   local home_dir="${HOME:?HOME is required}"
   local bin_dir="$home_dir/.local/bin"
+  local share_bin_dir="$home_dir/.local/share/kitsune/bin"
   local release_ok=0
+  mkdir -p "$share_bin_dir"
 
   # Prefer prebuilt binaries from GitHub Releases to avoid local toolchain/submodule issues.
-  if install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-linux-x86_64" "$bin_dir/kitsune" && \
-     install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-layer-linux-x86_64" "$bin_dir/kitsune-layer" && \
+  if install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-linux-x86_64" "$share_bin_dir/kitsune" && \
+     install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-layer-linux-x86_64" "$share_bin_dir/kitsune-layer" && \
      install_github_release_bin "KitotsuMolina/Kitsune-RenderCore" "kitsune-rendercore-linux-x86_64" "$bin_dir/kitsune-rendercore"; then
+    ln -sf "$share_bin_dir/kitsune" "$bin_dir/kitsune"
+    ln -sf "$share_bin_dir/kitsune-layer" "$bin_dir/kitsune-layer"
     release_ok=1
   fi
 
   if [[ "$release_ok" -eq 1 ]]; then
+    install_kitsune_bundle || echo "[bootstrap] warning: failed to install kitsune script bundle; falling back to raw binary command" >&2
     return
   fi
 
