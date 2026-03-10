@@ -55,9 +55,7 @@ set_root_version() {
 }
 
 set_ui_version() {
-  local version="$1"
-  npm --prefix ui version --no-git-tag-version "$version" >/dev/null
-  sed -i "0,/^version = \".*\"/s//version = \"${version}\"/" ui/src-tauri/Cargo.toml
+  ./scripts/sync-ui-version.sh
   (cd ui/src-tauri && cargo generate-lockfile)
 }
 
@@ -145,6 +143,8 @@ fi
 
 TAG="$VERSION"
 
+./scripts/sync-ui-version.sh
+
 echo "[release] building CLI package"
 npm ci
 npm run build
@@ -167,21 +167,34 @@ if [[ "$with_appimage" == true ]]; then
   if [[ -f "ui/pnpm-lock.yaml" ]]; then
     if command -v pnpm >/dev/null 2>&1; then
       pnpm -C ui install --frozen-lockfile
-      pnpm -C ui run tauri:build
     else
       corepack pnpm -C ui install --frozen-lockfile
-      corepack pnpm -C ui run tauri:build
     fi
   elif [[ -f "ui/package-lock.json" ]]; then
     npm --prefix ui ci
-    npm --prefix ui run tauri:build
   else
     npm --prefix ui install --no-audit --progress=false
-    npm --prefix ui run tauri:build
   fi
-  APPIMAGE_PATH="$(ls -1 ui/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n1 || true)"
+  find ui/src-tauri/target -type f \( -iname '*.AppImage' -o -iname '*.appimage' \) -delete
+  if [[ -f "ui/pnpm-lock.yaml" ]]; then
+    if command -v pnpm >/dev/null 2>&1; then
+      pnpm -C ui run tauri:build -- --bundles appimage
+    else
+      corepack pnpm -C ui run tauri:build -- --bundles appimage
+    fi
+  elif [[ -f "ui/package-lock.json" ]]; then
+    npm --prefix ui run tauri:build -- --bundles appimage
+  else
+    npm --prefix ui run tauri:build -- --bundles appimage
+  fi
+  APPIMAGE_PATH="$(
+    find ui/src-tauri/target -type f \( -iname '*.AppImage' -o -iname '*.appimage' \) -printf '%T@ %p\n' \
+      | sort -nr \
+      | head -n1 \
+      | cut -d' ' -f2-
+  )"
   if [[ -z "${APPIMAGE_PATH:-}" || ! -f "$APPIMAGE_PATH" ]]; then
-    echo "Expected AppImage not found in ui/src-tauri/target/release/bundle/appimage/" >&2
+    echo "Expected AppImage not found in ui/src-tauri/target/" >&2
     exit 2
   fi
   APPIMAGE_ASSET="$ASSET_DIR/Kitowall-${VERSION}-x86_64.AppImage"

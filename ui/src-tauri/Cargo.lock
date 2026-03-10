@@ -1828,7 +1828,7 @@ dependencies = [
 
 [[package]]
 name = "kitowall-ui"
-version = "1.0.7"
+version = "3.5.34"
 dependencies = [
  "base64 0.22.1",
  "rfd",

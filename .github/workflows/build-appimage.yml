@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'ui/**'
+      - 'scripts/bootstrap-host.sh'
+      - 'scripts/sync-ui-version.sh'
+      - 'package.json'
       - '.github/workflows/build-appimage.yml'
   workflow_dispatch:
 
@@ -57,6 +60,12 @@ jobs:
             npm --prefix ui install --no-audit --progress=false
           fi
 
+      - name: Sync UI version from root package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/sync-ui-version.sh
+
       - name: Build AppImage
         shell: bash
         run: |
@@ -64,17 +73,20 @@ jobs:
           export CARGO_BUILD_JOBS=1
           export CARGO_INCREMENTAL=0
           export RUSTFLAGS="-C debuginfo=0 -C codegen-units=1"
+          find ui/src-tauri/target -type f \( -iname '*.AppImage' -o -iname '*.appimage' \) -delete
           cd ui
           npm run build
           for i in 1 2; do
             if npm run tauri:build -- --bundles appimage; then
-              exit 0
+              break
+            fi
+            if [[ "$i" -eq 2 ]]; then
+              echo "tauri appimage build failed after retries"
+              exit 1
             fi
             echo "tauri appimage build failed (attempt $i), retrying..."
             sleep 15
           done
-          echo "tauri appimage build failed after retries"
-          exit 1
 
       - name: Resolve AppImage path
         id: appimage
@@ -82,7 +94,12 @@ jobs:
         run: |
           set -euo pipefail
           find ui/src-tauri/target -maxdepth 8 -type f | sort
-          APPIMAGE_PATH="$(find ui/src-tauri/target -type f -iname '*.appimage' | head -n1)"
+          APPIMAGE_PATH="$(
+            find ui/src-tauri/target -type f \( -iname '*.AppImage' -o -iname '*.appimage' \) -printf '%T@ %p\n' \
+              | sort -nr \
+              | head -n1 \
+              | cut -d' ' -f2-
+          )"
           if [[ -z "${APPIMAGE_PATH:-}" ]]; then
             echo "AppImage was not generated" >&2
             exit 1

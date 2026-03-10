@@ -69,6 +69,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ./scripts/sync-ui-version.sh
           npm ci
           npm run build
           mkdir -p dist
@@ -89,9 +90,11 @@ jobs:
           else
             npm --prefix ui install --no-audit --progress=false
           fi
+          ./scripts/sync-ui-version.sh
           export CARGO_BUILD_JOBS=1
           export CARGO_INCREMENTAL=0
           export RUSTFLAGS="-C debuginfo=0 -C codegen-units=1"
+          find ui/src-tauri/target -type f \( -iname '*.AppImage' -o -iname '*.appimage' \) -delete
           cd ui
           npm run build
           for i in 1 2; do
@@ -107,7 +110,12 @@ jobs:
           done
           cd ..
           find ui/src-tauri/target -maxdepth 8 -type f | sort
-          APPIMAGE_PATH="$(find ui/src-tauri/target -type f -iname '*.appimage' | head -n1)"
+          APPIMAGE_PATH="$(
+            find ui/src-tauri/target -type f \( -iname '*.AppImage' -o -iname '*.appimage' \) -printf '%T@ %p\n' \
+              | sort -nr \
+              | head -n1 \
+              | cut -d' ' -f2-
+          )"
           if [[ -z "${APPIMAGE_PATH:-}" ]]; then
             echo "AppImage was not generated" >&2
             exit 1
