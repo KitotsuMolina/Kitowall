@@ -319,7 +319,7 @@ EOF
 [Unit]
 Description=Kitsune RenderCore Live Wallpaper
 After=graphical-session.target
-PartOf=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
@@ -330,7 +330,7 @@ Restart=on-failure
 RestartSec=1
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 EOF
 
   systemctl --user daemon-reload || true

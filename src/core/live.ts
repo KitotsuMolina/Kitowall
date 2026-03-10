@@ -1248,7 +1248,7 @@ function ensureRendercoreServiceFiles(bin: string, defaults: LiveApplyDefaults):
     '[Unit]',
     'Description=Kitsune RenderCore Live Wallpaper',
     'After=graphical-session.target',
-    'PartOf=graphical-session.target',
+    'Wants=graphical-session.target',
     '',
     '[Service]',
     'Type=simple',
@@ -1259,7 +1259,7 @@ function ensureRendercoreServiceFiles(bin: string, defaults: LiveApplyDefaults):
     'RestartSec=1',
     '',
     '[Install]',
-    'WantedBy=graphical-session.target',
+    'WantedBy=default.target',
     ''
   ].join('\n');
   fs.writeFileSync(servicePath, serviceBody, 'utf8');
@@ -2199,29 +2199,23 @@ export async function liveServiceAutostart(
   } else if (action === 'status') {
     out = await runSystemctlUser(['status', '--no-pager', 'kitsune-rendercore.service'], true);
   } else if (action === 'enable') {
-    if (!fs.existsSync(rendercoreUserServicePath())) {
-      const binPath = await resolveHostExecutablePath(bin);
-      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
-      await runSystemctlUser(['daemon-reload']);
-    }
+    const binPath = await resolveHostExecutablePath(bin);
+    ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+    await runSystemctlUser(['daemon-reload']);
     out = await runSystemctlUser(['enable', 'kitsune-rendercore.service']);
   } else if (action === 'disable') {
     out = await runSystemctlUser(['disable', '--now', 'kitsune-rendercore.service'], true);
   } else if (action === 'start') {
-    if (!fs.existsSync(rendercoreUserServicePath())) {
-      const binPath = await resolveHostExecutablePath(bin);
-      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
-      await runSystemctlUser(['daemon-reload']);
-    }
+    const binPath = await resolveHostExecutablePath(bin);
+    ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+    await runSystemctlUser(['daemon-reload']);
     out = await runSystemctlUser(['start', 'kitsune-rendercore.service']);
   } else if (action === 'stop') {
     out = await runSystemctlUser(['stop', 'kitsune-rendercore.service'], true);
   } else {
-    if (!fs.existsSync(rendercoreUserServicePath())) {
-      const binPath = await resolveHostExecutablePath(bin);
-      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
-      await runSystemctlUser(['daemon-reload']);
-    }
+    const binPath = await resolveHostExecutablePath(bin);
+    ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+    await runSystemctlUser(['daemon-reload']);
     out = await runSystemctlUser(['restart', 'kitsune-rendercore.service']);
   }
 
