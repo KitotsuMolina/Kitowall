@@ -27,11 +27,55 @@ fn host_home_dir() -> Result<String, String> {
     std::env::var("HOME").map_err(|e| format!("HOME is not available: {e}"))
 }
 
+fn collect_nvm_bin_dirs(home: &str) -> Vec<String> {
+    let mut dirs = Vec::new();
+    let versions_root = PathBuf::from(home).join(".nvm").join("versions").join("node");
+    if let Ok(entries) = fs::read_dir(versions_root) {
+        for entry in entries.flatten() {
+            let bin_dir = entry.path().join("bin");
+            if bin_dir.is_dir() {
+                dirs.push(bin_dir.to_string_lossy().to_string());
+            }
+        }
+    }
+    dirs.sort();
+    dirs.reverse();
+    dirs
+}
+
 fn host_user_path() -> Result<String, String> {
     let home = host_home_dir()?;
-    Ok(format!(
-        "{home}/.local/bin:{home}/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
-    ))
+    let mut entries = vec![
+        format!("{home}/.local/bin"),
+        format!("{home}/.npm-global/bin"),
+        format!("{home}/.cargo/bin"),
+    ];
+    entries.extend(collect_nvm_bin_dirs(&home));
+
+    if let Some(path_os) = std::env::var_os("PATH") {
+        entries.extend(
+            std::env::split_paths(&path_os)
+                .map(|p| p.to_string_lossy().to_string())
+        );
+    }
+
+    entries.extend([
+        "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+    ]);
+
+    let mut unique = Vec::new();
+    let mut seen = HashSet::new();
+    for entry in entries {
+        let cleaned = entry.trim().to_string();
+        if cleaned.is_empty() || !seen.insert(cleaned.clone()) {
+            continue;
+        }
+        unique.push(cleaned);
+    }
+
+    Ok(unique.join(":"))
 }
 
 fn shell_output(cmdline: &str) -> Result<std::process::Output, String> {
@@ -81,6 +125,10 @@ fn resolve_kitowall_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
+    if let Ok(Some(host_cli)) = resolve_host_bin_path("kitowall") {
+        return vec![host_cli];
+    }
+
     // Prefer local project CLI (absolute path) to avoid mismatches with globally installed kitowall.
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let local_cli_abs = manifest_dir.join("../../dist/cli.js");
@@ -92,10 +140,6 @@ fn resolve_kitowall_cmd() -> Vec<String> {
     let local_cli_rel = PathBuf::from("../../dist/cli.js");
     if local_cli_rel.exists() {
         return vec!["node".to_string(), local_cli_rel.to_string_lossy().to_string()];
-    }
-
-    if let Ok(Some(host_cli)) = resolve_host_bin_path("kitowall") {
-        return vec![host_cli];
     }
 
     vec!["kitowall".to_string()]
