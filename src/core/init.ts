@@ -138,7 +138,7 @@ export async function initKitowall(opts: {
 [Unit]
 Description=swww wallpaper daemon (namespace %i)
 After=graphical-session.target
-PartOf=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
@@ -149,7 +149,7 @@ Restart=on-failure
 RestartSec=1
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 `.trimStart();
 
     writeFileSync(join(userDir, 'swww-daemon@.service'), swwwDaemonTemplate, 'utf8');
@@ -181,7 +181,7 @@ ExecStart=${nextExec}
 Description=Kitowall watcher (monitor hotplug)
 After=graphical-session.target swww-daemon@${ns}.service
 Requires=swww-daemon@${ns}.service
-PartOf=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=simple
@@ -192,7 +192,7 @@ Restart=on-failure
 RestartSec=1
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 `.trimStart();
 
     writeFileSync(join(userDir, 'kitowall-watch.service'), kitowallWatchService, 'utf8');
@@ -205,7 +205,7 @@ WantedBy=graphical-session.target
 Description=Kitowall apply wallpapers on session start
 After=graphical-session.target swww-daemon@${ns}.service
 Requires=swww-daemon@${ns}.service
-PartOf=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
 Type=oneshot
@@ -214,7 +214,7 @@ Environment=XDG_RUNTIME_DIR=${xdgRuntimeDir}
 ExecStart=${loginApplyExec}
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 `.trimStart();
 
     writeFileSync(join(userDir, 'kitowall-login-apply.service'), kitowallLoginApplyService, 'utf8');

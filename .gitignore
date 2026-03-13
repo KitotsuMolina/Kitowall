@@ -7,5 +7,5 @@
 /*.tgz
 /backups/
 /CODEX_RESUME.mdsudo -n pacman -Rns --noconfirm swww cava mpvpaper
-/ui/.vite/
+/ui/.vite/code
 /ui/package-lock.json
