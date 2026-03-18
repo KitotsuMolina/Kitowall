@@ -2,11 +2,12 @@ use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::{Mutex, OnceLock};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::time::{Duration, Instant};
 use base64::Engine as _;
 use thiserror::Error;
 use tauri::Manager;
@@ -252,14 +253,40 @@ fn normalize_release_version(input: &str) -> String {
     input.trim().trim_start_matches('v').to_string()
 }
 
+static RELEASE_CACHE: OnceLock<Mutex<HashMap<String, (Instant, Option<String>)>>> = OnceLock::new();
+
+fn release_cache() -> &'static Mutex<HashMap<String, (Instant, Option<String>)>> {
+    RELEASE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn github_latest_release_tag(repo: &str) -> Result<Option<String>, String> {
+    {
+        let cache = release_cache()
+            .lock()
+            .map_err(|_| "release cache lock poisoned".to_string())?;
+        if let Some((at, value)) = cache.get(repo) {
+            if at.elapsed() < Duration::from_secs(300) {
+                return Ok(value.clone());
+            }
+        }
+    }
+
     let url = format!("https://api.github.com/repos/{repo}/releases/latest");
     let output = host_aware_command("curl")
-        .args(["-fsSL", &url])
+        .args([
+            "-fsSL",
+            "--connect-timeout", "1",
+            "--max-time", "2",
+            "-H", "User-Agent: Kitowall-UI",
+            &url,
+        ])
         .output()
         .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
+        if let Ok(mut cache) = release_cache().lock() {
+            cache.insert(repo.to_string(), (Instant::now(), None));
+        }
         return Ok(None);
     }
 
@@ -270,6 +297,10 @@ fn github_latest_release_tag(repo: &str) -> Result<Option<String>, String> {
         .and_then(|v| v.as_str())
         .map(normalize_release_version)
         .filter(|v| !v.is_empty());
+
+    if let Ok(mut cache) = release_cache().lock() {
+        cache.insert(repo.to_string(), (Instant::now(), tag.clone()));
+    }
 
     Ok(tag)
 }
@@ -1691,11 +1722,7 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
             "installed": false,
             "error": "kitsune CLI not found on host",
             "commands": [],
-            "sections": [],
-            "versions": {
-                "kitsune": component_update_info("kitsune"),
-                "rendercore": component_update_info("kitsune-rendercore")
-            }
+            "sections": []
         }));
     }
 
@@ -1715,11 +1742,7 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
             "installed": false,
             "error": if message.is_empty() { "kitsune help failed".to_string() } else { message },
             "commands": [],
-            "sections": [],
-            "versions": {
-                "kitsune": component_update_info("kitsune"),
-                "rendercore": component_update_info("kitsune-rendercore")
-            }
+            "sections": []
         }));
     }
 
@@ -1762,11 +1785,15 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
         "ok": true,
         "installed": true,
         "commands": commands,
-        "sections": sections,
-        "versions": {
-            "kitsune": component_update_info("kitsune"),
-            "rendercore": component_update_info("kitsune-rendercore")
-        }
+        "sections": sections
+    }))
+}
+
+#[tauri::command]
+fn kitowall_kitsune_versions() -> Result<Json, String> {
+    Ok(serde_json::json!({
+        "kitsune": component_update_info("kitsune"),
+        "rendercore": component_update_info("kitsune-rendercore")
     }))
 }
 
@@ -2285,6 +2312,7 @@ fn main() {
             kitowall_preflight_install,
             kitowall_preflight_update_kitsune,
             kitowall_kitsune_status,
+            kitowall_kitsune_versions,
             kitowall_kitsune_run,
             kitowall_live_run,
             kitowall_open_path,

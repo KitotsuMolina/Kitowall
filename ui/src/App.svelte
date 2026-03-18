@@ -165,6 +165,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     };
   };
 
+  type KitsuneVersionsReport = {
+    kitsune: VersionUpdateInfo;
+    rendercore: VersionUpdateInfo;
+  };
+
   type KitsuneRunResult = {
     ok: boolean;
     exitCode: number;
@@ -4052,6 +4057,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     try {
       const data = await invoke<KitsuneStatusReport>('kitowall_kitsune_status');
       kitsuneStatus = data;
+      void loadKitsuneVersions();
       if (data.installed) {
         await loadKitsuneRuntimeOptions();
         await loadKitsuneGroupData();
@@ -4068,6 +4074,19 @@ import {onDestroy, onMount, tick} from 'svelte';
       pushToast(String(e), 'error');
     } finally {
       kitsuneBusy = false;
+    }
+  }
+
+  async function loadKitsuneVersions(): Promise<void> {
+    try {
+      const versions = await invoke<KitsuneVersionsReport>('kitowall_kitsune_versions');
+      if (!kitsuneStatus) return;
+      kitsuneStatus = {
+        ...kitsuneStatus,
+        versions
+      };
+    } catch {
+      // Keep the module responsive; version checks are non-critical.
     }
   }
 
