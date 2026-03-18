@@ -898,9 +898,6 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (id === 'logs') {
       void loadSystemLogs();
     }
-    if (id === 'kitsune') {
-      void loadKitsuneStatus();
-    }
     if (id === 'kitsune-live') {
       void initLiveV2().then(() => {
         if (liveV2Tab === 'explore') {
@@ -4049,6 +4046,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (id === 'group' && kitsuneStatus?.installed) {
       void loadKitsuneGroupData();
     }
+    if ((id === 'core' || id === 'profiles' || id === 'visual' || id === 'render' || id === 'monitors' || id === 'system') && kitsuneStatus?.installed) {
+      void loadKitsuneRuntimeOptions();
+    }
   }
 
   async function loadKitsuneStatus(): Promise<void> {
@@ -4058,10 +4058,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       const data = await invoke<KitsuneStatusReport>('kitowall_kitsune_status');
       kitsuneStatus = data;
       void loadKitsuneVersions();
-      if (data.installed) {
-        await loadKitsuneRuntimeOptions();
-        await loadKitsuneGroupData();
-      } else {
+      if (!data.installed) {
         kitsuneMonitorOptions = [];
         kitsuneProfileOptions = [];
         kitsuneStartProfilesSelected = [];
