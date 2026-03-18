@@ -232,6 +232,67 @@ fn run_kitowall_raw_owned(args: Vec<String>) -> Result<String, UiError> {
     Ok(stdout)
 }
 
+fn bootstrap_versions_path() -> Result<PathBuf, String> {
+    Ok(PathBuf::from(host_home_dir()?).join(".local/share/kitowall/bootstrap-versions.json"))
+}
+
+fn read_bootstrap_version(component: &str) -> Option<String> {
+    let path = bootstrap_versions_path().ok()?;
+    let raw = fs::read_to_string(path).ok()?;
+    let data: Json = serde_json::from_str(&raw).ok()?;
+    let version = data.get(component)?.get("version")?.as_str()?.trim();
+    if version.is_empty() {
+        None
+    } else {
+        Some(version.to_string())
+    }
+}
+
+fn normalize_release_version(input: &str) -> String {
+    input.trim().trim_start_matches('v').to_string()
+}
+
+fn github_latest_release_tag(repo: &str) -> Result<Option<String>, String> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let output = host_aware_command("curl")
+        .args(["-fsSL", &url])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let data: Json = serde_json::from_str(&stdout).map_err(|e| e.to_string())?;
+    let tag = data
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .map(normalize_release_version)
+        .filter(|v| !v.is_empty());
+
+    Ok(tag)
+}
+
+fn component_update_info(id: &str) -> Json {
+    let repo = match id {
+        "kitsune" => Some("KitotsuMolina/Kitsune"),
+        "kitsune-rendercore" => Some("KitotsuMolina/Kitsune-RenderCore"),
+        _ => None,
+    };
+
+    let local_version = read_bootstrap_version(id);
+    let latest_version = repo
+        .and_then(|r| github_latest_release_tag(r).ok().flatten());
+    let update_available = matches!((&local_version, &latest_version), (Some(local), Some(latest)) if local != latest);
+
+    serde_json::json!({
+        "local_version": local_version,
+        "latest_version": latest_version,
+        "update_available": update_available
+    })
+}
+
 #[tauri::command]
 fn kitowall_preflight_status() -> Result<Json, String> {
     let checks = [
@@ -252,7 +313,8 @@ fn kitowall_preflight_status() -> Result<Json, String> {
             "bin": bin,
             "optional": optional,
             "installed": !path.is_empty(),
-            "path": path
+            "path": path,
+            "update": component_update_info(id)
         }));
     }
 
@@ -350,6 +412,48 @@ fn kitowall_preflight_install(namespace: Option<String>) -> Result<Json, String>
         "kitowall_config": format!("{}/.config/kitowall", home),
         "rendercore_env": format!("{}/.config/kitsune-rendercore/env", home)
       }
+    }))
+}
+
+#[tauri::command]
+fn kitowall_preflight_update_kitsune(namespace: Option<String>) -> Result<Json, String> {
+    let ns = namespace.unwrap_or_else(|| "kitowall".to_string());
+    let home = host_home_dir()?;
+    let tmp_script = PathBuf::from(format!("/tmp/kitowall-bootstrap-kitsune-{}.sh", std::process::id()));
+
+    {
+        let mut f = fs::File::create(&tmp_script).map_err(|e| e.to_string())?;
+        f.write_all(BOOTSTRAP_HOST_SH.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let mut perms = fs::metadata(&tmp_script).map_err(|e| e.to_string())?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&tmp_script, perms).map_err(|e| e.to_string())?;
+
+    let path = host_user_path()?;
+    let bootstrap_out = host_aware_command("bash")
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .env("KITOWALL_BOOTSTRAP_MODE", "kitsune-only")
+        .arg(tmp_script.to_string_lossy().to_string())
+        .output()
+        .map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&tmp_script);
+
+    let mut logs = String::new();
+    logs.push_str(&String::from_utf8_lossy(&bootstrap_out.stdout));
+    logs.push_str(&String::from_utf8_lossy(&bootstrap_out.stderr));
+
+    let deps = kitowall_preflight_status()?;
+    let kitsune = kitowall_kitsune_status()?;
+
+    Ok(serde_json::json!({
+        "ok": bootstrap_out.status.success(),
+        "step": "bootstrap-kitsune",
+        "code": bootstrap_out.status.code().unwrap_or(1),
+        "namespace": ns,
+        "logs": logs,
+        "deps": deps,
+        "kitsune": kitsune
     }))
 }
 
@@ -1587,7 +1691,11 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
             "installed": false,
             "error": "kitsune CLI not found on host",
             "commands": [],
-            "sections": []
+            "sections": [],
+            "versions": {
+                "kitsune": component_update_info("kitsune"),
+                "rendercore": component_update_info("kitsune-rendercore")
+            }
         }));
     }
 
@@ -1607,7 +1715,11 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
             "installed": false,
             "error": if message.is_empty() { "kitsune help failed".to_string() } else { message },
             "commands": [],
-            "sections": []
+            "sections": [],
+            "versions": {
+                "kitsune": component_update_info("kitsune"),
+                "rendercore": component_update_info("kitsune-rendercore")
+            }
         }));
     }
 
@@ -1650,7 +1762,11 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
         "ok": true,
         "installed": true,
         "commands": commands,
-        "sections": sections
+        "sections": sections,
+        "versions": {
+            "kitsune": component_update_info("kitsune"),
+            "rendercore": component_update_info("kitsune-rendercore")
+        }
     }))
 }
 
@@ -2167,6 +2283,7 @@ fn main() {
             kitowall_pick_folder,
             kitowall_preflight_status,
             kitowall_preflight_install,
+            kitowall_preflight_update_kitsune,
             kitowall_kitsune_status,
             kitowall_kitsune_run,
             kitowall_live_run,

@@ -8,6 +8,10 @@ KITSUNE_REPO="${KITSUNE_REPO:-https://github.com/KitotsuMolina/Kitsune.git}"
 KITSUNE_RENDERCORE_REPO="${KITSUNE_RENDERCORE_REPO:-https://github.com/KitotsuMolina/Kitsune-RenderCore.git}"
 KITSUNE_TAG="${KITSUNE_TAG:-}"
 KITSUNE_RENDERCORE_TAG="${KITSUNE_RENDERCORE_TAG:-}"
+KITOWALL_BOOTSTRAP_MODE="${KITOWALL_BOOTSTRAP_MODE:-full}"
+
+BOOTSTRAP_KITSUNE_VERSION=""
+BOOTSTRAP_RENDERCORE_VERSION=""
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -140,6 +144,16 @@ install_github_release_bin() {
   chmod 755 "$out_bin"
 }
 
+latest_release_tag() {
+  local repo="$1"
+
+  if ! need_cmd curl || ! need_cmd jq; then
+    return 1
+  fi
+
+  curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" | jq -r '.tag_name // empty'
+}
+
 install_kitsune_bundle() {
   local home_dir="${HOME:?HOME is required}"
   local share_dir="$home_dir/.local/share/kitsune"
@@ -234,6 +248,8 @@ install_kitsune_bins() {
      install_github_release_bin "KitotsuMolina/Kitsune-RenderCore" "kitsune-rendercore-linux-x86_64" "$bin_dir/kitsune-rendercore"; then
     ln -sf "$share_bin_dir/kitsune" "$bin_dir/kitsune"
     ln -sf "$share_bin_dir/kitsune-layer" "$bin_dir/kitsune-layer"
+    BOOTSTRAP_KITSUNE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune" | sed 's/^v//')"
+    BOOTSTRAP_RENDERCORE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune-RenderCore" | sed 's/^v//')"
     release_ok=1
   fi
 
@@ -249,6 +265,8 @@ install_kitsune_bins() {
   fi
   cargo_install_git_bin "$KITSUNE_REPO" kitsune "" "$KITSUNE_TAG"
   cargo_install_git_bin "$KITSUNE_RENDERCORE_REPO" kitsune-rendercore "--features wayland-layer" "$KITSUNE_RENDERCORE_TAG"
+  BOOTSTRAP_KITSUNE_VERSION="${KITSUNE_TAG#v}"
+  BOOTSTRAP_RENDERCORE_VERSION="${KITSUNE_RENDERCORE_TAG#v}"
 }
 
 ensure_rendercore_service() {
@@ -308,7 +326,12 @@ EOF
 }
 
 verify_bins() {
-  local required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
+  local required_bins=()
+  if [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-only" ]]; then
+    required_bins=(kitsune kitsune-rendercore)
+  else
+    required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
+  fi
   local missing=()
   for b in "${required_bins[@]}"; do
     if ! need_cmd "$b"; then
@@ -322,6 +345,26 @@ verify_bins() {
   fi
 }
 
+write_bootstrap_versions() {
+  local home_dir="${HOME:?HOME is required}"
+  local state_dir="$home_dir/.local/share/kitowall"
+  local state_file="$state_dir/bootstrap-versions.json"
+
+  mkdir -p "$state_dir"
+  cat > "$state_file" <<EOF
+{
+  "kitsune": {
+    "version": "${BOOTSTRAP_KITSUNE_VERSION}",
+    "source": "${KITOWALL_BOOTSTRAP_MODE}"
+  },
+  "kitsune-rendercore": {
+    "version": "${BOOTSTRAP_RENDERCORE_VERSION}",
+    "source": "${KITOWALL_BOOTSTRAP_MODE}"
+  }
+}
+EOF
+}
+
 main() {
   # Some launchers provide a stale/non-existent CWD; recover to HOME.
   cd "${HOME:?HOME is required}" || true
@@ -330,10 +373,13 @@ main() {
   unset PYTHONPATH || true
 
   ensure_user_bin_dirs
-  install_system_deps
-  install_kitowall_cli
+  if [[ "$KITOWALL_BOOTSTRAP_MODE" != "kitsune-only" ]]; then
+    install_system_deps
+    install_kitowall_cli
+  fi
   install_kitsune_bins
   ensure_rendercore_service
+  write_bootstrap_versions
   verify_bins
   echo "[ok] host bootstrap complete"
   echo "[paths] HOME=$HOME"

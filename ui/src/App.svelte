@@ -19,6 +19,13 @@ import {onDestroy, onMount, tick} from 'svelte';
     optional?: boolean;
     installed: boolean;
     path: string;
+    update?: VersionUpdateInfo;
+  };
+
+  type VersionUpdateInfo = {
+    local_version?: string;
+    latest_version?: string;
+    update_available: boolean;
   };
 
   type PreflightStatus = {
@@ -152,6 +159,10 @@ import {onDestroy, onMount, tick} from 'svelte';
     error?: string;
     commands: string[];
     sections: string[];
+    versions?: {
+      kitsune: VersionUpdateInfo;
+      rendercore: VersionUpdateInfo;
+    };
   };
 
   type KitsuneRunResult = {
@@ -345,6 +356,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let preflight: PreflightStatus | null = null;
   let preflightDeps: PreflightDepUi[] = [];
   let preflightBusy = false;
+  let kitsuneUpdateBusy = false;
   let preflightLogs: ActionLogItem[] = [];
   let preflightUpdatedAt: number | null = null;
   let status: StatusReport | null = null;
@@ -768,12 +780,30 @@ import {onDestroy, onMount, tick} from 'svelte';
     return tr('not found on host', 'no encontrado en host');
   }
 
+  function preflightVersionLabel(dep: PreflightDepUi): string {
+    const update = dep.update;
+    if (!update) return '';
+    const local = update.local_version?.trim() || '?';
+    const latest = update.latest_version?.trim();
+    if (latest && latest !== local) return `v${local} -> v${latest}`;
+    if (update.local_version) return `v${local}`;
+    if (latest) return `${tr('latest', 'ultima')}: v${latest}`;
+    return '';
+  }
+
   function preflightMissingDeps(): PreflightDepUi[] {
     return preflightDeps.filter(dep => dep.state !== 'ok' && !dep.optional);
   }
 
   function preflightNeedsInstaller(): boolean {
     return preflightDeps.length > 0 && preflightMissingDeps().length > 0;
+  }
+
+  function preflightKitsuneUpdatesAvailable(): boolean {
+    return preflightDeps.some(dep =>
+      (dep.id === 'kitsune' || dep.id === 'kitsune-rendercore') &&
+      dep.update?.update_available === true
+    );
   }
 
   function healthNeedsInstaller(): boolean {
@@ -4323,6 +4353,50 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
   }
 
+  async function runKitsuneUpdate() {
+    if (kitsuneUpdateBusy) return;
+    kitsuneUpdateBusy = true;
+    preflightBusy = true;
+    busy = true;
+    lastError = null;
+    pushPreflightLog(tr('Starting Kitsune update flow', 'Iniciando actualizacion de Kitsune'), 'info');
+    try {
+      pushPreflightLog('> bootstrap-host.sh (kitsune-only)', 'info');
+      const bootstrap = await invoke<PreflightInstallResult>('kitowall_preflight_update_kitsune', {namespace});
+      const rawLogs = String(bootstrap.logs ?? '').trim();
+      if (rawLogs) {
+        for (const line of rawLogs.split('\n')) {
+          const text = line.trim();
+          if (!text) continue;
+          const kind: 'info' | 'success' | 'error' =
+            text.includes('[ok]') ? 'success' :
+            text.includes('missing') || text.includes('error') || text.includes('failed') ? 'error' :
+            'info';
+          pushPreflightLog(text, kind);
+        }
+      }
+      if (!bootstrap.ok) {
+        throw new Error(
+          `kitsune update failed (code=${bootstrap.code ?? 1}). ` +
+          tr('Check installer logs in the right panel.', 'Revisa los logs del instalador en el panel derecho.')
+        );
+      }
+      pushPreflightLog(tr('Kitsune update completed', 'Actualizacion de Kitsune completada'), 'success');
+      pushToast(tr('Kitsune components updated', 'Componentes de Kitsune actualizados'), 'success');
+      await loadPreflightStatus();
+      await loadKitsuneStatus();
+    } catch (e) {
+      const msg = String(e);
+      lastError = msg;
+      pushPreflightLog(msg, 'error');
+      pushToast(msg, 'error');
+    } finally {
+      busy = false;
+      preflightBusy = false;
+      kitsuneUpdateBusy = false;
+    }
+  }
+
   async function runHydratePack() {
     const count = Math.floor(hydrateCount);
     if (!Number.isFinite(count) || count <= 0) {
@@ -4594,7 +4668,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     {/if}
 
     {#if activeSection === 'control'}
-      {#if shouldShowPreflightInstaller()}
+        {#if shouldShowPreflightInstaller()}
         <h2>{tr('Dependency Installer', 'Instalador de Dependencias')}</h2>
         <div class="preflight-layout">
           <div class="card preflight-main">
@@ -4615,6 +4689,9 @@ import {onDestroy, onMount, tick} from 'svelte';
                   <div class="preflight-dep-main">
                     <span class="preflight-dep-name">{dep.bin}</span>
                     <span class="preflight-dep-path">{preflightPathLabel(dep)}</span>
+                    {#if preflightVersionLabel(dep)}
+                      <span class="preflight-dep-path">{preflightVersionLabel(dep)}</span>
+                    {/if}
                   </div>
                   <span class={`badge status ${preflightBadgeState(dep)}`}>{preflightStatusLabel(dep)}</span>
                 </div>
@@ -4624,6 +4701,11 @@ import {onDestroy, onMount, tick} from 'svelte';
               <button on:click={runPreflightInstall} disabled={preflightBusy || isLiveServicesLocked()}>
                 {preflightBusy ? tr('Installing...', 'Instalando...') : tr('Install Dependencies', 'Instalar Dependencias')}
               </button>
+              {#if preflightKitsuneUpdatesAvailable()}
+                <button class="secondary" on:click={runKitsuneUpdate} disabled={preflightBusy || kitsuneUpdateBusy}>
+                  {kitsuneUpdateBusy ? tr('Updating...', 'Actualizando...') : tr('Update Kitsune', 'Actualizar Kitsune')}
+                </button>
+              {/if}
               <button class="secondary" on:click={runHealth} disabled={preflightBusy}>{tr('Recheck Health', 'Revisar Health')}</button>
               {#if preflightUpdatedAt}
                 <span class="badge">{tr('last check', 'ultima revision')}: {formatTimestamp(preflightUpdatedAt)}</span>
@@ -4632,6 +4714,14 @@ import {onDestroy, onMount, tick} from 'svelte';
                 {tr('missing', 'faltantes')}: {preflightMissingDeps().length}
               </span>
             </div>
+            {#if preflightKitsuneUpdatesAvailable()}
+              <p class="muted">
+                {tr(
+                  'A newer release of Kitsune or RenderCore is available on GitHub.',
+                  'Hay una release mas nueva de Kitsune o RenderCore disponible en GitHub.'
+                )}
+              </p>
+            {/if}
           </div>
           <div class="card preflight-logs">
             <h3>{tr('Installation Logs', 'Logs de Instalacion')}</h3>
@@ -5977,6 +6067,9 @@ import {onDestroy, onMount, tick} from 'svelte';
           <button class="secondary" on:click={() => runKitsuneCommand(['help'])} disabled={kitsuneBusy}>
             {tr('Reload Commands', 'Recargar Comandos')}
           </button>
+          <button class="secondary" on:click={runKitsuneUpdate} disabled={kitsuneBusy || kitsuneUpdateBusy}>
+            {kitsuneUpdateBusy ? tr('Updating...', 'Actualizando...') : tr('Update Kitsune', 'Actualizar Kitsune')}
+          </button>
         </div>
         {#if kitsuneBusy}
           <p class="muted">{tr('Checking Kitsune installation...', 'Validando instalacion de Kitsune...')}</p>
@@ -5987,9 +6080,26 @@ import {onDestroy, onMount, tick} from 'svelte';
             </span>
             <span class="badge">{tr('commands detected', 'comandos detectados')}: {kitsuneStatus.commands.length}</span>
           </div>
+          <div class="row">
+            <span class={`badge status ${kitsuneStatus.versions?.kitsune?.update_available ? 'warn' : 'ok'}`}>
+              Kitsune: {kitsuneStatus.versions?.kitsune?.local_version ? `v${kitsuneStatus.versions?.kitsune?.local_version}` : tr('unknown', 'desconocida')}
+              {#if kitsuneStatus.versions?.kitsune?.latest_version}
+                {' '}→ v{kitsuneStatus.versions?.kitsune?.latest_version}
+              {/if}
+            </span>
+            <span class={`badge status ${kitsuneStatus.versions?.rendercore?.update_available ? 'warn' : 'ok'}`}>
+              RenderCore: {kitsuneStatus.versions?.rendercore?.local_version ? `v${kitsuneStatus.versions?.rendercore?.local_version}` : tr('unknown', 'desconocida')}
+              {#if kitsuneStatus.versions?.rendercore?.latest_version}
+                {' '}→ v{kitsuneStatus.versions?.rendercore?.latest_version}
+              {/if}
+            </span>
+          </div>
           {#if !kitsuneStatus.installed}
             <p class="muted">{kitsuneStatus.error ?? tr('Kitsune is not available in PATH.', 'Kitsune no esta disponible en PATH.')}</p>
           {:else}
+            {#if kitsuneStatus.versions?.kitsune?.update_available || kitsuneStatus.versions?.rendercore?.update_available}
+              <p class="muted">{tr('A newer Kitsune release was detected. Use "Update Kitsune" to refresh host binaries.', 'Se detecto una release mas nueva de Kitsune. Usa "Actualizar Kitsune" para refrescar los binarios del host.')}</p>
+            {/if}
             <p class="muted">{tr('Kitsune is installed. Use top tabs to access each submodule.', 'Kitsune esta instalado. Usa las tabs de arriba para entrar a cada submodulo.')}</p>
             <div class="kitsune-tabs">
               <button class={`kitsune-tab ${kitsuneTab === 'core' ? 'active' : ''}`} on:click={() => selectKitsuneTab('core')}>Core</button>
