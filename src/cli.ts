@@ -154,9 +154,9 @@ Commands:
   we sync-steam                          Sync local Steam Workshop 431960 items into Kitsune downloads
   we app-status                          Detect if Wallpaper Engine is installed in Steam
   we active                              Show current livewallpaper authority/lock state
-  we apply <id> --monitor <name> [--backend auto|mpvpaper]
+  we apply <id> --monitor <name>
                                          Apply video live wallpaper on one monitor
-  we apply --map DP-1:<id1>,HDMI-A-1:<id2> [--backend auto|mpvpaper]
+  we apply --map DP-1:<id1>,HDMI-A-1:<id2>
                                          Apply wallpapers in batch by monitor map
   we stop [--monitor <name> | --all]     Stop livewallpaper instances and restore previous services
   we coexist enter|exit|status           Temporarily stop/restore wallpaper rotation services
@@ -526,7 +526,7 @@ async function main(): Promise<void> {
       const id = cleanOpt(args[2] ?? null);
       const monitor = cleanOpt(getOptionValue(args, '--monitor'));
       if (!id || !monitor) {
-        throw new Error('Usage: we apply <id> --monitor <name> [--backend auto|mpvpaper] OR we apply --map DP-1:<id1>,HDMI-A-1:<id2>');
+        throw new Error('Usage: we apply <id> --monitor <name> OR we apply --map DP-1:<id1>,HDMI-A-1:<id2>');
       }
       const out = await workshopApply({id, monitor, backend});
       console.log(JSON.stringify(out, null, 2));

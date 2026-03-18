@@ -77,35 +77,6 @@ install_arch_deps() {
   echo "[bootstrap] installing Arch repo packages: ${repo_pkgs[*]}"
   wait_pacman_lock
   run_sudo pacman -S --needed --noconfirm "${repo_pkgs[@]}"
-
-  if need_cmd mpvpaper; then
-    echo "[bootstrap] mpvpaper already installed"
-    return
-  fi
-
-  # mpvpaper is typically distributed via AUR on Arch.
-  if need_cmd yay; then
-    echo "[bootstrap] installing AUR package: mpvpaper (yay)"
-    if env -u PYTHONHOME -u PYTHONPATH HOME="${HOME}" \
-      yay -S --needed --noconfirm --answerclean None --answerdiff None mpvpaper; then
-      return
-    fi
-    echo "[bootstrap] warning: failed to install mpvpaper via yay (optional dependency)" >&2
-    return
-  fi
-  if need_cmd paru; then
-    echo "[bootstrap] installing AUR package: mpvpaper (paru)"
-    if env -u PYTHONHOME -u PYTHONPATH HOME="${HOME}" \
-      paru -S --needed --noconfirm --skipreview mpvpaper; then
-      return
-    fi
-    echo "[bootstrap] warning: failed to install mpvpaper via paru (optional dependency)" >&2
-    return
-  fi
-
-  echo "[bootstrap] warning: mpvpaper is missing and no AUR helper was found (yay/paru)." >&2
-  echo "[bootstrap] warning: continue without mpvpaper (optional)." >&2
-  return
 }
 
 install_ubuntu_deps() {
@@ -113,7 +84,6 @@ install_ubuntu_deps() {
     nodejs npm
     rustc cargo
     jq curl git
-    mpv
     cava
   )
   echo "[bootstrap] installing Debian/Ubuntu packages: ${pkgs[*]}"
@@ -130,7 +100,7 @@ install_system_deps() {
     install_ubuntu_deps
     return
   fi
-  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo swww hyprland mpvpaper cava" >&2
+  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo swww hyprland cava" >&2
   exit 1
 }
 
@@ -339,7 +309,6 @@ EOF
 
 verify_bins() {
   local required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
-  local optional_bins=(mpvpaper)
   local missing=()
   for b in "${required_bins[@]}"; do
     if ! need_cmd "$b"; then
@@ -350,16 +319,6 @@ verify_bins() {
   if ((${#missing[@]} > 0)); then
     echo "[bootstrap] missing binaries after bootstrap: ${missing[*]}" >&2
     exit 2
-  fi
-
-  local optional_missing=()
-  for b in "${optional_bins[@]}"; do
-    if ! need_cmd "$b"; then
-      optional_missing+=("$b")
-    fi
-  done
-  if ((${#optional_missing[@]} > 0)); then
-    echo "[bootstrap] optional binaries missing: ${optional_missing[*]}" >&2
   fi
 }
 

@@ -431,7 +431,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneVisibleProfileOptions: string[] = [];
   let kitsuneStartProfilesSelected: string[] = [];
   let kitsuneStartProfilesOpen = false;
-  let kitsuneStartTarget: 'mpvpaper' | 'layer-shell' = 'mpvpaper';
+  let kitsuneStartTarget: 'layer-shell' = 'layer-shell';
   let kitsuneStartMode: 'bars' | 'ring' = 'bars';
   let kitsuneInstallPackages = false;
   let kitsuneProfilesMode: 'bars' | 'ring' | 'all' = 'all';
@@ -479,7 +479,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsunePostfxScope: 'final' | 'layer' | 'mixed' = 'mixed';
   let kitsuneParticlesPreset: 'off' | 'low' | 'balanced' | 'high' = 'balanced';
   let kitsuneBackend: 'cpu' | 'gpu' = 'gpu';
-  let kitsuneOutputTarget: 'mpvpaper' | 'layer-shell' = 'mpvpaper';
+  let kitsuneOutputTarget: 'layer-shell' = 'layer-shell';
   let kitsuneSpectrumMode: 'single' | 'group' = 'single';
   let kitsuneRuntime: 'standard' | 'test' = 'standard';
   let kitsuneMonitorName = '';
@@ -500,7 +500,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneAutostartMonitorFilter = '';
   let kitsuneVisibleAutostartMonitorOptions: string[] = [];
   let kitsuneBenchmarkSeconds = 10;
-  let kitsuneLogSource: 'renderer' | 'cava' | 'layer' | 'mpvpaper' | 'colorwatch' | 'monitorwatch' | 'all' = 'all';
+  let kitsuneLogSource: 'renderer' | 'cava' | 'layer' | 'colorwatch' | 'monitorwatch' | 'all' = 'all';
   let kitsuneLogLines = 120;
   let kitsuneLogAllInstances = false;
   let kitsuneLogFollow = false;
@@ -765,12 +765,6 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function preflightPathLabel(dep: PreflightDepUi): string {
     if (dep.path) return dep.path;
-    if (dep.bin === 'mpvpaper') {
-      return tr(
-        'not found on host (install manually with yay -S mpvpaper)',
-        'no encontrado en host (instalar manualmente con yay -S mpvpaper)'
-      );
-    }
     return tr('not found on host', 'no encontrado en host');
   }
 
@@ -2999,18 +2993,68 @@ import {onDestroy, onMount, tick} from 'svelte';
     return clean.endsWith('.group') ? clean : `${clean}.group`;
   }
 
+  function parseKitsuneConfigMap(stdout: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const lineRaw of stdout.split('\n')) {
+      const line = lineRaw.trim();
+      if (!line || !line.includes('=')) continue;
+      const idx = line.indexOf('=');
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (!key) continue;
+      out[key] = value;
+    }
+    return out;
+  }
+
   async function loadKitsuneRuntimeOptions(): Promise<void> {
     try {
-      const [monitorsResult, profilesResult] = await Promise.all([
+      const [monitorsResult, profilesResult, configResult] = await Promise.all([
         invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['monitors', 'list']}),
-        invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['profiles', 'list', 'all']})
+        invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['profiles', 'list', 'all']}),
+        invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['config', 'list', '--effective']})
       ]);
 
       const monitors = monitorsResult.ok ? parseKitsuneMonitors(monitorsResult.stdout ?? '') : [];
       const profiles = profilesResult.ok ? parseKitsuneProfiles(profilesResult.stdout ?? '') : [];
+      const configMap = configResult.ok ? parseKitsuneConfigMap(configResult.stdout ?? '') : {};
 
       kitsuneMonitorOptions = monitors;
       kitsuneProfileOptions = profiles;
+
+      const cfgTarget = configMap.output_target;
+      if (cfgTarget === 'layer-shell') {
+        kitsuneStartTarget = cfgTarget;
+        kitsuneOutputTarget = cfgTarget;
+      }
+
+      const cfgBackend = configMap.backend;
+      if (cfgBackend === 'cpu' || cfgBackend === 'gpu') {
+        kitsuneBackend = cfgBackend;
+      }
+
+      const cfgSpectrum = configMap.spectrum_mode;
+      if (cfgSpectrum === 'single' || cfgSpectrum === 'group') {
+        kitsuneSpectrumMode = cfgSpectrum;
+      }
+
+      const cfgRuntime = configMap.runtime_mode;
+      if (cfgRuntime === 'standard' || cfgRuntime === 'test') {
+        kitsuneRuntime = cfgRuntime;
+      }
+
+      const cfgMode = configMap.mode;
+      if (cfgMode === 'bars' || cfgMode === 'ring') {
+        kitsuneStartMode = cfgMode;
+        kitsuneVisualMode = cfgMode;
+        kitsuneTuneMode = cfgMode;
+      }
+
+      const cfgMonitor = configMap.monitor_selected || configMap.monitor;
+      if (cfgMonitor) {
+        kitsuneStartMonitor = cfgMonitor;
+        kitsuneMonitorName = cfgMonitor;
+      }
 
       if (kitsuneStartMonitor && !monitors.includes(kitsuneStartMonitor)) kitsuneStartMonitor = '';
       if (kitsuneMonitorName && !monitors.includes(kitsuneMonitorName)) kitsuneMonitorName = '';
@@ -6058,7 +6102,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                       {/if}
                     </div>
                     <span class="field-label">{tr('target', 'objetivo')}</span>
-                    <select bind:value={kitsuneStartTarget}><option value="mpvpaper">mpvpaper</option><option value="layer-shell">layer-shell</option></select>
+                    <select bind:value={kitsuneStartTarget}><option value="layer-shell">layer-shell</option></select>
                     <span class="field-label">{tr('mode', 'modo')}</span>
                     <select bind:value={kitsuneStartMode}><option value="bars">bars</option><option value="ring">ring</option></select>
                   </div>
@@ -6415,7 +6459,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                   <div class="row">
                     <select bind:value={kitsuneBackend}><option value="cpu">cpu</option><option value="gpu">gpu</option></select>
                     <button class="secondary" on:click={() => runKitsuneCommand(['backend', kitsuneBackend])} disabled={kitsuneBusy}>Set Backend</button>
-                    <select bind:value={kitsuneOutputTarget}><option value="mpvpaper">mpvpaper</option><option value="layer-shell">layer-shell</option></select>
+                    <select bind:value={kitsuneOutputTarget}><option value="layer-shell">layer-shell</option></select>
                     <button class="secondary" on:click={() => runKitsuneCommand(['output-target', kitsuneOutputTarget])} disabled={kitsuneBusy}>Set Output Target</button>
                   </div>
                   <div class="row">
@@ -6582,7 +6626,6 @@ import {onDestroy, onMount, tick} from 'svelte';
                       <option value="renderer">renderer</option>
                       <option value="cava">cava</option>
                       <option value="layer">layer</option>
-                      <option value="mpvpaper">mpvpaper</option>
                       <option value="colorwatch">colorwatch</option>
                       <option value="monitorwatch">monitorwatch</option>
                     </select>

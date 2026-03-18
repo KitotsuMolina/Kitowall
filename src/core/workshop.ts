@@ -1096,7 +1096,6 @@ async function stopKnownLiveProcesses(): Promise<void> {
   // Live V2 can run wallpapers without registering pids in workshop active-state.
   // Stop common runtime processes as best-effort fallback.
   const patterns = [
-    'mpvpaper',
     'kitsune-livewallpaper',
     'kitsune-rendercore'
   ];
@@ -1415,31 +1414,6 @@ export function workshopLibrary(): {
   return {root: paths.downloads, items};
 }
 
-function spawnMpvpaper(monitor: string, entry: string): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    const child = spawn('mpvpaper', ['-o', 'no-audio --loop-file=inf', monitor, entry], {
-      detached: true,
-      stdio: 'ignore',
-      env: process.env
-    });
-
-    let settled = false;
-    const done = (fn: () => void): void => {
-      if (settled) return;
-      settled = true;
-      fn();
-    };
-
-    child.once('error', (err) => done(() => reject(err)));
-    setTimeout(() => {
-      done(() => {
-        child.unref();
-        resolve(child.pid ?? 0);
-      });
-    }, 180);
-  });
-}
-
 export async function workshopApply(input: {id: string; monitor: string; backend?: string}): Promise<{
   ok: true;
   applied: true;
@@ -1467,51 +1441,19 @@ export async function workshopApply(input: {id: string; monitor: string; backend
     ? project.type
     : detectTypeFromEntry(inferredEntry ?? path.join(dir, 'scene.json'));
 
+  if (requestedBackend !== 'auto') {
+    throw new Error(`Invalid backend for video wallpaper: ${requestedBackend}. Wallpaper Engine apply no longer supports custom backends.`);
+  }
   if (type !== 'video') {
-    throw new Error(`Unsupported wallpaper type for apply: ${type}. Supported: video (mpvpaper).`);
-  }
-
-  let state = readActiveState();
-  if (!state) {
-    const coexist = await workshopCoexistenceEnter();
-    state = {
-      mode: 'livewallpaper',
-      started_at: now(),
-      snapshot_id: coexist.snapshot_id,
-      instances: {}
-    };
-  }
-
-  const current = state.instances[monitor];
-  if (current?.pid) {
-    killPid(current.pid);
-  }
-
-  let backend: string;
-  let pid = 0;
-  if (!(requestedBackend === 'auto' || requestedBackend === 'mpvpaper')) {
-    throw new Error(`Invalid backend for video wallpaper: ${requestedBackend}`);
+    throw new Error(`Unsupported wallpaper type for apply: ${type}. Only video items can be migrated to the LiveWallpapers library.`);
   }
   if (!inferredEntry || !fs.existsSync(inferredEntry)) {
     throw new Error(`Video entry not found for wallpaper: ${id}`);
   }
-  backend = 'mpvpaper';
-  pid = await spawnMpvpaper(monitor, inferredEntry).catch((err) => {
-    throw new Error(`Failed to launch mpvpaper: ${err instanceof Error ? err.message : String(err)}`);
-  });
 
-  if (!pid) {
-    throw new Error(`${backend} started without pid`);
-  }
-
-  state.instances[monitor] = {
-    id,
-    pid,
-    backend,
-    type
-  };
-  writeActiveState(state);
-  return {ok: true, applied: true, monitor, id, backend, pid, state};
+  throw new Error(
+    'Wallpaper Engine direct apply was removed. Import the video into LiveWallpapers and apply it with rendercore instead.'
+  );
 }
 
 export async function workshopApplyMap(input: {map: string; backend?: string}): Promise<{

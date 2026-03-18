@@ -241,7 +241,6 @@ fn kitowall_preflight_status() -> Result<Json, String> {
         ("swww", "swww", false),
         ("swww-daemon", "swww-daemon", false),
         ("hyprctl", "hyprctl", false),
-        ("mpvpaper", "mpvpaper", true),
         ("cava", "cava", false),
     ];
 
