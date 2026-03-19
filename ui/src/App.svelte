@@ -3068,8 +3068,8 @@ import {onDestroy, onMount, tick} from 'svelte';
     return `./config/profiles/${name}.profile`;
   }
 
-  function applyKitsuneStudioPreset(kind: 'kwybars' | 'compact'): void {
-    if (kind === 'kwybars') {
+  function applyKitsuneStudioPreset(kind: 'balanced' | 'compact'): void {
+    if (kind === 'balanced') {
       kitsuneStudioBars = 96;
       kitsuneStudioBarWidth = 8;
       kitsuneStudioBarGap = 3;
@@ -6402,9 +6402,9 @@ import {onDestroy, onMount, tick} from 'svelte';
 
                 <div class="card">
                   <h3>{tr('Geometry & Color', 'Geometria y Color')}</h3>
-                  <p class="muted">{tr('Inspired by Kwybars: fewer, thicker bars with controlled max height.', 'Inspirado en Kwybars: menos barras, mas gruesas y con altura maxima controlada.')}</p>
+                  <p class="muted">{tr('Use fewer, thicker bars with controlled max height for a cleaner visual.', 'Usa menos barras, mas gruesas y con altura maxima controlada para un visual mas limpio.')}</p>
                   <div class="row">
-                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('kwybars')}>{tr('Kwybars-like preset', 'Preset tipo Kwybars')}</button>
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('balanced')}>{tr('Balanced preset', 'Preset balanceado')}</button>
                     <button class="secondary" on:click={() => applyKitsuneStudioPreset('compact')}>{tr('Compact preset', 'Preset compacto')}</button>
                     <button class="secondary" on:click={() => void applyKitsuneStudioVisual()} disabled={kitsuneBusy || isLiveServicesLocked()}>
                       {tr('Apply Visual Studio', 'Aplicar Studio Visual')}
