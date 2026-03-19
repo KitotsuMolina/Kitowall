@@ -65,6 +65,9 @@ install_arch_deps() {
     hyprland
     swww
     cava
+    pkgconf
+    gtk4
+    gtk4-layer-shell
     jq
     git
     base-devel
@@ -87,6 +90,8 @@ install_ubuntu_deps() {
   local pkgs=(
     nodejs npm
     rustc cargo
+    pkg-config
+    libgtk-4-dev
     jq curl git
     cava
   )
@@ -104,7 +109,7 @@ install_system_deps() {
     install_ubuntu_deps
     return
   fi
-  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo swww hyprland cava" >&2
+  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo pkg-config gtk4 gtk4-layer-shell swww hyprland cava" >&2
   exit 1
 }
 
