@@ -17,6 +17,11 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+prepend_user_path() {
+  local home_dir="${HOME:?HOME is required}"
+  export PATH="$home_dir/.local/bin:$home_dir/.cargo/bin:$PATH"
+}
+
 run_sudo() {
   if need_cmd sudo; then
     sudo "$@"
@@ -57,6 +62,7 @@ ensure_user_bin_dirs() {
   local home_dir
   home_dir="${HOME:?HOME is required}"
   mkdir -p "$home_dir/.local/bin" "$home_dir/.cargo/bin"
+  prepend_user_path
 }
 
 install_arch_deps() {
@@ -423,7 +429,30 @@ verify_bins() {
 
   if ((${#missing[@]} > 0)); then
     echo "[bootstrap] missing binaries after bootstrap: ${missing[*]}" >&2
-    exit 2
+
+    local needs_kitsune_recovery=0
+    for b in "${missing[@]}"; do
+      if [[ "$b" == "kitsune" || "$b" == "kitsune-rendercore" ]]; then
+        needs_kitsune_recovery=1
+        break
+      fi
+    done
+
+    if [[ "$needs_kitsune_recovery" -eq 1 ]]; then
+      echo "[bootstrap] attempting release-based recovery for Kitsune binaries" >&2
+      install_kitsune_bins
+      missing=()
+      for b in "${required_bins[@]}"; do
+        if ! need_cmd "$b"; then
+          missing+=("$b")
+        fi
+      done
+    fi
+
+    if ((${#missing[@]} > 0)); then
+      echo "[bootstrap] missing binaries after recovery: ${missing[*]}" >&2
+      exit 2
+    fi
   fi
 }
 

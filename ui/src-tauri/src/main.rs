@@ -44,6 +44,29 @@ fn collect_nvm_bin_dirs(home: &str) -> Vec<String> {
     dirs
 }
 
+fn collect_npm_prefix_bin_dirs() -> Vec<String> {
+    let mut dirs = Vec::new();
+    for cmd in [
+        "npm config get prefix 2>/dev/null || true",
+        "npm prefix -g 2>/dev/null || true",
+    ] {
+        if let Ok(out) = shell_output(cmd) {
+            let prefix = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if prefix.is_empty() || prefix == "undefined" || prefix == "null" {
+                continue;
+            }
+
+            let candidate = PathBuf::from(&prefix).join("bin");
+            if candidate.is_dir() {
+                dirs.push(candidate.to_string_lossy().to_string());
+            } else if PathBuf::from(&prefix).is_dir() {
+                dirs.push(prefix);
+            }
+        }
+    }
+    dirs
+}
+
 fn host_user_path() -> Result<String, String> {
     let home = host_home_dir()?;
     let mut entries = vec![
@@ -52,6 +75,7 @@ fn host_user_path() -> Result<String, String> {
         format!("{home}/.cargo/bin"),
     ];
     entries.extend(collect_nvm_bin_dirs(&home));
+    entries.extend(collect_npm_prefix_bin_dirs());
 
     if let Some(path_os) = std::env::var_os("PATH") {
         entries.extend(
@@ -100,10 +124,12 @@ fn resolve_host_bin_path(bin: &str) -> Result<Option<String>, String> {
         "kitowall" => vec![
             format!("{home}/.local/bin/kitowall"),
             format!("{home}/.npm-global/bin/kitowall"),
+            format!("{home}/node_modules/.bin/kitowall"),
         ],
         "kitsune" => vec![
             format!("{home}/.cargo/bin/kitsune"),
             format!("{home}/.local/bin/kitsune"),
+            format!("{home}/.local/share/kitsune/bin/kitsune"),
         ],
         "kitsune-rendercore" => vec![
             format!("{home}/.cargo/bin/kitsune-rendercore"),
@@ -115,6 +141,15 @@ fn resolve_host_bin_path(bin: &str) -> Result<Option<String>, String> {
     for candidate in fallback {
         if PathBuf::from(&candidate).exists() {
             return Ok(Some(candidate));
+        }
+    }
+
+    if bin == "kitowall" {
+        for dir in collect_npm_prefix_bin_dirs() {
+            let candidate = PathBuf::from(&dir).join(bin);
+            if candidate.exists() {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
         }
     }
     Ok(None)
