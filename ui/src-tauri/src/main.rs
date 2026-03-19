@@ -7,7 +7,7 @@ use std::env;
 use std::sync::{Mutex, OnceLock};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use thiserror::Error;
 use tauri::Manager;
@@ -259,6 +259,19 @@ fn release_cache() -> &'static Mutex<HashMap<String, (Instant, Option<String>)>>
     RELEASE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn append_kitsune_ui_log(message: &str) {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = format!("[{ts}] {message}\n");
+    let _ = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/kitowall-kitsune-ui.log")
+        .and_then(|mut f| f.write_all(line.as_bytes()));
+}
+
 fn github_latest_release_tag(repo: &str) -> Result<Option<String>, String> {
     {
         let cache = release_cache()
@@ -360,17 +373,17 @@ fn resolve_kitsune_cmd() -> Vec<String> {
         return cmd.split_whitespace().map(|s| s.to_string()).collect();
     }
 
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let local_kitsune = manifest_dir.join("../../../Kitsune/scripts/kitsune.sh");
+    if local_kitsune.exists() {
+        return vec![local_kitsune.to_string_lossy().to_string()];
+    }
+
     if let Ok(home) = host_home_dir() {
         let user_script = PathBuf::from(format!("{home}/.local/share/kitsune/scripts/kitsune.sh"));
         if user_script.exists() {
             return vec![user_script.to_string_lossy().to_string()];
         }
-    }
-
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let local_kitsune = manifest_dir.join("../../../Kitsune/scripts/kitsune.sh");
-    if local_kitsune.exists() {
-        return vec![local_kitsune.to_string_lossy().to_string()];
     }
 
     if let Ok(Some(host_bin)) = resolve_host_bin_path("kitsune") {
@@ -475,7 +488,7 @@ fn kitowall_preflight_update_kitsune(namespace: Option<String>) -> Result<Json, 
     logs.push_str(&String::from_utf8_lossy(&bootstrap_out.stderr));
 
     let deps = kitowall_preflight_status()?;
-    let kitsune = kitowall_kitsune_status()?;
+    let kitsune = kitowall_kitsune_status_sync()?;
 
     Ok(serde_json::json!({
         "ok": bootstrap_out.status.success(),
@@ -1712,11 +1725,12 @@ fn kitowall_pick_folder() -> Result<Json, String> {
     Ok(serde_json::json!({ "path": path }))
 }
 
-#[tauri::command]
-fn kitowall_kitsune_status() -> Result<Json, String> {
+fn kitowall_kitsune_status_sync() -> Result<Json, String> {
+    append_kitsune_ui_log("kitowall_kitsune_status: begin");
     let mut cmd_parts = resolve_kitsune_cmd();
     let base = cmd_parts.remove(0);
     if base == "__missing_kitsune_cli__" {
+        append_kitsune_ui_log("kitowall_kitsune_status: kitsune CLI missing");
         return Ok(serde_json::json!({
             "ok": true,
             "installed": false,
@@ -1731,12 +1745,20 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
         command.args(cmd_parts);
     }
     command.arg("help");
+    append_kitsune_ui_log(&format!("kitowall_kitsune_status: exec base={:?} arg=help", base));
     let output = command.output().map_err(|e| e.to_string())?;
+    append_kitsune_ui_log(&format!(
+        "kitowall_kitsune_status: exit={} stdout_len={} stderr_len={}",
+        output.status.code().unwrap_or(-1),
+        output.stdout.len(),
+        output.stderr.len()
+    ));
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let message = if !stderr.is_empty() { stderr } else { stdout };
+        append_kitsune_ui_log(&format!("kitowall_kitsune_status: failed message={}", message));
         return Ok(serde_json::json!({
             "ok": true,
             "installed": false,
@@ -1780,6 +1802,11 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
 
     commands.sort();
     sections.sort();
+    append_kitsune_ui_log(&format!(
+        "kitowall_kitsune_status: parsed commands={} sections={}",
+        commands.len(),
+        sections.len()
+    ));
 
     Ok(serde_json::json!({
         "ok": true,
@@ -1790,7 +1817,14 @@ fn kitowall_kitsune_status() -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn kitowall_kitsune_versions() -> Result<Json, String> {
+async fn kitowall_kitsune_status() -> Result<Json, String> {
+    tauri::async_runtime::spawn_blocking(kitowall_kitsune_status_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn kitowall_kitsune_versions_sync() -> Result<Json, String> {
+    append_kitsune_ui_log("kitowall_kitsune_versions: begin");
     Ok(serde_json::json!({
         "kitsune": component_update_info("kitsune"),
         "rendercore": component_update_info("kitsune-rendercore")
@@ -1798,14 +1832,23 @@ fn kitowall_kitsune_versions() -> Result<Json, String> {
 }
 
 #[tauri::command]
-fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
+async fn kitowall_kitsune_versions() -> Result<Json, String> {
+    tauri::async_runtime::spawn_blocking(kitowall_kitsune_versions_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn kitowall_kitsune_run_sync(args: Vec<String>) -> Result<Json, String> {
+    append_kitsune_ui_log(&format!("kitowall_kitsune_run: begin args={:?}", args));
     if args.is_empty() {
+        append_kitsune_ui_log("kitowall_kitsune_run: empty args");
         return Err("kitsune args are required".to_string());
     }
 
     let mut cmd_parts = resolve_kitsune_cmd();
     let base = cmd_parts.remove(0);
     if base == "__missing_kitsune_cli__" {
+        append_kitsune_ui_log("kitowall_kitsune_run: kitsune CLI missing");
         return Err("kitsune CLI not found on host".to_string());
     }
 
@@ -1814,7 +1857,14 @@ fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
         command.args(cmd_parts);
     }
     command.args(&args);
+    append_kitsune_ui_log(&format!("kitowall_kitsune_run: exec base={:?} args={:?}", base, args));
     let output = command.output().map_err(|e| e.to_string())?;
+    append_kitsune_ui_log(&format!(
+        "kitowall_kitsune_run: exit={} stdout_len={} stderr_len={}",
+        output.status.code().unwrap_or(-1),
+        output.stdout.len(),
+        output.stderr.len()
+    ));
 
     let exit_code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -1827,6 +1877,13 @@ fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
         "stderr": stderr,
         "args": args
     }))
+}
+
+#[tauri::command]
+async fn kitowall_kitsune_run(args: Vec<String>) -> Result<Json, String> {
+    tauri::async_runtime::spawn_blocking(move || kitowall_kitsune_run_sync(args))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
