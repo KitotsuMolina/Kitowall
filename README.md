@@ -35,12 +35,7 @@ node dist/cli.js check --json
 ```bash
 cd ui
 npm install
-npm run tauri:dev
-```
-
-If your system needs it on Wayland:
-```bash
-WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri:dev
+npm run electron:dev
 ```
 
 ## AppImage (Recommended)
@@ -81,7 +76,7 @@ npm run release:check
 # Build distributable CLI tarball
 npm run package:cli
 
-# Build desktop app package (Tauri)
+# Build desktop app package (Electron)
 npm run package:ui
 
 # Full pipeline

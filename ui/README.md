@@ -1,6 +1,6 @@
 # Kitowall UI
 
-Desktop app for `Kitowall` built with `Tauri + Svelte`.
+Desktop app for `Kitowall` built with `Electron + Svelte`.
 
 Version: `1.0.7`.
 
@@ -12,23 +12,18 @@ Version: `1.0.7`.
 ```bash
 cd ui
 npm install
-npm run tauri:dev
-```
-
-Wayland fallback if needed:
-```bash
-WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri:dev
+npm run electron:dev
 ```
 
 ## Build Package
 ```bash
 cd ui
-npm run tauri:build
+npm run electron:build
 ```
 
 Output bundle:
-- `ui/src-tauri/target/release/bundle/`
-- AppImage: `ui/src-tauri/target/release/bundle/appimage/*.AppImage`
+- `ui/dist/`
+- AppImage: `ui/dist/*.AppImage` depending on builder output
 
 ## Main Modules
 - Control Center

@@ -225,15 +225,11 @@ function getSteamWebApiKey(): string | undefined {
 function getCoexistServices(): string[] {
   const cfg = readWeConfig();
   const defaults = [
-    'swww-daemon.service',
     'swww-daemon@kitowall.service',
     'kitowall-login-apply.service',
     'kitowall-watch.service',
     'kitowall-next.service',
-    'kitowall-next.timer',
-    'hyprwall-watch.service',
-    'hyprwall-next.service',
-    'hyprwall-next.timer'
+    'kitowall-next.timer'
   ];
   const configured = Array.isArray(cfg.coexistServices) ? cfg.coexistServices.map(v => String(v).trim()).filter(Boolean) : [];
   return configured.length > 0 ? configured : defaults;
@@ -1183,7 +1179,7 @@ export async function workshopCoexistenceEnter(): Promise<{ok: true; stopped: st
   const snapshotId = String(now());
   const snap = {id: snapshotId, ts: now(), active, enabled};
   writeJson(path.join(snapshotDir(paths), `${snapshotId}.json`), snap);
-  writeJson(snapshotFile(paths), {id: snapshotId, ts: snap.ts});
+  writeJson(snapshotFile(paths), snap);
   return {ok: true, stopped: active, snapshot: active, snapshot_id: snapshotId};
 }
 
@@ -1236,9 +1232,22 @@ export async function workshopCoexistenceStatus(): Promise<{ok: true; snapshot: 
   const paths = getWePaths();
   ensureWePaths(paths);
   const snapPath = snapshotFile(paths);
-  const snapshot = fs.existsSync(snapPath)
-    ? ((JSON.parse(fs.readFileSync(snapPath, 'utf8')) as {active?: string[]}).active ?? [])
-    : [];
+  let snapshot: string[] = [];
+  if (fs.existsSync(snapPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(snapPath, 'utf8')) as {active?: string[]; id?: string};
+      snapshot = Array.isArray(raw.active) ? raw.active.map(v => String(v)) : [];
+      if (snapshot.length === 0 && raw.id) {
+        const historical = path.join(snapshotDir(paths), `${raw.id}.json`);
+        if (fs.existsSync(historical)) {
+          const snap = JSON.parse(fs.readFileSync(historical, 'utf8')) as {active?: string[]};
+          snapshot = Array.isArray(snap.active) ? snap.active.map(v => String(v)) : [];
+        }
+      }
+    } catch {
+      snapshot = [];
+    }
+  }
   const units = getCoexistServices();
   const current: Record<string, boolean> = {};
   for (const unit of units) {

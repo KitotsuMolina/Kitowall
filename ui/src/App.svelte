@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {convertFileSrc, invoke} from '@tauri-apps/api/core';
+  import {convertFileSrc, invoke} from './lib/desktop';
 import {onDestroy, onMount, tick} from 'svelte';
   import logo from './assets/logo.png';
 
@@ -1440,6 +1440,8 @@ import {onDestroy, onMount, tick} from 'svelte';
   function liveLibraryPreviewCandidates(entry: LiveLibraryItem): string[] {
     const base = String(entry.path ?? '').trim().replace(/\/+$/, '');
     const out: string[] = [];
+    const metaThumb = String(entry.meta?.preview_thumb_local ?? '').trim();
+    if (metaThumb) out.push(metaThumb);
     if (base) {
       out.push(`${base}/preview.jpg`);
       out.push(`${base}/preview.jpeg`);
@@ -1449,8 +1451,6 @@ import {onDestroy, onMount, tick} from 'svelte';
       out.push(`${base}/thumbnail.png`);
       out.push(`${base}/thumbnail.webp`);
     }
-    const metaThumb = String(entry.meta?.preview_thumb_local ?? '').trim();
-    if (metaThumb) out.push(metaThumb);
     return Array.from(new Set(out));
   }
 
@@ -1510,7 +1510,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   function liveV2LibraryPreviewSrc(item: LiveIndexItem): string {
     const candidates = liveV2LibraryPreviewCandidates(item);
     const first = String(candidates[0] ?? '').trim();
-    return fileUrl(first) ?? imageSrc(first) ?? first;
+    return imageSrc(first) ?? fileUrl(first) ?? first;
   }
 
   function liveV2LibraryDataUrl(id: string): string {
@@ -1596,7 +1596,7 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (!(img instanceof HTMLImageElement)) return;
     if (img.dataset.localFallbackApplied !== '1') {
       const local = String(img.dataset.localPath ?? '').trim();
-      const localUrl = fileUrl(local);
+      const localUrl = imageSrc(local) ?? fileUrl(local);
       if (localUrl) {
         img.dataset.localFallbackApplied = '1';
         img.src = localUrl;
@@ -1911,13 +1911,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
     liveBusy = true;
     try {
-      const out = await invoke<LiveApplyResponse>('kitowall_we_apply', {
-        id: entry.id,
-        monitor,
-        backend: 'auto'
-      });
-      if (!out?.ok) throw new Error('Apply failed');
+      await liveV2Run(['apply', entry.id, '--monitor', monitor, '--quality', liveV2Quality]);
       pushToast(tr(`Applied on ${monitor}`, `Aplicado en ${monitor}`), 'success');
+      await loadLiveLibrary();
       await loadLiveAuthorityStatus();
     } catch (e) {
       lastError = String(e);

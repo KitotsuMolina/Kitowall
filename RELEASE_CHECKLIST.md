@@ -13,7 +13,7 @@ Version target: `1.0.7`
 
 ## 2) UI Validation
 - `cd ui && npm install`
-- `npm run tauri:dev`
+- `npm run electron:dev`
 - Validate critical flows:
   - Control Center: `next`, `hydrate`, `clean`
   - General Settings: mode, transition, intervals
@@ -28,7 +28,7 @@ Version target: `1.0.7`
   - Expected output: `kitowall-1.0.7.tgz` in project root
 - Desktop package:
   - `npm run package:ui`
-  - Expected output: `ui/src-tauri/target/release/bundle/*`
+  - Expected output: `ui/dist/*`
 
 ## 4) Documentation for End Users
 - README is user-focused and up to date.

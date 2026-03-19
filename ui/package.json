@@ -3,22 +3,56 @@
   "version": "1.0.7",
   "private": true,
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:dev:compat": "WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri dev",
-    "tauri:build": "tauri build"
+    "electron:dev": "node electron/dev.mjs",
+    "electron:build": "vite build && electron-builder --linux AppImage",
+    "dist:unpacked": "vite build && electron-builder --dir"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "concurrently": "^9.1.2",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
     "svelte": "^4.2.19",
     "vite": "^5.4.0",
-    "@tauri-apps/cli": "^2.0.0"
+    "wait-on": "^8.0.3"
   },
-  "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+  "build": {
+    "appId": "com.kitowall.ui",
+    "productName": "kitowall-ui",
+    "artifactName": "Kitowall-${version}-${arch}.${ext}",
+    "directories": {
+      "buildResources": "src/assets"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "src/assets/logo.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../scripts/bootstrap-host.sh",
+        "to": "bootstrap-host.sh"
+      },
+      {
+        "from": "../dist",
+        "to": "kitowall-cli",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "src/assets/logo.png"
+    }
   }
 }

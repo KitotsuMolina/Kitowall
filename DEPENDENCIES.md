@@ -1,7 +1,7 @@
 # Kitowall Dependencies
 Version scope: `1.0.7`.
 
-Este documento lista todas las dependencias necesarias para correr y desarrollar `kitowall` (CLI + UI Tauri/Svelte) en Arch Linux.
+Este documento lista todas las dependencias necesarias para correr y desarrollar `kitowall` (CLI + UI Electron/Svelte) en Arch Linux.
 
 ## 1) Dependencias de runtime (CLI)
 Requeridas para usar `kitowall` en Hyprland:
@@ -41,28 +41,22 @@ node -v
 npm -v
 ```
 
-## 3) Dependencias de runtime/build (UI Tauri + Svelte)
+## 3) Dependencias de runtime/build (UI Electron + Svelte)
 Requeridas para `kitowall/ui`:
 
-- Rust toolchain (`rustup`, `cargo`, `rustc`)
-- `pkgconf`
-- `base-devel`
-- `webkit2gtk-4.1`
-- `gtk3`
-- `libsoup3`
+- Node.js `>= 20`
+- `npm`
+- Electron se instala via `npm install`
 
 Instalacion (Arch):
 ```bash
-sudo pacman -S --needed rustup pkgconf base-devel webkit2gtk-4.1 gtk3 libsoup3
-rustup default stable
+sudo pacman -S --needed nodejs npm
 ```
 
 Verificacion:
 ```bash
-cargo --version
-rustc --version
-pkg-config --modversion webkit2gtk-4.1
-pkg-config --modversion javascriptcoregtk-4.1
+node -v
+npm -v
 ```
 
 ## 4) Gestor de paquetes frontend (opcional)
@@ -84,7 +78,7 @@ Para fuentes remotas:
 
 Tambien se puede configurar por pack con `--api-key` o `--api-key-env`.
 
-Para UI Tauri (si el bin no esta en PATH):
+Para UI Electron (si el bin no esta en PATH):
 
 - `KITOWALL_CMD`
 
@@ -104,12 +98,11 @@ npm run build
 
 ### UI
 ```bash
-sudo pacman -S --needed rustup pkgconf base-devel webkit2gtk-4.1 gtk3 libsoup3
-rustup default stable
+sudo pacman -S --needed nodejs npm
 cd /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall/ui
 npm install
 export KITOWALL_CMD="node /home/kitotsu/Programacion/Personal/Wallpaper/Kitowall/dist/cli.js"
-npm run tauri:dev
+npm run electron:dev
 ```
 
 ## 7) Comandos de diagnostico utiles
@@ -127,13 +120,6 @@ Solucion:
 ```bash
 sudo pacman -S --needed rustup
 rustup default stable
-```
-
-### Error: `javascriptcoregtk-4.1` o `webkit2gtk-4.1` not found
-Causa: librerias WebKitGTK faltantes.
-Solucion:
-```bash
-sudo pacman -S --needed webkit2gtk-4.1 pkgconf gtk3 libsoup3
 ```
 
 ### Error: `fish: Unknown command: pnpm`

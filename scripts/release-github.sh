@@ -20,9 +20,9 @@ Version selection:
   --set <VERSION>     Set explicit version (e.g. 3.6.0)
 
 Behavior:
-  --sync-ui           Also sync UI versions (ui/package.json + ui/src-tauri/Cargo.toml)
+  --sync-ui           Also sync UI version (ui/package.json)
   --with-ui           Legacy alias of --with-appimage
-  --with-appimage     Build Tauri AppImage and upload it as release asset
+  --with-appimage     Build Electron AppImage and upload it as release asset
   --publish-npm       Publish CLI package to npm registry
   --no-commit         Do not create/push version bump commit
   -h, --help          Show this help
@@ -57,8 +57,6 @@ set_root_version() {
 set_ui_version() {
   local version="$1"
   npm --prefix ui version --no-git-tag-version "$version" >/dev/null
-  sed -i "0,/^version = \".*\"/s//version = \"${version}\"/" ui/src-tauri/Cargo.toml
-  (cd ui/src-tauri && cargo generate-lockfile)
 }
 
 bump_mode=""
@@ -136,7 +134,7 @@ if [[ "$VERSION" != "$CURRENT_VERSION" ]]; then
   if [[ "$do_commit" == true ]]; then
     git add package.json package-lock.json
     if [[ "$sync_ui" == true ]]; then
-      git add ui/package.json ui/package-lock.json ui/src-tauri/Cargo.toml ui/src-tauri/Cargo.lock
+      git add ui/package.json ui/package-lock.json
     fi
     git commit -m "chore(release): ${VERSION}" || true
     git push origin main
@@ -167,21 +165,21 @@ if [[ "$with_appimage" == true ]]; then
   if [[ -f "ui/pnpm-lock.yaml" ]]; then
     if command -v pnpm >/dev/null 2>&1; then
       pnpm -C ui install --frozen-lockfile
-      pnpm -C ui run tauri:build
+      pnpm -C ui run electron:build
     else
       corepack pnpm -C ui install --frozen-lockfile
-      corepack pnpm -C ui run tauri:build
+      corepack pnpm -C ui run electron:build
     fi
   elif [[ -f "ui/package-lock.json" ]]; then
     npm --prefix ui ci
-    npm --prefix ui run tauri:build
+    npm --prefix ui run electron:build
   else
     npm --prefix ui install --no-audit --progress=false
-    npm --prefix ui run tauri:build
+    npm --prefix ui run electron:build
   fi
-  APPIMAGE_PATH="$(ls -1 ui/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n1 || true)"
+  APPIMAGE_PATH="$(find ui/dist -maxdepth 2 -type f -name '*.AppImage' | head -n1 || true)"
   if [[ -z "${APPIMAGE_PATH:-}" || ! -f "$APPIMAGE_PATH" ]]; then
-    echo "Expected AppImage not found in ui/src-tauri/target/release/bundle/appimage/" >&2
+    echo "Expected AppImage not found in ui/dist/" >&2
     exit 2
   fi
   APPIMAGE_ASSET="$ASSET_DIR/Kitowall-${VERSION}-x86_64.AppImage"

@@ -7,7 +7,7 @@ Versión: `1.0.7`.
 ## Lo que ya está cubierto
 - CLI de producción para rotación/manual, multi-monitor, packs, pool, cache, favoritos, historial, logs y systemd.
 - Sources operativos: `local`, `wallhaven`, `unsplash`, `reddit`, `generic_json`, `static_url`.
-- UI de escritorio (Tauri + Svelte) con módulos:
+- UI de escritorio (Electron + Svelte) con módulos:
   - `Control Center`
   - `General Settings`
   - `History`
@@ -49,4 +49,4 @@ La base del producto ya está lista. Lo siguiente es estabilización final y emp
 
 ## Empaquetado (realizado)
 - CLI empaquetado: `kitowall-1.0.7.tgz`
-- UI release compilada: `ui/src-tauri/target/release/kitowall-ui`
+- UI release compilada: `ui/dist/`

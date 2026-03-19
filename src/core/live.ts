@@ -7,7 +7,7 @@ import {pipeline} from 'node:stream/promises';
 import {run} from '../utils/exec';
 import {fetchWithRetry} from '../utils/net';
 import {ensureDir} from '../utils/fs';
-import {workshopCoexistenceEnter} from './workshop';
+import {workshopCoexistenceEnter, workshopCoexistenceExit} from './workshop';
 
 export type LiveProvider = 'moewalls' | 'motionbgs';
 export type LiveQuality = 'auto' | 'hd' | '4k';
@@ -1057,6 +1057,32 @@ function integratedRendercoreStart(bin: string): {stdout: string; stderr: string
   };
 }
 
+function integratedRendercoreFailureHint(): string {
+  const logPath = integratedRendercoreLogPath();
+  try {
+    const raw = fs.readFileSync(logPath, 'utf8').trim();
+    if (!raw) return '';
+    const lines = raw.split('\n');
+    return lines.slice(-20).join('\n');
+  } catch {
+    return '';
+  }
+}
+
+async function waitForIntegratedRendercoreReady(bin: string, timeoutMs = 4000): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const status = integratedRendercoreStatus(bin);
+    if (status.code === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  const hint = integratedRendercoreFailureHint();
+  throw new Error(
+    `Integrated rendercore failed to stay alive after start (${bin}).` +
+    (hint ? ` Recent log:\n${hint}` : '')
+  );
+}
+
 function integratedRendercoreStop(bin: string): {stdout: string; stderr: string; code: number} {
   const pid = readIntegratedRendercorePid();
   if (!pid) {
@@ -1252,6 +1278,7 @@ function ensureRendercoreServiceFiles(bin: string, defaults: LiveApplyDefaults):
     '',
     '[Service]',
     'Type=simple',
+    `WorkingDirectory=${home}`,
     `Environment=PATH=${pathEnv}`,
     `EnvironmentFile=-${envPath}`,
     `ExecStart=${bin}`,
@@ -1285,6 +1312,42 @@ async function runSystemctlUser(args: string[], acceptNonZero = false): Promise<
     if (acceptNonZero && partial) return partial;
     throw err;
   }
+}
+
+async function importRendercoreSessionEnv(): Promise<void> {
+  const keys = [
+    'WAYLAND_DISPLAY',
+    'DISPLAY',
+    'XDG_RUNTIME_DIR',
+    'HYPRLAND_INSTANCE_SIGNATURE',
+    'DBUS_SESSION_BUS_ADDRESS'
+  ].filter((key) => clean(process.env[key]).length > 0);
+  if (keys.length === 0) return;
+  try {
+    await runSystemctlUser(['import-environment', ...keys], true);
+  } catch {
+    // best effort
+  }
+}
+
+async function waitForRendercoreServiceActive(timeoutMs = 5000): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  let lastState = '';
+  while (Date.now() < until) {
+    const out = await runSystemctlUser(['show', 'kitsune-rendercore.service', '--property', 'ActiveState,SubState,Result', '--value'], true);
+    const parts = out.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const [activeState = '', subState = '', result = ''] = parts;
+    lastState = `ActiveState=${activeState} SubState=${subState} Result=${result}`;
+    if (activeState === 'active') return;
+    if (activeState === 'failed') break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  const status = await runSystemctlUser(['status', '--no-pager', 'kitsune-rendercore.service'], true);
+  const detail = [lastState, status.stderr.trim(), status.stdout.trim()].filter(Boolean).join('\n');
+  throw new Error(`kitsune-rendercore.service failed to become active.\n${detail}`);
 }
 
 async function resolvePost(provider: LiveProvider, pageUrl: string): Promise<LiveResolvedPost> {
@@ -1928,45 +1991,57 @@ export async function liveApply(opts: {
     '--monitor', monitor,
     '--video', item.file_path
   ];
-  await run(bin, setVideoArgs, {timeoutMs: 120000});
+  let coexistEntered = false;
+  try {
+    await run(bin, setVideoArgs, {timeoutMs: 120000});
 
-  // Live mode owns wallpaper state: stop static rotation services while live is active.
-  await workshopCoexistenceEnter();
+    // Live mode owns wallpaper state: stop only Kitowall static wallpaper services.
+    await workshopCoexistenceEnter();
+    coexistEntered = true;
 
-  // Keep live authority persistent across session restarts.
-  if (integratedRendercoreMode()) {
-    integratedRendercoreStart(bin);
-  } else {
-    const deps = await ensureRendercoreHostRuntimeDeps();
-    if (deps.missing.length > 0) {
-      throw new Error(
-        `Missing host dependencies: ${deps.missing.join(', ')}. ` +
-        'Install on host (Arch): sudo pacman -S --needed ffmpeg hyprland'
-      );
+    // Keep live authority persistent across session restarts.
+    if (integratedRendercoreMode()) {
+      integratedRendercoreStart(bin);
+      await waitForIntegratedRendercoreReady(bin);
+    } else {
+      const deps = await ensureRendercoreHostRuntimeDeps();
+      if (deps.missing.length > 0) {
+        throw new Error(
+          `Missing host dependencies: ${deps.missing.join(', ')}. ` +
+          'Install on host (Arch): sudo pacman -S --needed ffmpeg hyprland'
+        );
+      }
+      const binPath = await resolveHostExecutablePath(bin);
+      ensureRendercoreServiceFiles(binPath, index.apply_defaults);
+      await importRendercoreSessionEnv();
+      await runSystemctlUser(['daemon-reload']);
+      await runSystemctlUser(['enable', 'kitsune-rendercore.service']);
+      await runSystemctlUser(['start', 'kitsune-rendercore.service']);
+      await waitForRendercoreServiceActive();
     }
-    const binPath = await resolveHostExecutablePath(bin);
-    ensureRendercoreServiceFiles(binPath, index.apply_defaults);
-    await runSystemctlUser(['daemon-reload']);
-    await runSystemctlUser(['enable', 'kitsune-rendercore.service']);
-    await runSystemctlUser(['start', 'kitsune-rendercore.service']);
-  }
 
-  withLiveLock(() => {
-    const current = readIndex();
-    const updatedItems = current.items.map(v => (v.id === item.id ? {...v, last_applied_at: nowUnix()} : v));
-    const perMonitor = {...current.per_monitor};
-    const currentMon = perMonitor[monitor] || {
-      auto_apply: false,
-      preferred_quality: 'auto' as LiveQuality,
-      last_applied_id: null
-    };
-    perMonitor[monitor] = {
-      ...currentMon,
-      last_applied_id: item.id
-    };
-    writeIndexAtomic({...current, items: updatedItems, per_monitor: perMonitor});
-    return true;
-  });
+    withLiveLock(() => {
+      const current = readIndex();
+      const updatedItems = current.items.map(v => (v.id === item.id ? {...v, last_applied_at: nowUnix()} : v));
+      const perMonitor = {...current.per_monitor};
+      const currentMon = perMonitor[monitor] || {
+        auto_apply: false,
+        preferred_quality: 'auto' as LiveQuality,
+        last_applied_id: null
+      };
+      perMonitor[monitor] = {
+        ...currentMon,
+        last_applied_id: item.id
+      };
+      writeIndexAtomic({...current, items: updatedItems, per_monitor: perMonitor});
+      return true;
+    });
+  } catch (error) {
+    if (coexistEntered) {
+      await workshopCoexistenceExit().catch(() => undefined);
+    }
+    throw error;
+  }
 
   return {
     ok: true,

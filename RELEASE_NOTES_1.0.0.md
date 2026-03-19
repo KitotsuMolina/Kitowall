@@ -11,13 +11,13 @@ First stable release for daily usage on Hyprland + Wayland + `swww`.
   - `reddit`
   - `generic_json`
   - `static_url`
-- CLI + Desktop UI (Tauri/Svelte).
+- CLI + Desktop UI (Electron/Svelte).
 - History, favorites, logs, cache cleanup, and systemd integration.
 
 ## Included Artifacts
 - CLI npm tarball: `kitowall-1.0.0.tgz`
 - UI release binary:
-  - `ui/src-tauri/target/release/kitowall-ui`
+  - `ui/dist/`
 
 ## Known Constraints
 - Some remote sources may return rate-limit or access errors depending on API policy and keys.
