@@ -161,6 +161,7 @@ write_kitsune_wrapper() {
   local state_dir="$home_dir/.local/state/kitsune"
 
   mkdir -p "$home_dir/.local/bin" "$config_dir" "$state_dir/run"
+  rm -f "$home_dir/.local/bin/kitsune"
   cat > "$home_dir/.local/bin/kitsune" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -175,6 +176,23 @@ EOF
   chmod 755 "$home_dir/.local/bin/kitsune"
 }
 
+is_kitsune_bundle_corrupted() {
+  local home_dir="${HOME:?HOME is required}"
+  local script_path="$home_dir/.local/share/kitsune/scripts/kitsune.sh"
+
+  [[ ! -f "$script_path" ]] && return 0
+  grep -Fq 'exec "/home/' "$script_path" && grep -Fq '/scripts/kitsune.sh" "$@"' "$script_path"
+}
+
+is_kitsune_binary_corrupted() {
+  local home_dir="${HOME:?HOME is required}"
+  local bin_path="$home_dir/.local/share/kitsune/bin/kitsune"
+
+  [[ ! -f "$bin_path" ]] && return 0
+  file "$bin_path" 2>/dev/null | grep -Fq 'ELF' || return 0
+  return 1
+}
+
 repair_kitsune_host_layout() {
   local home_dir="${HOME:?HOME is required}"
   local share_dir="$home_dir/.local/share/kitsune"
@@ -184,6 +202,18 @@ repair_kitsune_host_layout() {
   if [[ ! -d "$share_dir/scripts" || ! -d "$share_dir/bin" ]]; then
     echo "[bootstrap] kitsune share layout missing in $share_dir; run full bootstrap first" >&2
     return 1
+  fi
+
+  if is_kitsune_binary_corrupted; then
+    echo "[bootstrap] kitsune binary is corrupted; restoring binaries from latest release"
+    install_kitsune_bins
+    return 0
+  fi
+
+  if is_kitsune_bundle_corrupted; then
+    echo "[bootstrap] kitsune bundle is corrupted; restoring bundle from latest release"
+    install_kitsune_bundle
+    return 0
   fi
 
   mkdir -p "$config_dir" "$state_dir/run"
@@ -294,7 +324,6 @@ install_kitsune_bins() {
   if install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-linux-x86_64" "$share_bin_dir/kitsune" && \
      install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-layer-linux-x86_64" "$share_bin_dir/kitsune-layer" && \
      install_github_release_bin "KitotsuMolina/Kitsune-RenderCore" "kitsune-rendercore-linux-x86_64" "$bin_dir/kitsune-rendercore"; then
-    ln -sf "$share_bin_dir/kitsune" "$bin_dir/kitsune"
     ln -sf "$share_bin_dir/kitsune-layer" "$bin_dir/kitsune-layer"
     BOOTSTRAP_KITSUNE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune" | sed 's/^v//')"
     BOOTSTRAP_RENDERCORE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune-RenderCore" | sed 's/^v//')"

@@ -347,6 +347,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
   type UiLanguage = 'en' | 'es';
   type KitsuneTabId =
+    | 'studio'
     | 'core'
     | 'profiles'
     | 'group'
@@ -433,7 +434,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let logsQuery = '';
   let kitsuneBusy = false;
   let kitsuneStatus: KitsuneStatusReport | null = null;
-  let kitsuneTab: KitsuneTabId = 'core';
+  let kitsuneTab: KitsuneTabId = 'studio';
   let kitsuneOutput = '';
   let kitsuneLastCommand = '';
   let kitsuneStartMonitor = '';
@@ -475,7 +476,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneGroupLayerEnabledOpen = false;
   let kitsuneGroupLayerMode: 'bars' | 'ring' = 'bars';
   let kitsuneGroupLayerModeOpen = false;
-  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' = 'bars';
+  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'bars';
   let kitsuneGroupLayerStyleOpen = false;
   let kitsuneGroupLayerProfile = 'bars_balanced';
   let kitsuneGroupLayerProfileOpen = false;
@@ -487,7 +488,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneGroupAddLayerSelected: string[] = [];
   let kitsuneGroupAddLayerOptions: Array<{id: string; label: string; spec: string}> = [];
   let kitsuneVisualMode: 'bars' | 'ring' = 'bars';
-  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' = 'waves_fill';
+  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
   let kitsunePostfxEnable = 1;
   let kitsunePostfxBlurPasses = 1;
   let kitsunePostfxBlurMix = 0.18;
@@ -508,6 +509,23 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneMonitorFallbackPreferFocused = 1;
   let kitsuneDynamicColor = 1;
   let kitsuneColorPollSeconds = 2;
+  let kitsuneStudioBars = 120;
+  let kitsuneStudioFps = 45;
+  let kitsuneStudioBarWidth = 8;
+  let kitsuneStudioBarGap = 3;
+  let kitsuneStudioBarCornerRadius = 4;
+  let kitsuneStudioLineMaxHeightRatio = 0.68;
+  let kitsuneStudioRingInnerRatio = 0.2;
+  let kitsuneStudioRingLengthRatio = 0.22;
+  let kitsuneStudioColor = '#ff2f8f';
+  let kitsuneStudioColor2 = '#19f0ff';
+  let kitsuneStudioEqGain = 2.15;
+  let kitsuneStudioEqCurveDrive = 0.95;
+  let kitsuneStudioEqLowBandGain = 1;
+  let kitsuneStudioEqMidBandGain = 1;
+  let kitsuneStudioEqHighBandGain = 1;
+  let kitsuneStudioEqLoudFloor = 0.12;
+  let kitsuneStudioEqHeightScale = 0.55;
   let kitsuneInstanceMonitor = '';
   let kitsuneInstanceMonitorOpen = false;
   let kitsuneInstanceMonitorFilter = '';
@@ -3039,6 +3057,151 @@ import {onDestroy, onMount, tick} from 'svelte';
     return out;
   }
 
+  function kitsuneSelectedProfileName(): string {
+    const explicit = kitsuneProfileName.trim();
+    if (explicit) return explicit;
+    const preferredPrefix = kitsuneVisualMode === 'ring' ? 'ring' : 'bars';
+    return kitsuneProfileOptions.find(p => p.startsWith(preferredPrefix)) ?? kitsuneProfileOptions[0] ?? '';
+  }
+
+  function kitsuneProfileFileArg(name: string): string {
+    return `./config/profiles/${name}.profile`;
+  }
+
+  function applyKitsuneStudioPreset(kind: 'kwybars' | 'compact'): void {
+    if (kind === 'kwybars') {
+      kitsuneStudioBars = 96;
+      kitsuneStudioBarWidth = 8;
+      kitsuneStudioBarGap = 3;
+      kitsuneStudioBarCornerRadius = 4;
+      kitsuneStudioLineMaxHeightRatio = 0.64;
+      kitsuneStudioRingInnerRatio = 0.22;
+      kitsuneStudioRingLengthRatio = 0.20;
+      kitsuneStudioColor = '#ff4f9a';
+      kitsuneStudioColor2 = '#2fe2ff';
+      return;
+    }
+    kitsuneStudioBars = 72;
+    kitsuneStudioBarWidth = 10;
+    kitsuneStudioBarGap = 4;
+    kitsuneStudioBarCornerRadius = 5;
+    kitsuneStudioLineMaxHeightRatio = 0.56;
+    kitsuneStudioRingInnerRatio = 0.25;
+    kitsuneStudioRingLengthRatio = 0.18;
+  }
+
+  async function runKitsuneBatch(commands: string[][], successMessage: string, reloadProfile = false): Promise<void> {
+    if (commands.length === 0) return;
+    if (commands.some(args => isKitsuneCommandBlockedByLive(args))) {
+      pushToast(liveServicesLockMessage(), 'info');
+      return;
+    }
+    kitsuneBusy = true;
+    lastError = null;
+    const chunks: string[] = [];
+    try {
+      for (const args of commands) {
+        kitsuneLastCommand = `kitsune ${args.join(' ')}`.trim();
+        const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {args});
+        const stderr = (result.stderr ?? '').trim();
+        const stdout = (result.stdout ?? '').trim();
+        const joined = [stdout, stderr].filter(Boolean).join('\n');
+        if (joined) chunks.push(`$ ${kitsuneLastCommand}\n${joined}`);
+        if (!result.ok) {
+          throw new Error(stderr || stdout || `kitsune command failed (exit ${result.exitCode})`);
+        }
+      }
+      kitsuneOutput = chunks.join('\n\n');
+      pushToast(successMessage, 'success');
+      if (kitsuneStatus?.installed) {
+        await loadKitsuneRuntimeOptions();
+        if (kitsuneTab === 'group') {
+          await loadKitsuneGroupData();
+        }
+        if (reloadProfile) {
+          const profileName = kitsuneSelectedProfileName();
+          if (profileName) {
+            await loadKitsuneStudioProfile(profileName);
+          }
+        }
+      }
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  async function loadKitsuneStudioProfile(nameArg?: string): Promise<void> {
+    const profileName = (nameArg ?? kitsuneSelectedProfileName()).trim();
+    if (!profileName) return;
+    try {
+      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
+        args: ['profiles', 'show', profileName]
+      });
+      if (!result.ok) return;
+      const profileMap = parseKitsuneConfigMap(result.stdout ?? '');
+      kitsuneProfileName = profileName;
+      kitsuneStudioEqGain = Number(profileMap.gain ?? kitsuneStudioEqGain);
+      kitsuneStudioEqCurveDrive = Number(profileMap.curve_drive ?? kitsuneStudioEqCurveDrive);
+      kitsuneStudioEqLowBandGain = Number(profileMap.low_band_gain ?? kitsuneStudioEqLowBandGain);
+      kitsuneStudioEqMidBandGain = Number(profileMap.mid_band_gain ?? kitsuneStudioEqMidBandGain);
+      kitsuneStudioEqHighBandGain = Number(profileMap.high_band_gain ?? kitsuneStudioEqHighBandGain);
+      kitsuneStudioEqLoudFloor = Number(profileMap.loud_floor ?? kitsuneStudioEqLoudFloor);
+      kitsuneStudioEqHeightScale = Number(profileMap.height_scale ?? kitsuneStudioEqHeightScale);
+    } catch {
+      // keep local slider state
+    }
+  }
+
+  async function applyKitsuneStudioVisual(): Promise<void> {
+    const commands = [
+      ['config', 'set', 'bars', String(Math.max(16, Math.floor(Number(kitsuneStudioBars) || 16)))],
+      ['config', 'set', 'fps', String(Math.max(15, Math.floor(Number(kitsuneStudioFps) || 15)))],
+      ['config', 'set', 'bar_width', String(Math.max(1, Number(kitsuneStudioBarWidth) || 1))],
+      ['config', 'set', 'bar_gap', String(Math.max(0, Number(kitsuneStudioBarGap) || 0))],
+      ['config', 'set', 'bar_corner_radius', String(Math.max(0, Number(kitsuneStudioBarCornerRadius) || 0))],
+      ['config', 'set', 'line_max_height_ratio', String(Math.min(1, Math.max(0.05, Number(kitsuneStudioLineMaxHeightRatio) || 0.05)))],
+      ['config', 'set', 'ring_inner_ratio', String(Math.min(0.75, Math.max(0.05, Number(kitsuneStudioRingInnerRatio) || 0.05)))],
+      ['config', 'set', 'ring_length_ratio', String(Math.min(0.6, Math.max(0.05, Number(kitsuneStudioRingLengthRatio) || 0.05)))],
+      ['config', 'set', 'color', kitsuneStudioColor.trim() || '#ff2f8f'],
+      ['config', 'set', 'color2', kitsuneStudioColor2.trim() || '#19f0ff'],
+      ['spectrum-mode', kitsuneSpectrumMode],
+      ['visual', kitsuneVisualMode, kitsuneVisualStyle],
+      ['restart']
+    ];
+    await runKitsuneBatch(commands, tr('Kitsune visual studio applied', 'Studio visual de Kitsune aplicado'));
+  }
+
+  async function applyKitsuneStudioEq(): Promise<void> {
+    const profileName = kitsuneSelectedProfileName();
+    if (!profileName) {
+      pushToast(tr('Select a profile first', 'Selecciona primero un perfil'), 'info');
+      return;
+    }
+    const profileFile = kitsuneProfileFileArg(profileName);
+    const commands = [
+      ['profile-edit', 'gain', String(Number(kitsuneStudioEqGain) || 0), profileFile],
+      ['profile-edit', 'curve_drive', String(Number(kitsuneStudioEqCurveDrive) || 0), profileFile],
+      ['profile-edit', 'low_band_gain', String(Number(kitsuneStudioEqLowBandGain) || 0), profileFile],
+      ['profile-edit', 'mid_band_gain', String(Number(kitsuneStudioEqMidBandGain) || 0), profileFile],
+      ['profile-edit', 'high_band_gain', String(Number(kitsuneStudioEqHighBandGain) || 0), profileFile],
+      ['profile-edit', 'loud_floor', String(Number(kitsuneStudioEqLoudFloor) || 0), profileFile],
+      ['profile-edit', 'height_scale', String(Number(kitsuneStudioEqHeightScale) || 0), profileFile]
+    ];
+    if (kitsuneRuntime === 'test') {
+      commands.push(['test-load', profileName]);
+    }
+    await runKitsuneBatch(commands, tr('Kitsune profile updated', 'Perfil de Kitsune actualizado'), true);
+  }
+
+  function handleKitsuneDynamicColorToggle(e: Event): void {
+    const target = e.currentTarget as HTMLInputElement | null;
+    kitsuneDynamicColor = target?.checked ? 1 : 0;
+    void runKitsuneCommand(['dynamic-color', kitsuneDynamicColor ? '1' : '0']);
+  }
+
   async function loadKitsuneRuntimeOptions(): Promise<void> {
     try {
       const [monitorsResult, profilesResult, configResult] = await Promise.all([
@@ -3082,10 +3245,55 @@ import {onDestroy, onMount, tick} from 'svelte';
         kitsuneTuneMode = cfgMode;
       }
 
+      const cfgVisualStyle =
+        (cfgMode === 'ring' ? configMap.ring_style : configMap.bars_style) ??
+        configMap.bars_style ??
+        configMap.ring_style;
+      if (
+        cfgVisualStyle === 'bars' ||
+        cfgVisualStyle === 'bars_fill' ||
+        cfgVisualStyle === 'waves' ||
+        cfgVisualStyle === 'waves_fill' ||
+        cfgVisualStyle === 'dots' ||
+        cfgVisualStyle === 'triangle' ||
+        cfgVisualStyle === 'polygon'
+      ) {
+        kitsuneVisualStyle = cfgVisualStyle;
+      }
+
       const cfgMonitor = configMap.monitor_selected || configMap.monitor;
       if (cfgMonitor) {
         kitsuneStartMonitor = cfgMonitor;
         kitsuneMonitorName = cfgMonitor;
+      }
+
+      const cfgDynamicColor = Number(configMap.dynamic_color ?? kitsuneDynamicColor);
+      if (Number.isFinite(cfgDynamicColor)) {
+        kitsuneDynamicColor = Math.min(1, Math.max(0, Math.round(cfgDynamicColor)));
+      }
+
+      const cfgColorPoll = Number(configMap.color_poll_seconds ?? kitsuneColorPollSeconds);
+      if (Number.isFinite(cfgColorPoll) && cfgColorPoll > 0) {
+        kitsuneColorPollSeconds = Math.max(1, Math.floor(cfgColorPoll));
+      }
+
+      kitsuneStudioBars = Number(configMap.bars ?? kitsuneStudioBars) || kitsuneStudioBars;
+      kitsuneStudioFps = Number(configMap.fps ?? kitsuneStudioFps) || kitsuneStudioFps;
+      kitsuneStudioBarWidth = Number(configMap.bar_width ?? kitsuneStudioBarWidth) || kitsuneStudioBarWidth;
+      kitsuneStudioBarGap = Number(configMap.bar_gap ?? kitsuneStudioBarGap) || kitsuneStudioBarGap;
+      kitsuneStudioBarCornerRadius = Number(configMap.bar_corner_radius ?? kitsuneStudioBarCornerRadius) || kitsuneStudioBarCornerRadius;
+      kitsuneStudioLineMaxHeightRatio =
+        Number(configMap.line_max_height_ratio ?? kitsuneStudioLineMaxHeightRatio) || kitsuneStudioLineMaxHeightRatio;
+      kitsuneStudioRingInnerRatio =
+        Number(configMap.ring_inner_ratio ?? kitsuneStudioRingInnerRatio) || kitsuneStudioRingInnerRatio;
+      kitsuneStudioRingLengthRatio =
+        Number(configMap.ring_length_ratio ?? kitsuneStudioRingLengthRatio) || kitsuneStudioRingLengthRatio;
+      kitsuneStudioColor = configMap.color ?? kitsuneStudioColor;
+      kitsuneStudioColor2 = configMap.color2 ?? kitsuneStudioColor2;
+
+      const staticProfile = configMap.static_profile?.trim();
+      if (staticProfile && profiles.includes(staticProfile)) {
+        kitsuneProfileName = staticProfile;
       }
 
       if (kitsuneStartMonitor && !monitors.includes(kitsuneStartMonitor)) kitsuneStartMonitor = '';
@@ -3094,6 +3302,11 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (kitsuneAutostartMonitor && !monitors.includes(kitsuneAutostartMonitor)) kitsuneAutostartMonitor = '';
       if (kitsuneStartProfile && !profiles.includes(kitsuneStartProfile)) kitsuneStartProfile = '';
       kitsuneStartProfilesSelected = kitsuneStartProfilesSelected.filter(p => profiles.includes(p));
+
+      const studioProfile = kitsuneSelectedProfileName();
+      if (studioProfile) {
+        await loadKitsuneStudioProfile(studioProfile);
+      }
     } catch {
       // Keep existing options if runtime probing fails.
     }
@@ -4026,7 +4239,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (args[0] === 'help') {
         await loadKitsuneStatus();
       } else if (kitsuneStatus?.installed) {
-        if (['install', 'monitor', 'monitors', 'profiles', 'reset', 'start'].includes(args[0])) {
+        if (['install', 'monitor', 'monitors', 'profiles', 'reset', 'start', 'config', 'visual', 'style', 'mode', 'backend', 'output-target', 'spectrum-mode', 'dynamic-color', 'color-poll', 'postfx'].includes(args[0])) {
           await loadKitsuneRuntimeOptions();
         }
         if (args[0] === 'group' || args[0] === 'group-file') {
@@ -4046,8 +4259,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     if (id === 'group' && kitsuneStatus?.installed) {
       void loadKitsuneGroupData();
     }
-    if ((id === 'core' || id === 'profiles' || id === 'visual' || id === 'render' || id === 'monitors' || id === 'system') && kitsuneStatus?.installed) {
+    if ((id === 'studio' || id === 'core' || id === 'profiles' || id === 'visual' || id === 'render' || id === 'monitors' || id === 'system') && kitsuneStatus?.installed) {
       void loadKitsuneRuntimeOptions();
+    }
+    if ((id === 'studio' || id === 'profiles') && kitsuneStatus?.installed) {
+      void loadKitsuneStudioProfile();
     }
   }
 
@@ -6118,6 +6334,7 @@ import {onDestroy, onMount, tick} from 'svelte';
             {/if}
             <p class="muted">{tr('Kitsune is installed. Use top tabs to access each submodule.', 'Kitsune esta instalado. Usa las tabs de arriba para entrar a cada submodulo.')}</p>
             <div class="kitsune-tabs">
+              <button class={`kitsune-tab ${kitsuneTab === 'studio' ? 'active' : ''}`} on:click={() => selectKitsuneTab('studio')}>{tr('Studio', 'Studio')}</button>
               <button class={`kitsune-tab ${kitsuneTab === 'core' ? 'active' : ''}`} on:click={() => selectKitsuneTab('core')}>Core</button>
               <button class={`kitsune-tab ${kitsuneTab === 'profiles' ? 'active' : ''}`} on:click={() => selectKitsuneTab('profiles')}>Profiles Lab</button>
               <button class={`kitsune-tab ${kitsuneTab === 'group' ? 'active' : ''}`} on:click={() => selectKitsuneTab('group')}>Group Composer</button>
@@ -6127,6 +6344,181 @@ import {onDestroy, onMount, tick} from 'svelte';
               <button class={`kitsune-tab ${kitsuneTab === 'system' ? 'active' : ''}`} on:click={() => selectKitsuneTab('system')}>System & Instances</button>
               <button class={`kitsune-tab ${kitsuneTab === 'logs' ? 'active' : ''}`} on:click={() => selectKitsuneTab('logs')}>{tr('Logs & Diagnostics', 'Logs y Diagnostico')}</button>
             </div>
+
+            {#if kitsuneTab === 'studio'}
+              <div class="grid kitsune-grid kitsune-profiles-grid">
+                <div class="card">
+                  <h3>{tr('Quick Start', 'Inicio Rapido')}</h3>
+                  <p class="muted">{tr('This is the simplified surface for daily use. The other tabs remain available for advanced work.', 'Esta es la superficie simplificada para uso diario. Las otras pestañas siguen disponibles para trabajo avanzado.')}</p>
+                  <div class="row">
+                    <select bind:value={kitsuneStartMonitor}>
+                      <option value="">{tr('monitor (optional)', 'monitor (opcional)')}</option>
+                      {#each kitsuneMonitorOptions as monitorName}
+                        <option value={monitorName}>{monitorName}</option>
+                      {/each}
+                    </select>
+                    <select bind:value={kitsuneVisualMode}>
+                      <option value="bars">bars</option>
+                      <option value="ring">ring</option>
+                    </select>
+                    <select bind:value={kitsuneVisualStyle}>
+                      <option value="bars">bars</option>
+                      <option value="bars_fill">bars_fill</option>
+                      <option value="waves">waves</option>
+                      <option value="waves_fill">waves_fill</option>
+                      <option value="dots">dots</option>
+                      <option value="triangle">triangle</option>
+                      <option value="polygon">polygon</option>
+                    </select>
+                    <select bind:value={kitsuneSpectrumMode}>
+                      <option value="single">single</option>
+                      <option value="group">group</option>
+                    </select>
+                  </div>
+                  <div class="row">
+                    <select bind:value={kitsuneProfileName} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)}>
+                      <option value="">{tr('profile', 'perfil')}</option>
+                      {#each kitsuneProfileOptions as profileName}
+                        <option value={profileName}>{profileName}</option>
+                      {/each}
+                    </select>
+                    <button class="secondary" on:click={() => void loadKitsuneStudioProfile()} disabled={kitsuneBusy || !kitsuneProfileOptions.length}>
+                      {tr('Load Profile', 'Cargar Perfil')}
+                    </button>
+                    <button class="secondary" on:click={() => {
+                      const args = ['start'];
+                      if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
+                      if (kitsuneProfileName.trim()) args.push('--profile', kitsuneProfileName.trim());
+                      args.push('--target', 'layer-shell', '--mode', kitsuneVisualMode);
+                      void runKitsuneCommand(args);
+                    }} disabled={kitsuneBusy || isLiveServicesLocked()}>
+                      {tr('Start', 'Iniciar')}
+                    </button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>
+                      {tr('Stop', 'Detener')}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <h3>{tr('Geometry & Color', 'Geometria y Color')}</h3>
+                  <p class="muted">{tr('Inspired by Kwybars: fewer, thicker bars with controlled max height.', 'Inspirado en Kwybars: menos barras, mas gruesas y con altura maxima controlada.')}</p>
+                  <div class="row">
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('kwybars')}>{tr('Kwybars-like preset', 'Preset tipo Kwybars')}</button>
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('compact')}>{tr('Compact preset', 'Preset compacto')}</button>
+                    <button class="secondary" on:click={() => void applyKitsuneStudioVisual()} disabled={kitsuneBusy || isLiveServicesLocked()}>
+                      {tr('Apply Visual Studio', 'Aplicar Studio Visual')}
+                    </button>
+                  </div>
+                  <div class="row">
+                    <label class="inline-check">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(kitsuneDynamicColor)}
+                        on:change={handleKitsuneDynamicColorToggle}
+                      />
+                      {tr('dynamic color', 'color dinamico')}
+                    </label>
+                    <span class="field-label">{tr('poll s', 'poll s')}</span>
+                    <input type="number" min="1" bind:value={kitsuneColorPollSeconds} />
+                    <button class="secondary" on:click={() => runKitsuneCommand(['color-poll', String(Math.max(1, Math.floor(Number(kitsuneColorPollSeconds) || 1)))])} disabled={kitsuneBusy}>
+                      {tr('Apply Poll', 'Aplicar Poll')}
+                    </button>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('bars count', 'cantidad barras')}</span>
+                    <input type="range" min="24" max="240" step="8" bind:value={kitsuneStudioBars} />
+                    <span class="badge">{kitsuneStudioBars}</span>
+                    <span class="field-label">{tr('fps', 'fps')}</span>
+                    <input type="range" min="24" max="60" step="1" bind:value={kitsuneStudioFps} />
+                    <span class="badge">{kitsuneStudioFps}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('bar width', 'ancho barra')}</span>
+                    <input type="range" min="2" max="20" step="0.5" bind:value={kitsuneStudioBarWidth} />
+                    <span class="badge">{Number(kitsuneStudioBarWidth).toFixed(1)}</span>
+                    <span class="field-label">{tr('gap', 'gap')}</span>
+                    <input type="range" min="0" max="12" step="0.5" bind:value={kitsuneStudioBarGap} />
+                    <span class="badge">{Number(kitsuneStudioBarGap).toFixed(1)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('corner radius', 'radio esquinas')}</span>
+                    <input type="range" min="0" max="12" step="0.5" bind:value={kitsuneStudioBarCornerRadius} />
+                    <span class="badge">{Number(kitsuneStudioBarCornerRadius).toFixed(1)}</span>
+                    <span class="field-label">{tr('max height', 'altura maxima')}</span>
+                    <input type="range" min="0.2" max="1" step="0.01" bind:value={kitsuneStudioLineMaxHeightRatio} />
+                    <span class="badge">{Math.round(Number(kitsuneStudioLineMaxHeightRatio) * 100)}%</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('ring inner', 'anillo interno')}</span>
+                    <input type="range" min="0.05" max="0.5" step="0.01" bind:value={kitsuneStudioRingInnerRatio} />
+                    <span class="badge">{Number(kitsuneStudioRingInnerRatio).toFixed(2)}</span>
+                    <span class="field-label">{tr('ring length', 'largo anillo')}</span>
+                    <input type="range" min="0.05" max="0.4" step="0.01" bind:value={kitsuneStudioRingLengthRatio} />
+                    <span class="badge">{Number(kitsuneStudioRingLengthRatio).toFixed(2)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('primary color', 'color primario')}</span>
+                    <input type="color" bind:value={kitsuneStudioColor} />
+                    <input bind:value={kitsuneStudioColor} placeholder="#RRGGBB" />
+                    <span class="field-label">{tr('secondary color', 'color secundario')}</span>
+                    <input type="color" bind:value={kitsuneStudioColor2} />
+                    <input bind:value={kitsuneStudioColor2} placeholder="#RRGGBB" />
+                  </div>
+                </div>
+
+                <div class="card">
+                  <h3>{tr('EQ Profile Shaper', 'Moldeador EQ del Perfil')}</h3>
+                  <p class="muted">{tr('Edit the profile graphically instead of typing profile-edit commands. In runtime test, the selected profile is hot-loaded into test.profile.', 'Edita el perfil graficamente en vez de escribir comandos profile-edit. En runtime test, el perfil seleccionado se carga en caliente en test.profile.')}</p>
+                  <div class="row">
+                    <select bind:value={kitsuneProfileName} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)}>
+                      <option value="">{tr('profile', 'perfil')}</option>
+                      {#each kitsuneProfileOptions as profileName}
+                        <option value={profileName}>{profileName}</option>
+                      {/each}
+                    </select>
+                    <button class="secondary" on:click={() => void loadKitsuneStudioProfile()} disabled={kitsuneBusy || !kitsuneProfileOptions.length}>
+                      {tr('Reload Values', 'Recargar Valores')}
+                    </button>
+                    <button class="secondary" on:click={() => void applyKitsuneStudioEq()} disabled={kitsuneBusy || isLiveServicesLocked()}>
+                      {tr('Apply EQ Profile', 'Aplicar Perfil EQ')}
+                    </button>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">gain</span>
+                    <input type="range" min="0.5" max="5" step="0.05" bind:value={kitsuneStudioEqGain} />
+                    <span class="badge">{Number(kitsuneStudioEqGain).toFixed(2)}</span>
+                    <span class="field-label">curve</span>
+                    <input type="range" min="0.1" max="3" step="0.01" bind:value={kitsuneStudioEqCurveDrive} />
+                    <span class="badge">{Number(kitsuneStudioEqCurveDrive).toFixed(2)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('low', 'bajos')}</span>
+                    <input type="range" min="0" max="2.5" step="0.01" bind:value={kitsuneStudioEqLowBandGain} />
+                    <span class="badge">{Number(kitsuneStudioEqLowBandGain).toFixed(2)}</span>
+                    <span class="field-label">{tr('mid', 'medios')}</span>
+                    <input type="range" min="0" max="2.5" step="0.01" bind:value={kitsuneStudioEqMidBandGain} />
+                    <span class="badge">{Number(kitsuneStudioEqMidBandGain).toFixed(2)}</span>
+                    <span class="field-label">{tr('high', 'agudos')}</span>
+                    <input type="range" min="0" max="2.5" step="0.01" bind:value={kitsuneStudioEqHighBandGain} />
+                    <span class="badge">{Number(kitsuneStudioEqHighBandGain).toFixed(2)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('floor', 'piso')}</span>
+                    <input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEqLoudFloor} />
+                    <span class="badge">{Number(kitsuneStudioEqLoudFloor).toFixed(2)}</span>
+                    <span class="field-label">{tr('height scale', 'escala altura')}</span>
+                    <input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioEqHeightScale} />
+                    <span class="badge">{Number(kitsuneStudioEqHeightScale).toFixed(2)}</span>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Runtime Test', 'Runtime Test')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Runtime Standard', 'Runtime Standard')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Rotate Next', 'Rotar Siguiente')}</button>
+                  </div>
+                </div>
+              </div>
+            {/if}
 
             {#if kitsuneTab === 'core'}
               <div class="grid kitsune-grid">
@@ -6453,6 +6845,8 @@ import {onDestroy, onMount, tick} from 'svelte';
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves')}>waves</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_fill')}>waves_fill</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('dots')}>dots</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('triangle')}>triangle</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('polygon')}>polygon</button>
                         </div>
                       {/if}
                     </div>
@@ -6540,6 +6934,8 @@ import {onDestroy, onMount, tick} from 'svelte';
                       <option value="waves">waves</option>
                       <option value="waves_fill">waves_fill</option>
                       <option value="dots">dots</option>
+                      <option value="triangle">triangle</option>
+                      <option value="polygon">polygon</option>
                     </select>
                     <button class="secondary" on:click={() => runKitsuneCommand(['visual', kitsuneVisualMode, kitsuneVisualStyle])} disabled={kitsuneBusy}>Apply Visual</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['style', kitsuneVisualMode, kitsuneVisualStyle])} disabled={kitsuneBusy}>Apply Style</button>
