@@ -154,9 +154,55 @@ latest_release_tag() {
   curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" | jq -r '.tag_name // empty'
 }
 
+write_kitsune_wrapper() {
+  local home_dir="${HOME:?HOME is required}"
+  local share_dir="$home_dir/.local/share/kitsune"
+  local config_dir="$home_dir/.config/kitsune"
+  local state_dir="$home_dir/.local/state/kitsune"
+
+  mkdir -p "$home_dir/.local/bin" "$config_dir" "$state_dir/run"
+  cat > "$home_dir/.local/bin/kitsune" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export KITSUNE_HOME="$share_dir"
+export KITSUNE_BIN_DIR="$share_dir/bin"
+export KITSUNE_CFG="$config_dir/base.conf"
+export KITSUNE_CAVA_CFG="$config_dir/cava.conf"
+export KITSUNE_RUN_PREFIX="$state_dir/run"
+mkdir -p "\$KITSUNE_RUN_PREFIX"
+exec "$share_dir/scripts/kitsune.sh" "\$@"
+EOF
+  chmod 755 "$home_dir/.local/bin/kitsune"
+}
+
+repair_kitsune_host_layout() {
+  local home_dir="${HOME:?HOME is required}"
+  local share_dir="$home_dir/.local/share/kitsune"
+  local config_dir="$home_dir/.config/kitsune"
+  local state_dir="$home_dir/.local/state/kitsune"
+
+  if [[ ! -d "$share_dir/scripts" || ! -d "$share_dir/bin" ]]; then
+    echo "[bootstrap] kitsune share layout missing in $share_dir; run full bootstrap first" >&2
+    return 1
+  fi
+
+  mkdir -p "$config_dir" "$state_dir/run"
+  if [[ -f "$share_dir/config/base.conf" && ! -f "$config_dir/base.conf" ]]; then
+    cp "$share_dir/config/base.conf" "$config_dir/base.conf"
+  fi
+  if [[ -f "$share_dir/config/cava.conf" && ! -f "$config_dir/cava.conf" ]]; then
+    cp "$share_dir/config/cava.conf" "$config_dir/cava.conf"
+  fi
+
+  write_kitsune_wrapper
+  echo "[bootstrap] repaired kitsune host layout"
+}
+
 install_kitsune_bundle() {
   local home_dir="${HOME:?HOME is required}"
   local share_dir="$home_dir/.local/share/kitsune"
+  local config_dir="$home_dir/.config/kitsune"
+  local state_dir="$home_dir/.local/state/kitsune"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
 
@@ -186,12 +232,19 @@ install_kitsune_bundle() {
     return 1
   fi
 
-  mkdir -p "$share_dir"
+  mkdir -p "$share_dir" "$config_dir" "$state_dir"
   rm -rf "$share_dir/scripts" "$share_dir/config" "$share_dir/completions"
   cp -a "$src_dir/scripts" "$share_dir/"
   cp -a "$src_dir/config" "$share_dir/"
   [[ -d "$src_dir/completions" ]] && cp -a "$src_dir/completions" "$share_dir/" || true
   mkdir -p "$share_dir/bin"
+
+  if [[ ! -f "$config_dir/base.conf" ]]; then
+    cp "$share_dir/config/base.conf" "$config_dir/base.conf"
+  fi
+  if [[ ! -f "$config_dir/cava.conf" ]]; then
+    cp "$share_dir/config/cava.conf" "$config_dir/cava.conf"
+  fi
 
   # Ensure scripts point to prebuilt binaries instead of local cargo build paths.
   sed -i \
@@ -205,12 +258,7 @@ install_kitsune_bundle() {
     "$share_dir/scripts/kitsune.sh"
   sed -i -e '/^cargo build --release$/d' "$share_dir/scripts/install.sh" || true
 
-  cat > "$home_dir/.local/bin/kitsune" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-exec "$share_dir/scripts/kitsune.sh" "\$@"
-EOF
-  chmod 755 "$home_dir/.local/bin/kitsune"
+  write_kitsune_wrapper
 
   rm -rf "$tmp_dir"
 }
@@ -327,7 +375,7 @@ EOF
 
 verify_bins() {
   local required_bins=()
-  if [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-only" ]]; then
+  if [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-only" || "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-repair" ]]; then
     required_bins=(kitsune kitsune-rendercore)
   else
     required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
@@ -373,6 +421,12 @@ main() {
   unset PYTHONPATH || true
 
   ensure_user_bin_dirs
+  if [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-repair" ]]; then
+    repair_kitsune_host_layout
+    verify_bins
+    echo "[ok] kitsune host repair complete"
+    exit 0
+  fi
   if [[ "$KITOWALL_BOOTSTRAP_MODE" != "kitsune-only" ]]; then
     install_system_deps
     install_kitowall_cli
