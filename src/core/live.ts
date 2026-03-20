@@ -1995,10 +1995,6 @@ export async function liveApply(opts: {
   try {
     await run(bin, setVideoArgs, {timeoutMs: 120000});
 
-    // Live mode owns wallpaper state: stop only Kitowall static wallpaper services.
-    await workshopCoexistenceEnter();
-    coexistEntered = true;
-
     // Keep live authority persistent across session restarts.
     if (integratedRendercoreMode()) {
       integratedRendercoreStart(bin);
@@ -2019,6 +2015,10 @@ export async function liveApply(opts: {
       await runSystemctlUser(['start', 'kitsune-rendercore.service']);
       await waitForRendercoreServiceActive();
     }
+
+    // Switch wallpaper authority only after rendercore is confirmed active.
+    await workshopCoexistenceEnter();
+    coexistEntered = true;
 
     withLiveLock(() => {
       const current = readIndex();
