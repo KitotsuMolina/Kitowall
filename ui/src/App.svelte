@@ -1079,11 +1079,18 @@
     if (!cmd) return false;
 
     if (cmd === 'help' || cmd === 'status' || cmd === 'layer-status' || cmd === 'logs') return false;
-    if (cmd === 'doctor') return args.includes('--fix');
-    if (cmd === 'monitors' && sub === 'list') return false;
+    if (cmd === 'start' || cmd === 'stop' || cmd === 'restart') return false;
+    if (cmd === 'visual' || cmd === 'style' || cmd === 'mode') return false;
+    if (cmd === 'runtime' || cmd === 'rotation' || cmd === 'rotate') return false;
+    if (cmd === 'spectrum-mode' || cmd === 'group' || cmd === 'group-file') return false;
+    if (cmd === 'monitor' || cmd === 'monitor-fallback' || cmd === 'monitors') return false;
+    if (cmd === 'profiles' && (sub === 'list' || sub === 'show' || sub === 'set-list' || sub === 'set-static' || sub === 'rotate')) return false;
+    if (cmd === 'config' || cmd === 'profile-edit') return false;
+    if (cmd === 'test-load' || cmd === 'tune') return false;
+    if (cmd === 'particles-preset' || cmd === 'postfx' || cmd === 'backend' || cmd === 'output-target') return false;
+    if (cmd === 'dynamic-color' || cmd === 'color-poll' || cmd === 'colorwatch') return false;
     if (cmd === 'instances' && (sub === 'list' || sub === 'status')) return false;
-    if (cmd === 'profiles' && (sub === 'list' || sub === 'show')) return false;
-    if (cmd === 'group' && (sub === 'validate' || sub === 'list-layers')) return false;
+    if (cmd === 'doctor') return args.includes('--fix');
     if (cmd === 'autostart' && (sub === 'status' || sub === 'list')) return false;
 
     return true;
@@ -3544,6 +3551,9 @@
 
       kitsuneMonitorOptions = monitors;
       kitsuneProfileOptions = profiles;
+      if (!kitsuneStartMonitor.trim() && monitors.length > 0) {
+        kitsuneStartMonitor = monitors[0];
+      }
 
       const cfgTarget = configMap.output_target;
       if (cfgTarget === 'layer-shell') {
@@ -3655,7 +3665,7 @@
         kitsuneProfileName = staticProfile;
       }
 
-      if (kitsuneStartMonitor && !monitors.includes(kitsuneStartMonitor)) kitsuneStartMonitor = '';
+      if (kitsuneStartMonitor && !monitors.includes(kitsuneStartMonitor)) kitsuneStartMonitor = monitors[0] ?? '';
       if (kitsuneMonitorName && !monitors.includes(kitsuneMonitorName)) kitsuneMonitorName = '';
       if (kitsuneInstanceMonitor && !monitors.includes(kitsuneInstanceMonitor)) kitsuneInstanceMonitor = '';
       if (kitsuneAutostartMonitor && !monitors.includes(kitsuneAutostartMonitor)) kitsuneAutostartMonitor = '';
@@ -4752,12 +4762,15 @@
   }
 
   async function loadKitsunePalette(): Promise<void> {
+    const effectiveMonitor = kitsuneStartMonitor.trim() || kitsuneMonitorName.trim() || kitsuneMonitorOptions[0] || '';
     try {
-      kitsunePalette = await invoke<KitsunePaletteReport>('kitowall_kitsune_palette');
+      kitsunePalette = await invoke<KitsunePaletteReport>('kitowall_kitsune_palette', {
+        monitor: effectiveMonitor || null
+      });
     } catch {
       kitsunePalette = {
         ok: false,
-        path: '/tmp/kitsune-accent.palette',
+        path: effectiveMonitor ? `/tmp/kitsune-accent-${effectiveMonitor}.palette` : '/tmp/kitsune-accent.palette',
         accent_light: '',
         accent_mid: '',
         accent_dark: ''
@@ -6850,6 +6863,7 @@
                       bind:value={kitsuneStartMonitor}
                       placeholder={tr('monitor (auto)', 'monitor (auto)')}
                       options={[{value: '', label: tr('monitor (auto)', 'monitor (auto)')}, ...kitsuneMonitorOptions.map(monitorName => ({value: monitorName, label: monitorName}))]}
+                      on:change={() => void loadKitsunePalette()}
                     />
                     <GsSelect
                       bind:value={kitsuneControlLaunchMode}
@@ -6888,7 +6902,7 @@
                           ['visual', kitsuneVisualMode, kitsuneVisualStyle],
                           args
                         ], tr('Static Kitsune visual started', 'Visual estatico de Kitsune iniciado'));
-                      }} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Start Static', 'Iniciar estatico')}</button>
+                      }} disabled={kitsuneBusy}>{tr('Start Static', 'Iniciar estatico')}</button>
                       <button class="secondary" on:click={() => selectKitsuneTab('studio')}>{tr('Open Studio', 'Abrir Studio')}</button>
                     </div>
                   {:else}
@@ -6910,12 +6924,12 @@
                           ...(kitsuneGroupFile.trim() ? [['group-file', kitsuneGroupFile.trim()]] : []),
                           args
                         ], tr('Group Kitsune visual started', 'Visual group de Kitsune iniciado'));
-                      }} disabled={kitsuneBusy || isLiveServicesLocked() || !kitsuneGroupFile.trim()}>{tr('Start Group', 'Iniciar group')}</button>
+                      }} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>{tr('Start Group', 'Iniciar group')}</button>
                       <button class="secondary" on:click={() => { selectKitsuneTab('advanced'); selectKitsuneAdvancedTab('group'); }}>{tr('Open Group Composer', 'Abrir Group Composer')}</button>
                     </div>
                   {/if}
                   <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Stop', 'Detener')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy}>{tr('Stop', 'Detener')}</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>{tr('Status', 'Status')}</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['layer-status'])} disabled={kitsuneBusy}>{tr('Layer Status', 'Estado Layer')}</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>{tr('Doctor', 'Doctor')}</button>
@@ -6948,7 +6962,7 @@
                   <h3>{tr('Quick Start', 'Inicio Rapido')}</h3>
                   <p class="muted">{tr('This is the simplified surface for daily use. The other tabs remain available for advanced work.', 'Esta es la superficie simplificada para uso diario. Las otras pestañas siguen disponibles para trabajo avanzado.')}</p>
                   <div class="row">
-                    <GsSelect bind:value={kitsuneStartMonitor} placeholder={tr('monitor (optional)', 'monitor (opcional)')} options={[{value: '', label: tr('monitor (optional)', 'monitor (opcional)')}, ...kitsuneMonitorOptions.map(monitorName => ({value: monitorName, label: monitorName}))]} />
+                    <GsSelect bind:value={kitsuneStartMonitor} placeholder={tr('monitor (optional)', 'monitor (opcional)')} options={[{value: '', label: tr('monitor (optional)', 'monitor (opcional)')}, ...kitsuneMonitorOptions.map(monitorName => ({value: monitorName, label: monitorName}))]} on:change={() => void loadKitsunePalette()} />
                     <GsSelect bind:value={kitsuneVisualMode} options={kitsuneVisualModeOptions} />
                     <GsSelect bind:value={kitsuneVisualStyle} options={kitsuneVisualStyleOptions} />
                     <GsSelect bind:value={kitsuneSpectrumMode} options={kitsuneSpectrumModeOptions} />

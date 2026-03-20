@@ -294,9 +294,8 @@ install_kitsune_bundle() {
     -e '/^cargo build --release --bins$/d' \
     -e '/^echo "\[i\] Building GTK overlay frontend\.\.\."$/d' \
     -e '/^cargo build --release --bin kitsune-overlay$/d' \
-    -e 's|\./target/release/kitsune-layer|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-layer|g' \
+    -e 's|\./target/release/kitsune-overlay|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-overlay|g' \
     -e 's|\./target/release/kitsune|"${KITSUNE_BIN_DIR:-./bin}"/kitsune|g' \
-    -e 's|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-overlay|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-layer|g' \
     -e 's|"${KITSUNE_BIN_DIR:-./bin}"/kitsune --config|"${KITSUNE_BIN_DIR:-./bin}"/kitsune run --config|g' \
     "$share_dir/scripts/start.sh" \
     "$share_dir/scripts/kitsune.sh"
@@ -336,9 +335,9 @@ install_kitsune_bins() {
 
   # Prefer prebuilt binaries from GitHub Releases to avoid local toolchain/submodule issues.
   if install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-linux-x86_64" "$share_bin_dir/kitsune" && \
-     install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-layer-linux-x86_64" "$share_bin_dir/kitsune-layer" && \
+     install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-overlay-linux-x86_64" "$share_bin_dir/kitsune-overlay" && \
      install_github_release_bin "KitotsuMolina/Kitsune-RenderCore" "kitsune-rendercore-linux-x86_64" "$bin_dir/kitsune-rendercore"; then
-    ln -sf "$share_bin_dir/kitsune-layer" "$bin_dir/kitsune-layer"
+    ln -sf "$share_bin_dir/kitsune-overlay" "$bin_dir/kitsune-overlay"
     BOOTSTRAP_KITSUNE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune" | sed 's/^v//')"
     BOOTSTRAP_RENDERCORE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune-RenderCore" | sed 's/^v//')"
     release_ok=1

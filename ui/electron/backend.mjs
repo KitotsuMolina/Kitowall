@@ -273,6 +273,16 @@ async function readKitsunePalette(palettePath = '/tmp/kitsune-accent.palette') {
   }
 }
 
+function sanitizeKitsuneInstanceId(raw) {
+  return String(raw ?? '').replace(/[^A-Za-z0-9_.-]/g, '_');
+}
+
+function kitsunePalettePathForMonitor(monitor) {
+  const mon = String(monitor ?? '').trim();
+  if (!mon) return '/tmp/kitsune-accent.palette';
+  return `/tmp/kitsune-accent-${sanitizeKitsuneInstanceId(mon)}.palette`;
+}
+
 async function resolveKitowallCmd() {
   if (process.env.KITOWALL_CMD) {
     const [base, ...args] = process.env.KITOWALL_CMD.split(/\s+/).filter(Boolean);
@@ -1002,7 +1012,7 @@ export async function createBackend(win) {
         case 'kitowall_kitsune_versions':
           return {kitsune: await componentUpdateInfo('kitsune'), rendercore: await componentUpdateInfo('kitsune-rendercore')};
         case 'kitowall_kitsune_palette': {
-          const palettePath = cleanString(args.path) || '/tmp/kitsune-accent.palette';
+          const palettePath = cleanString(args.path) || kitsunePalettePathForMonitor(cleanString(args.monitor));
           return await readKitsunePalette(palettePath);
         }
         case 'kitowall_kitsune_group_schemes_list': {
