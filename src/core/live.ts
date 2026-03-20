@@ -7,7 +7,7 @@ import {pipeline} from 'node:stream/promises';
 import {run} from '../utils/exec';
 import {fetchWithRetry} from '../utils/net';
 import {ensureDir} from '../utils/fs';
-import {workshopCoexistenceEnter, workshopCoexistenceExit} from './workshop';
+import {workshopCoexistenceEnter, workshopCoexistenceExit, workshopSetActive} from './workshop';
 
 export type LiveProvider = 'moewalls' | 'motionbgs';
 export type LiveQuality = 'auto' | 'hd' | '4k';
@@ -1992,6 +1992,7 @@ export async function liveApply(opts: {
     '--video', item.file_path
   ];
   let coexistEntered = false;
+  let snapshotId: string | undefined;
   try {
     await run(bin, setVideoArgs, {timeoutMs: 120000});
 
@@ -2017,8 +2018,22 @@ export async function liveApply(opts: {
     }
 
     // Switch wallpaper authority only after rendercore is confirmed active.
-    await workshopCoexistenceEnter();
+    const coexist = await workshopCoexistenceEnter();
     coexistEntered = true;
+    snapshotId = coexist.snapshot_id;
+
+    workshopSetActive({
+      mode: 'livewallpaper',
+      started_at: Date.now(),
+      snapshot_id: snapshotId,
+      instances: {
+        [monitor]: {
+          id: item.id,
+          backend: 'rendercore',
+          type: 'video'
+        }
+      }
+    });
 
     withLiveLock(() => {
       const current = readIndex();
