@@ -292,8 +292,11 @@ install_kitsune_bundle() {
     -e '/^echo "\[i\] Building Rust renderer\.\.\."$/d' \
     -e '/^cargo build --release --locked --bins$/d' \
     -e '/^cargo build --release --bins$/d' \
+    -e '/^echo "\[i\] Building GTK overlay frontend\.\.\."$/d' \
+    -e '/^cargo build --release --bin kitsune-overlay$/d' \
     -e 's|\./target/release/kitsune-layer|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-layer|g' \
     -e 's|\./target/release/kitsune|"${KITSUNE_BIN_DIR:-./bin}"/kitsune|g' \
+    -e 's|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-overlay|"${KITSUNE_BIN_DIR:-./bin}"/kitsune-layer|g' \
     -e 's|"${KITSUNE_BIN_DIR:-./bin}"/kitsune --config|"${KITSUNE_BIN_DIR:-./bin}"/kitsune run --config|g' \
     "$share_dir/scripts/start.sh" \
     "$share_dir/scripts/kitsune.sh"

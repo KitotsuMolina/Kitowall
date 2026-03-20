@@ -1,6 +1,7 @@
 <script lang="ts">
   import {convertFileSrc, invoke} from './lib/desktop';
-import {onDestroy, onMount, tick} from 'svelte';
+  import {onDestroy, onMount, tick} from 'svelte';
+  import GsSelect from './lib/GsSelect.svelte';
   import logo from './assets/logo.png';
 
   type HealthReport = {
@@ -170,6 +171,27 @@ import {onDestroy, onMount, tick} from 'svelte';
     rendercore: VersionUpdateInfo;
   };
 
+  type KitsunePaletteReport = {
+    ok: boolean;
+    path: string;
+    accent_light: string;
+    accent_mid: string;
+    accent_dark: string;
+  };
+
+  type KitsuneGroupSchemeEntry = {
+    name: string;
+    savedAt?: number;
+    layers: Array<{index: number; rawSpec: string;}>;
+  };
+
+  type KitsuneGroupSchemesReport = {
+    ok: boolean;
+    groupFile: string;
+    items: KitsuneGroupSchemeEntry[];
+    path: string;
+  };
+
   type KitsuneRunResult = {
     ok: boolean;
     exitCode: number;
@@ -333,12 +355,14 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   type GroupLayerEntry = {
     index: number;
+    rawSpec?: string;
     enabled: string;
     mode: string;
     style: string;
     profile: string;
     color: string;
     alpha: string;
+    colorMode?: string;
     runtime?: string;
     rotate?: string;
     profilesPipe?: string;
@@ -347,15 +371,11 @@ import {onDestroy, onMount, tick} from 'svelte';
   type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
   type UiLanguage = 'en' | 'es';
   type KitsuneTabId =
+    | 'control'
     | 'studio'
-    | 'core'
-    | 'profiles'
-    | 'group'
-    | 'visual'
-    | 'render'
-    | 'monitors'
-    | 'system'
+    | 'advanced'
     | 'logs';
+  type KitsuneAdvancedTabId = 'core' | 'profiles' | 'group' | 'visual' | 'render' | 'monitors' | 'system';
 
   let namespace = 'kitowall';
   let health: HealthReport | null = null;
@@ -434,7 +454,8 @@ import {onDestroy, onMount, tick} from 'svelte';
   let logsQuery = '';
   let kitsuneBusy = false;
   let kitsuneStatus: KitsuneStatusReport | null = null;
-  let kitsuneTab: KitsuneTabId = 'studio';
+  let kitsuneTab: KitsuneTabId = 'control';
+  let kitsuneAdvancedTab: KitsuneAdvancedTabId = 'core';
   let kitsuneOutput = '';
   let kitsuneLastCommand = '';
   let kitsuneStartMonitor = '';
@@ -476,19 +497,23 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneGroupLayerEnabledOpen = false;
   let kitsuneGroupLayerMode: 'bars' | 'ring' = 'bars';
   let kitsuneGroupLayerModeOpen = false;
-  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'bars';
+  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'bars';
   let kitsuneGroupLayerStyleOpen = false;
   let kitsuneGroupLayerProfile = 'bars_balanced';
   let kitsuneGroupLayerProfileOpen = false;
   let kitsuneGroupLayerProfileFilter = '';
   let kitsuneVisibleGroupLayerProfiles: string[] = [];
   let kitsuneGroupLayerColor = '#ffffff';
+  let kitsuneGroupLayerColorMode: 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' = 'static';
   let kitsuneGroupLayerAlpha = 0.35;
   let kitsuneGroupAddLayerOpen = false;
   let kitsuneGroupAddLayerSelected: string[] = [];
   let kitsuneGroupAddLayerOptions: Array<{id: string; label: string; spec: string}> = [];
+  let kitsuneGroupSchemeName = '';
+  let kitsuneGroupSchemes: KitsuneGroupSchemeEntry[] = [];
+  let kitsuneGroupSchemesPath = '';
   let kitsuneVisualMode: 'bars' | 'ring' = 'bars';
-  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
+  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
   let kitsunePostfxEnable = 1;
   let kitsunePostfxBlurPasses = 1;
   let kitsunePostfxBlurMix = 0.18;
@@ -499,6 +524,7 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneBackend: 'cpu' | 'gpu' = 'gpu';
   let kitsuneOutputTarget: 'layer-shell' = 'layer-shell';
   let kitsuneSpectrumMode: 'single' | 'group' = 'single';
+  let kitsuneControlLaunchMode: 'static' | 'group' = 'static';
   let kitsuneRuntime: 'standard' | 'test' = 'standard';
   let kitsuneMonitorName = '';
   let kitsuneMonitorNameOpen = false;
@@ -514,11 +540,31 @@ import {onDestroy, onMount, tick} from 'svelte';
   let kitsuneStudioBarWidth = 8;
   let kitsuneStudioBarGap = 3;
   let kitsuneStudioBarCornerRadius = 4;
+  let kitsuneStudioSegmentedBars = false;
+  let kitsuneStudioSegmentLength = 12;
+  let kitsuneStudioSegmentGap = 6;
   let kitsuneStudioLineMaxHeightRatio = 0.68;
   let kitsuneStudioRingInnerRatio = 0.2;
   let kitsuneStudioRingLengthRatio = 0.22;
+  let kitsuneStudioBarsWaveThickness = 3;
+  let kitsuneStudioBarsDotRadius = 2;
+  let kitsuneStudioRingWaveThickness = 2;
+  let kitsuneStudioRingDotRadius = 2;
+  let kitsuneStudioBarsWaveRoundness = 0.7;
+  let kitsuneStudioRingWaveRoundness = 0.65;
+  let kitsuneStudioRingFillSoftness = 0.35;
+  let kitsuneStudioRingFillOverlapPx = 1.8;
   let kitsuneStudioColor = '#ff2f8f';
   let kitsuneStudioColor2 = '#19f0ff';
+  let kitsuneStudioColorMode: 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' = 'accent_mid';
+  let kitsuneStudioColor2Mode: 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' = 'accent_light';
+  let kitsunePalette: KitsunePaletteReport = {
+    ok: false,
+    path: '/tmp/kitsune-accent.palette',
+    accent_light: '',
+    accent_mid: '',
+    accent_dark: ''
+  };
   let kitsuneStudioEqGain = 2.15;
   let kitsuneStudioEqCurveDrive = 0.95;
   let kitsuneStudioEqLowBandGain = 1;
@@ -755,6 +801,12 @@ import {onDestroy, onMount, tick} from 'svelte';
     | 'unsplashOrientation'
     | 'unsplashContentFilter'
     | 'unsplashImageFit'
+    | 'kitsuneControlMonitor'
+    | 'kitsuneControlLaunchMode'
+    | 'kitsuneControlVisualMode'
+    | 'kitsuneControlVisualStyle'
+    | 'kitsuneControlProfile'
+    | 'kitsuneControlGroupFile'
     | null = null;
   const wallhavenSortingOptions = [
     'random',
@@ -767,6 +819,69 @@ import {onDestroy, onMount, tick} from 'svelte';
   const unsplashOrientationOptions = ['landscape', 'portrait', 'squarish'] as const;
   const unsplashContentFilterOptions = ['low', 'high'] as const;
   const unsplashImageFitOptions = ['crop', 'clamp', 'facearea'] as const;
+  const kitsuneVisualModeOptions = [
+    {value: 'bars', label: 'bars'},
+    {value: 'ring', label: 'circle'}
+  ] as const;
+  const kitsuneVisualStyleOptions = [
+    {value: 'bars', label: 'bars'},
+    {value: 'bars_fill', label: 'bars_fill'},
+    {value: 'waves', label: 'waves'},
+    {value: 'waves_kwy', label: 'waves_kwy'},
+    {value: 'waves_fill', label: 'waves_fill'},
+    {value: 'dots', label: 'dots'},
+    {value: 'triangle', label: 'triangle'},
+    {value: 'polygon', label: 'polygon'}
+  ] as const;
+  const kitsuneSpectrumModeOptions = [
+    {value: 'single', label: 'single'},
+    {value: 'group', label: 'group'}
+  ] as const;
+  const kitsuneRuntimeOptions = [
+    {value: 'standard', label: 'standard'},
+    {value: 'test', label: 'test'}
+  ] as const;
+  const kitsuneColorRoleOptions = [
+    {value: 'static', label: kitsuneColorRoleLabel('static')},
+    {value: 'accent_light', label: kitsuneColorRoleLabel('accent_light')},
+    {value: 'accent_mid', label: kitsuneColorRoleLabel('accent_mid')},
+    {value: 'accent_dark', label: kitsuneColorRoleLabel('accent_dark')}
+  ];
+  const kitsuneParticlesPresetOptions = [
+    {value: 'off', label: 'off'},
+    {value: 'low', label: 'low'},
+    {value: 'balanced', label: 'balanced'},
+    {value: 'high', label: 'high'}
+  ] as const;
+  const kitsunePostfxScopeOptions = [
+    {value: 'final', label: 'final'},
+    {value: 'layer', label: 'layer'},
+    {value: 'mixed', label: 'mixed'}
+  ] as const;
+  const kitsuneBackendOptions = [
+    {value: 'cpu', label: 'cpu'},
+    {value: 'gpu', label: 'gpu'}
+  ] as const;
+  const kitsuneOutputTargetOptions = [
+    {value: 'layer-shell', label: 'layer-shell'}
+  ] as const;
+  const kitsuneProfilesModeOptions = [
+    {value: 'all', label: tr('all', 'todas')},
+    {value: 'bars', label: tr('bars', 'barras')},
+    {value: 'ring', label: tr('ring', 'anillo')}
+  ];
+  const kitsuneRingBarsModeOptions = [
+    {value: 'bars', label: 'bars'},
+    {value: 'ring', label: 'ring'}
+  ] as const;
+  const kitsuneLogSourceOptions = [
+    {value: 'all', label: tr('all', 'todas')},
+    {value: 'renderer', label: 'renderer'},
+    {value: 'cava', label: 'cava'},
+    {value: 'layer', label: 'layer'},
+    {value: 'colorwatch', label: 'colorwatch'},
+    {value: 'monitorwatch', label: 'monitorwatch'}
+  ];
 
   function pushToast(text: string, kind: 'info' | 'success' | 'error' = 'info'): void {
     const id = toastSeq++;
@@ -915,6 +1030,9 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
     if (id === 'logs') {
       void loadSystemLogs();
+    }
+    if (id === 'kitsune') {
+      void loadKitsuneStatus();
     }
     if (id === 'kitsune-live') {
       void initLiveV2().then(() => {
@@ -2815,11 +2933,11 @@ import {onDestroy, onMount, tick} from 'svelte';
     const barsProfile = kitsuneProfileOptions.find(p => p.startsWith('bars')) ?? 'bars_balanced';
     const ringProfile = kitsuneProfileOptions.find(p => p.startsWith('ring')) ?? 'ring_energy';
     kitsuneGroupAddLayerOptions = [
-      {id: 'bars-soft', label: `Bars Soft (${barsProfile})`, spec: `1,bars,bars,${barsProfile},#ffffff,0.35`},
-      {id: 'bars-fill', label: `Bars Fill (${barsProfile})`, spec: `1,bars,bars_fill,${barsProfile},#74f7ff,0.30`},
-      {id: 'waves-fill', label: `Waves Fill (${barsProfile})`, spec: `1,bars,waves_fill,${barsProfile},#ff8fd1,0.28`},
-      {id: 'ring-energy', label: `Ring Energy (${ringProfile})`, spec: `1,ring,waves_fill,${ringProfile},#aef4ff,0.36`},
-      {id: 'ring-dots', label: `Ring Dots (${ringProfile})`, spec: `1,ring,dots,${ringProfile},#ffc67a,0.26`}
+      {id: 'bars-soft', label: `Bars Soft (${barsProfile})`, spec: `1,bars,bars,${barsProfile},#ffffff,0.35,color_mode=accent_light`},
+      {id: 'bars-fill', label: `Bars Fill (${barsProfile})`, spec: `1,bars,bars_fill,${barsProfile},#74f7ff,0.30,color_mode=accent_mid`},
+      {id: 'waves-fill', label: `Waves Fill (${barsProfile})`, spec: `1,bars,waves_fill,${barsProfile},#ff8fd1,0.28,color_mode=accent_dark`},
+      {id: 'ring-energy', label: `Ring Energy (${ringProfile})`, spec: `1,ring,waves_fill,${ringProfile},#aef4ff,0.36,color_mode=accent_mid`},
+      {id: 'ring-dots', label: `Ring Dots (${ringProfile})`, spec: `1,ring,dots,${ringProfile},#ffc67a,0.26,color_mode=accent_light`}
     ];
     kitsuneGroupAddLayerSelected = kitsuneGroupAddLayerSelected.filter(id =>
       kitsuneGroupAddLayerOptions.some(o => o.id === id)
@@ -2882,6 +3000,12 @@ import {onDestroy, onMount, tick} from 'svelte';
       | 'unsplashOrientation'
       | 'unsplashContentFilter'
       | 'unsplashImageFit'
+      | 'kitsuneControlMonitor'
+      | 'kitsuneControlLaunchMode'
+      | 'kitsuneControlVisualMode'
+      | 'kitsuneControlVisualStyle'
+      | 'kitsuneControlProfile'
+      | 'kitsuneControlGroupFile'
   ): void {
     gsSelectOpen = gsSelectOpen === id ? null : id;
   }
@@ -2908,6 +3032,41 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function selectWallhavenSorting(value: string): void {
     wallhavenSorting = value;
+    gsSelectOpen = null;
+  }
+
+  function selectKitsuneControlMonitor(value: string): void {
+    kitsuneStartMonitor = value;
+    gsSelectOpen = null;
+  }
+
+  function selectKitsuneControlLaunchModeOption(value: string): void {
+    handleKitsuneControlLaunchModeChange(value === 'group' ? 'group' : 'static');
+    gsSelectOpen = null;
+  }
+
+  function selectKitsuneControlVisualMode(value: string): void {
+    kitsuneVisualMode = value === 'ring' ? 'ring' : 'bars';
+    gsSelectOpen = null;
+  }
+
+  function selectKitsuneControlVisualStyle(value: string): void {
+    if (value === 'bars' || value === 'bars_fill' || value === 'waves' || value === 'waves_kwy' || value === 'waves_fill' || value === 'dots' || value === 'triangle' || value === 'polygon') {
+      kitsuneVisualStyle = value;
+    }
+    gsSelectOpen = null;
+  }
+
+  function selectKitsuneControlProfile(value: string): void {
+    kitsuneProfileName = value;
+    gsSelectOpen = null;
+    if (value.trim()) {
+      void loadKitsuneStudioProfile(value);
+    }
+  }
+
+  function selectKitsuneControlGroupFile(value: string): void {
+    kitsuneGroupFile = value;
     gsSelectOpen = null;
   }
 
@@ -3016,17 +3175,23 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (!m) continue;
       const index = Number(m[1]);
       const parts = m[2].split(',').map(v => v.trim());
+      const extraParts = parts.slice(6);
+      const positionalExtras = extraParts.filter(v => v && !v.includes('='));
       rows.push({
         index,
+        rawSpec: m[2].trim(),
         enabled: parts[0] ?? '',
         mode: parts[1] ?? '',
         style: parts[2] ?? '',
         profile: parts[3] ?? '',
         color: parts[4] ?? '',
         alpha: parts[5] ?? '',
-        runtime: parts[6] ?? '',
-        rotate: parts[7] ?? '',
-        profilesPipe: parts[8] ?? ''
+        colorMode:
+          extraParts.map(v => v.trim()).find(v => v.startsWith('color_mode='))?.split('=')[1]
+          ?? (['static', 'accent_light', 'accent_mid', 'accent_dark'].includes((parts[4] ?? '').trim()) ? parts[4].trim() : 'static'),
+        runtime: positionalExtras[0] ?? '',
+        rotate: positionalExtras[1] ?? '',
+        profilesPipe: positionalExtras[2] ?? ''
       });
     }
     return rows;
@@ -3064,26 +3229,157 @@ import {onDestroy, onMount, tick} from 'svelte';
     return `./config/profiles/${name}.profile`;
   }
 
-  function applyKitsuneStudioPreset(kind: 'balanced' | 'compact'): void {
+  function suggestKitsuneColorMode(
+    mode: 'bars' | 'ring',
+    style: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon',
+    slot: 'primary' | 'secondary' = 'primary'
+  ): 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' {
+    if (mode === 'ring') {
+      return slot === 'primary' ? 'accent_dark' : 'accent_light';
+    }
+    if (style === 'waves' || style === 'waves_kwy' || style === 'waves_fill') {
+      return slot === 'primary' ? 'accent_mid' : 'accent_dark';
+    }
+    if (style === 'triangle' || style === 'polygon') {
+      return slot === 'primary' ? 'accent_mid' : 'accent_light';
+    }
+    if (style === 'dots') {
+      return slot === 'primary' ? 'accent_light' : 'accent_mid';
+    }
+    return slot === 'primary' ? 'accent_light' : 'accent_mid';
+  }
+
+  function kitsuneColorRoleLabel(value: string): string {
+    if (value === 'accent_light') return tr('Wallpaper Light', 'Wallpaper Claro');
+    if (value === 'accent_mid') return tr('Wallpaper Mid', 'Wallpaper Medio');
+    if (value === 'accent_dark') return tr('Wallpaper Dark', 'Wallpaper Oscuro');
+    return tr('Static', 'Estatico');
+  }
+
+  function kitsuneHasAvailableUpdate(): boolean {
+    return Boolean(
+      kitsuneStatus?.versions?.kitsune?.update_available ||
+      kitsuneStatus?.versions?.rendercore?.update_available
+    );
+  }
+
+  function applyKitsuneStudioPreset(kind: 'balanced' | 'compact' | 'wallpaper' | 'neon_ring' | 'segmented'): void {
     if (kind === 'balanced') {
       kitsuneStudioBars = 96;
       kitsuneStudioBarWidth = 8;
       kitsuneStudioBarGap = 3;
       kitsuneStudioBarCornerRadius = 4;
+      kitsuneStudioSegmentedBars = false;
+      kitsuneStudioSegmentLength = 12;
+      kitsuneStudioSegmentGap = 6;
       kitsuneStudioLineMaxHeightRatio = 0.64;
       kitsuneStudioRingInnerRatio = 0.22;
       kitsuneStudioRingLengthRatio = 0.20;
+      kitsuneStudioBarsWaveThickness = 3;
+      kitsuneStudioBarsDotRadius = 2;
+      kitsuneStudioRingWaveThickness = 2.5;
+      kitsuneStudioRingDotRadius = 2;
+      kitsuneStudioBarsWaveRoundness = 0.72;
+      kitsuneStudioRingWaveRoundness = 0.68;
+      kitsuneStudioRingFillSoftness = 0.35;
+      kitsuneStudioRingFillOverlapPx = 1.8;
       kitsuneStudioColor = '#ff4f9a';
       kitsuneStudioColor2 = '#2fe2ff';
+      kitsuneStudioColorMode = 'static';
+      kitsuneStudioColor2Mode = 'static';
+      return;
+    }
+    if (kind === 'wallpaper') {
+      kitsuneStudioBars = 96;
+      kitsuneStudioBarWidth = 8;
+      kitsuneStudioBarGap = 3;
+      kitsuneStudioBarCornerRadius = 4;
+      kitsuneStudioSegmentedBars = false;
+      kitsuneStudioSegmentLength = 12;
+      kitsuneStudioSegmentGap = 6;
+      kitsuneStudioLineMaxHeightRatio = 0.62;
+      kitsuneStudioRingInnerRatio = 0.22;
+      kitsuneStudioRingLengthRatio = 0.20;
+      kitsuneStudioBarsWaveThickness = 2.5;
+      kitsuneStudioBarsDotRadius = 2;
+      kitsuneStudioRingWaveThickness = 2.2;
+      kitsuneStudioRingDotRadius = 2;
+      kitsuneStudioBarsWaveRoundness = 0.75;
+      kitsuneStudioRingWaveRoundness = 0.72;
+      kitsuneStudioRingFillSoftness = 0.28;
+      kitsuneStudioRingFillOverlapPx = 1.2;
+      kitsuneStudioColorMode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'primary');
+      kitsuneStudioColor2Mode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'secondary');
+      return;
+    }
+    if (kind === 'neon_ring') {
+      kitsuneStudioBars = 96;
+      kitsuneStudioBarWidth = 9;
+      kitsuneStudioBarGap = 3;
+      kitsuneStudioBarCornerRadius = 5;
+      kitsuneStudioSegmentedBars = false;
+      kitsuneStudioSegmentLength = 12;
+      kitsuneStudioSegmentGap = 6;
+      kitsuneStudioLineMaxHeightRatio = 0.60;
+      kitsuneStudioRingInnerRatio = 0.24;
+      kitsuneStudioRingLengthRatio = 0.24;
+      kitsuneStudioBarsWaveThickness = 3;
+      kitsuneStudioBarsDotRadius = 2.5;
+      kitsuneStudioRingWaveThickness = 4.5;
+      kitsuneStudioRingDotRadius = 2.5;
+      kitsuneStudioBarsWaveRoundness = 0.78;
+      kitsuneStudioRingWaveRoundness = 0.86;
+      kitsuneStudioRingFillSoftness = 0.52;
+      kitsuneStudioRingFillOverlapPx = 2.8;
+      kitsuneStudioColor = '#ff2f8f';
+      kitsuneStudioColor2 = '#19f0ff';
+      kitsuneStudioColorMode = 'static';
+      kitsuneStudioColor2Mode = 'static';
+      return;
+    }
+    if (kind === 'segmented') {
+      kitsuneStudioBars = 88;
+      kitsuneStudioBarWidth = 10;
+      kitsuneStudioBarGap = 4;
+      kitsuneStudioBarCornerRadius = 6;
+      kitsuneStudioSegmentedBars = true;
+      kitsuneStudioSegmentLength = 15;
+      kitsuneStudioSegmentGap = 5;
+      kitsuneStudioLineMaxHeightRatio = 0.58;
+      kitsuneStudioRingInnerRatio = 0.23;
+      kitsuneStudioRingLengthRatio = 0.20;
+      kitsuneStudioBarsWaveThickness = 3.4;
+      kitsuneStudioBarsDotRadius = 2.4;
+      kitsuneStudioRingWaveThickness = 3.2;
+      kitsuneStudioRingDotRadius = 2.4;
+      kitsuneStudioBarsWaveRoundness = 0.82;
+      kitsuneStudioRingWaveRoundness = 0.78;
+      kitsuneStudioRingFillSoftness = 0.38;
+      kitsuneStudioRingFillOverlapPx = 2.2;
+      kitsuneStudioColorMode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'primary');
+      kitsuneStudioColor2Mode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'secondary');
       return;
     }
     kitsuneStudioBars = 72;
     kitsuneStudioBarWidth = 10;
     kitsuneStudioBarGap = 4;
     kitsuneStudioBarCornerRadius = 5;
+    kitsuneStudioSegmentedBars = true;
+    kitsuneStudioSegmentLength = 14;
+    kitsuneStudioSegmentGap = 6;
     kitsuneStudioLineMaxHeightRatio = 0.56;
     kitsuneStudioRingInnerRatio = 0.25;
     kitsuneStudioRingLengthRatio = 0.18;
+    kitsuneStudioBarsWaveThickness = 2.8;
+    kitsuneStudioBarsDotRadius = 2.2;
+    kitsuneStudioRingWaveThickness = 2.4;
+    kitsuneStudioRingDotRadius = 2.2;
+    kitsuneStudioBarsWaveRoundness = 0.74;
+    kitsuneStudioRingWaveRoundness = 0.70;
+    kitsuneStudioRingFillSoftness = 0.32;
+    kitsuneStudioRingFillOverlapPx = 1.6;
+    kitsuneStudioColorMode = 'static';
+    kitsuneStudioColor2Mode = 'static';
   }
 
   async function runKitsuneBatch(commands: string[][], successMessage: string, reloadProfile = false): Promise<void> {
@@ -3111,7 +3407,8 @@ import {onDestroy, onMount, tick} from 'svelte';
       pushToast(successMessage, 'success');
       if (kitsuneStatus?.installed) {
         await loadKitsuneRuntimeOptions();
-        if (kitsuneTab === 'group') {
+        await loadKitsunePalette();
+        if (kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'group') {
           await loadKitsuneGroupData();
         }
         if (reloadProfile) {
@@ -3151,18 +3448,41 @@ import {onDestroy, onMount, tick} from 'svelte';
     }
   }
 
+  function kitsunePersistSelectedProfileCommands(profileNameArg?: string): string[][] {
+    const profileName = (profileNameArg ?? kitsuneSelectedProfileName()).trim();
+    if (!profileName) return [];
+    return [
+      ['profiles', 'set-static', profileName],
+      ['profiles', 'rotate', 'off']
+    ];
+  }
+
   async function applyKitsuneStudioVisual(): Promise<void> {
     const commands = [
+      ...kitsunePersistSelectedProfileCommands(),
       ['config', 'set', 'bars', String(Math.max(16, Math.floor(Number(kitsuneStudioBars) || 16)))],
       ['config', 'set', 'fps', String(Math.max(15, Math.floor(Number(kitsuneStudioFps) || 15)))],
       ['config', 'set', 'bar_width', String(Math.max(1, Number(kitsuneStudioBarWidth) || 1))],
       ['config', 'set', 'bar_gap', String(Math.max(0, Number(kitsuneStudioBarGap) || 0))],
       ['config', 'set', 'bar_corner_radius', String(Math.max(0, Number(kitsuneStudioBarCornerRadius) || 0))],
+      ['config', 'set', 'segmented_bars', kitsuneStudioSegmentedBars ? '1' : '0'],
+      ['config', 'set', 'segment_length', String(Math.max(1, Number(kitsuneStudioSegmentLength) || 1))],
+      ['config', 'set', 'segment_gap', String(Math.max(0, Number(kitsuneStudioSegmentGap) || 0))],
+      ['config', 'set', 'bars_wave_thickness', String(Math.max(1, Number(kitsuneStudioBarsWaveThickness) || 1))],
+      ['config', 'set', 'bars_dot_radius', String(Math.max(1, Number(kitsuneStudioBarsDotRadius) || 1))],
+      ['config', 'set', 'ring_wave_thickness', String(Math.max(1, Number(kitsuneStudioRingWaveThickness) || 1))],
+      ['config', 'set', 'ring_dot_radius', String(Math.max(1, Number(kitsuneStudioRingDotRadius) || 1))],
+      ['config', 'set', 'bars_wave_roundness', String(Math.min(1, Math.max(0.05, Number(kitsuneStudioBarsWaveRoundness) || 0.05)))],
+      ['config', 'set', 'ring_wave_roundness', String(Math.min(1, Math.max(0.05, Number(kitsuneStudioRingWaveRoundness) || 0.05)))],
+      ['config', 'set', 'ring_fill_softness', String(Math.min(1, Math.max(0, Number(kitsuneStudioRingFillSoftness) || 0)))],
+      ['config', 'set', 'ring_fill_overlap_px', String(Math.max(0, Number(kitsuneStudioRingFillOverlapPx) || 0))],
       ['config', 'set', 'line_max_height_ratio', String(Math.min(1, Math.max(0.05, Number(kitsuneStudioLineMaxHeightRatio) || 0.05)))],
       ['config', 'set', 'ring_inner_ratio', String(Math.min(0.75, Math.max(0.05, Number(kitsuneStudioRingInnerRatio) || 0.05)))],
       ['config', 'set', 'ring_length_ratio', String(Math.min(0.6, Math.max(0.05, Number(kitsuneStudioRingLengthRatio) || 0.05)))],
       ['config', 'set', 'color', kitsuneStudioColor.trim() || '#ff2f8f'],
       ['config', 'set', 'color2', kitsuneStudioColor2.trim() || '#19f0ff'],
+      ['config', 'set', 'color_mode', kitsuneStudioColorMode],
+      ['config', 'set', 'color2_mode', kitsuneStudioColor2Mode],
       ['spectrum-mode', kitsuneSpectrumMode],
       ['visual', kitsuneVisualMode, kitsuneVisualStyle],
       ['restart']
@@ -3190,6 +3510,18 @@ import {onDestroy, onMount, tick} from 'svelte';
       commands.push(['test-load', profileName]);
     }
     await runKitsuneBatch(commands, tr('Kitsune profile updated', 'Perfil de Kitsune actualizado'), true);
+  }
+
+  function handleKitsuneControlLaunchModeChange(value: 'static' | 'group'): void {
+    kitsuneControlLaunchMode = value;
+    if (value === 'group' && kitsuneStatus?.installed) {
+      void loadKitsuneGroupData();
+    }
+  }
+
+  function onKitsuneControlLaunchModeChange(e: Event): void {
+    const target = e.currentTarget as HTMLSelectElement | null;
+    handleKitsuneControlLaunchModeChange(target?.value === 'group' ? 'group' : 'static');
   }
 
   function handleKitsuneDynamicColorToggle(e: Event): void {
@@ -3227,6 +3559,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       const cfgSpectrum = configMap.spectrum_mode;
       if (cfgSpectrum === 'single' || cfgSpectrum === 'group') {
         kitsuneSpectrumMode = cfgSpectrum;
+        kitsuneControlLaunchMode = cfgSpectrum === 'group' ? 'group' : 'static';
       }
 
       const cfgRuntime = configMap.runtime_mode;
@@ -3249,6 +3582,7 @@ import {onDestroy, onMount, tick} from 'svelte';
         cfgVisualStyle === 'bars' ||
         cfgVisualStyle === 'bars_fill' ||
         cfgVisualStyle === 'waves' ||
+        cfgVisualStyle === 'waves_kwy' ||
         cfgVisualStyle === 'waves_fill' ||
         cfgVisualStyle === 'dots' ||
         cfgVisualStyle === 'triangle' ||
@@ -3278,6 +3612,27 @@ import {onDestroy, onMount, tick} from 'svelte';
       kitsuneStudioBarWidth = Number(configMap.bar_width ?? kitsuneStudioBarWidth) || kitsuneStudioBarWidth;
       kitsuneStudioBarGap = Number(configMap.bar_gap ?? kitsuneStudioBarGap) || kitsuneStudioBarGap;
       kitsuneStudioBarCornerRadius = Number(configMap.bar_corner_radius ?? kitsuneStudioBarCornerRadius) || kitsuneStudioBarCornerRadius;
+      kitsuneStudioSegmentedBars = Number(configMap.segmented_bars ?? (kitsuneStudioSegmentedBars ? 1 : 0)) > 0;
+      kitsuneStudioSegmentLength =
+        Number(configMap.segment_length ?? kitsuneStudioSegmentLength) || kitsuneStudioSegmentLength;
+      kitsuneStudioSegmentGap =
+        Number(configMap.segment_gap ?? kitsuneStudioSegmentGap) || kitsuneStudioSegmentGap;
+      kitsuneStudioBarsWaveThickness =
+        Number(configMap.bars_wave_thickness ?? kitsuneStudioBarsWaveThickness) || kitsuneStudioBarsWaveThickness;
+      kitsuneStudioBarsDotRadius =
+        Number(configMap.bars_dot_radius ?? kitsuneStudioBarsDotRadius) || kitsuneStudioBarsDotRadius;
+      kitsuneStudioRingWaveThickness =
+        Number(configMap.ring_wave_thickness ?? kitsuneStudioRingWaveThickness) || kitsuneStudioRingWaveThickness;
+      kitsuneStudioRingDotRadius =
+        Number(configMap.ring_dot_radius ?? kitsuneStudioRingDotRadius) || kitsuneStudioRingDotRadius;
+      kitsuneStudioBarsWaveRoundness =
+        Number(configMap.bars_wave_roundness ?? kitsuneStudioBarsWaveRoundness) || kitsuneStudioBarsWaveRoundness;
+      kitsuneStudioRingWaveRoundness =
+        Number(configMap.ring_wave_roundness ?? kitsuneStudioRingWaveRoundness) || kitsuneStudioRingWaveRoundness;
+      kitsuneStudioRingFillSoftness =
+        Number(configMap.ring_fill_softness ?? kitsuneStudioRingFillSoftness) || kitsuneStudioRingFillSoftness;
+      kitsuneStudioRingFillOverlapPx =
+        Number(configMap.ring_fill_overlap_px ?? kitsuneStudioRingFillOverlapPx) || kitsuneStudioRingFillOverlapPx;
       kitsuneStudioLineMaxHeightRatio =
         Number(configMap.line_max_height_ratio ?? kitsuneStudioLineMaxHeightRatio) || kitsuneStudioLineMaxHeightRatio;
       kitsuneStudioRingInnerRatio =
@@ -3286,6 +3641,14 @@ import {onDestroy, onMount, tick} from 'svelte';
         Number(configMap.ring_length_ratio ?? kitsuneStudioRingLengthRatio) || kitsuneStudioRingLengthRatio;
       kitsuneStudioColor = configMap.color ?? kitsuneStudioColor;
       kitsuneStudioColor2 = configMap.color2 ?? kitsuneStudioColor2;
+      const cfgColorMode = configMap.color_mode;
+      if (cfgColorMode === 'static' || cfgColorMode === 'accent_light' || cfgColorMode === 'accent_mid' || cfgColorMode === 'accent_dark') {
+        kitsuneStudioColorMode = cfgColorMode;
+      }
+      const cfgColor2Mode = configMap.color2_mode;
+      if (cfgColor2Mode === 'static' || cfgColor2Mode === 'accent_light' || cfgColor2Mode === 'accent_mid' || cfgColor2Mode === 'accent_dark') {
+        kitsuneStudioColor2Mode = cfgColor2Mode;
+      }
 
       const staticProfile = configMap.static_profile?.trim();
       if (staticProfile && profiles.includes(staticProfile)) {
@@ -3303,6 +3666,7 @@ import {onDestroy, onMount, tick} from 'svelte';
       if (studioProfile) {
         await loadKitsuneStudioProfile(studioProfile);
       }
+      await loadKitsunePalette();
     } catch {
       // Keep existing options if runtime probing fails.
     }
@@ -3316,6 +3680,23 @@ import {onDestroy, onMount, tick} from 'svelte';
       kitsuneGroupOptions = current && !groups.includes(current) ? [...groups, current] : groups;
     } catch {
       // Keep previous options on failure.
+    }
+  }
+
+  async function loadKitsuneGroupSchemes(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    if (!groupFile) {
+      kitsuneGroupSchemes = [];
+      kitsuneGroupSchemesPath = '';
+      return;
+    }
+    try {
+      const result = await invoke<KitsuneGroupSchemesReport>('kitowall_kitsune_group_schemes_list', {groupFile});
+      kitsuneGroupSchemes = result.items ?? [];
+      kitsuneGroupSchemesPath = result.path ?? '';
+    } catch {
+      kitsuneGroupSchemes = [];
+      kitsuneGroupSchemesPath = '';
     }
   }
 
@@ -3341,6 +3722,47 @@ import {onDestroy, onMount, tick} from 'svelte';
   async function loadKitsuneGroupData(): Promise<void> {
     await loadKitsuneGroupFiles();
     await loadKitsuneGroupLayers();
+    await loadKitsuneGroupSchemes();
+  }
+
+  async function saveKitsuneGroupScheme(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    const name = kitsuneGroupSchemeName.trim();
+    if (!groupFile || !name || kitsuneGroupLayers.length === 0) {
+      pushToast(tr('Select a group and load its layers first', 'Selecciona un grupo y carga sus capas primero'), 'info');
+      return;
+    }
+    const layers = kitsuneGroupLayers
+      .filter(layer => layer.rawSpec)
+      .map(layer => ({index: layer.index, rawSpec: layer.rawSpec ?? ''}));
+    try {
+      const result = await invoke<{ok: boolean; count: number}>('kitowall_kitsune_group_schemes_save', {
+        groupFile,
+        name,
+        layers
+      });
+      if (result.ok) {
+        pushToast(tr('Group scheme saved', 'Esquema del grupo guardado'), 'success');
+        await loadKitsuneGroupSchemes();
+      }
+    } catch (e) {
+      pushToast(String(e), 'error');
+    }
+  }
+
+  async function applyKitsuneGroupScheme(name: string): Promise<void> {
+    const scheme = kitsuneGroupSchemes.find(item => item.name === name);
+    if (!scheme || scheme.layers.length === 0 || !kitsuneGroupFile.trim()) {
+      return;
+    }
+    const commands = scheme.layers.map(layer => [
+      'group',
+      'update-layer',
+      String(layer.index),
+      layer.rawSpec,
+      kitsuneGroupFile.trim()
+    ]);
+    await runKitsuneBatch(commands, tr('Group scheme applied', 'Esquema del grupo aplicado'));
   }
 
   function toggleKitsuneStartProfile(name: string): void {
@@ -3407,9 +3829,13 @@ import {onDestroy, onMount, tick} from 'svelte';
     kitsuneGroupLayerModeOpen = false;
   }
 
-  function chooseKitsuneGroupLayerStyle(value: 'bars' | 'bars_fill' | 'waves' | 'waves_fill' | 'dots'): void {
+  function chooseKitsuneGroupLayerStyle(value: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon'): void {
     kitsuneGroupLayerStyle = value;
     kitsuneGroupLayerStyleOpen = false;
+  }
+
+  function applyKitsuneGroupRoleSuggestion(): void {
+    kitsuneGroupLayerColorMode = suggestKitsuneColorMode(kitsuneGroupLayerMode, kitsuneGroupLayerStyle, 'primary');
   }
 
   function chooseKitsuneGroupLayerProfile(value: string): void {
@@ -3509,14 +3935,18 @@ import {onDestroy, onMount, tick} from 'svelte';
     const alpha = Math.max(0, Math.min(1, Number(kitsuneGroupLayerAlpha) || 0));
     const color = kitsuneGroupLayerColor.trim() || '#ffffff';
     const profile = kitsuneGroupLayerProfile.trim() || 'bars_balanced';
-    return [
+    const parts = [
       kitsuneGroupLayerEnabled,
       kitsuneGroupLayerMode,
       kitsuneGroupLayerStyle,
       profile,
       color,
       alpha.toFixed(2)
-    ].join(',');
+    ];
+    if (kitsuneGroupLayerColorMode !== 'static') {
+      parts.push(`color_mode=${kitsuneGroupLayerColorMode}`);
+    }
+    return parts.join(',');
   }
 
   async function runHealth() {
@@ -4252,13 +4682,26 @@ import {onDestroy, onMount, tick} from 'svelte';
 
   function selectKitsuneTab(id: KitsuneTabId): void {
     kitsuneTab = id;
-    if (id === 'group' && kitsuneStatus?.installed) {
+    if (id === 'advanced' && kitsuneAdvancedTab === 'group' && kitsuneStatus?.installed) {
       void loadKitsuneGroupData();
     }
-    if ((id === 'studio' || id === 'core' || id === 'profiles' || id === 'visual' || id === 'render' || id === 'monitors' || id === 'system') && kitsuneStatus?.installed) {
+    if ((id === 'control' || id === 'studio' || id === 'advanced') && kitsuneStatus?.installed) {
       void loadKitsuneRuntimeOptions();
     }
-    if ((id === 'studio' || id === 'profiles') && kitsuneStatus?.installed) {
+    if (((id === 'control' || id === 'studio') || (id === 'advanced' && kitsuneAdvancedTab === 'profiles')) && kitsuneStatus?.installed) {
+      void loadKitsuneStudioProfile();
+    }
+  }
+
+  function selectKitsuneAdvancedTab(id: KitsuneAdvancedTabId): void {
+    kitsuneAdvancedTab = id;
+    if (!kitsuneStatus?.installed) return;
+    if (id === 'group') {
+      void loadKitsuneGroupData();
+    } else {
+      void loadKitsuneRuntimeOptions();
+    }
+    if (id === 'profiles') {
       void loadKitsuneStudioProfile();
     }
   }
@@ -4276,6 +4719,15 @@ import {onDestroy, onMount, tick} from 'svelte';
         kitsuneStartProfilesSelected = [];
         kitsuneGroupOptions = [];
         kitsuneGroupLayers = [];
+        kitsunePalette = {
+          ok: false,
+          path: '/tmp/kitsune-accent.palette',
+          accent_light: '',
+          accent_mid: '',
+          accent_dark: ''
+        };
+      } else {
+        await loadKitsuneRuntimeOptions();
       }
     } catch (e) {
       lastError = String(e);
@@ -4296,6 +4748,20 @@ import {onDestroy, onMount, tick} from 'svelte';
       };
     } catch {
       // Keep the module responsive; version checks are non-critical.
+    }
+  }
+
+  async function loadKitsunePalette(): Promise<void> {
+    try {
+      kitsunePalette = await invoke<KitsunePaletteReport>('kitowall_kitsune_palette');
+    } catch {
+      kitsunePalette = {
+        ok: false,
+        path: '/tmp/kitsune-accent.palette',
+        accent_light: '',
+        accent_mid: '',
+        accent_dark: ''
+      };
     }
   }
 
@@ -4604,9 +5070,14 @@ import {onDestroy, onMount, tick} from 'svelte';
         }
       }
       if (!bootstrap.ok) {
+        const detail = rawLogs
+          ? rawLogs.split('\n').map(line => line.trim()).filter(Boolean).slice(-3).join(' | ')
+          : '';
         throw new Error(
           `kitsune update failed (code=${bootstrap.code ?? 1}). ` +
-          tr('Check installer logs in the right panel.', 'Revisa los logs del instalador en el panel derecho.')
+          (detail
+            ? `${detail}`
+            : tr('Check installer logs in the right panel.', 'Revisa los logs del instalador en el panel derecho.'))
         );
       }
       pushPreflightLog(tr('Kitsune update completed', 'Actualizacion de Kitsune completada'), 'success');
@@ -6288,27 +6759,28 @@ import {onDestroy, onMount, tick} from 'svelte';
         {#if isLiveServicesLocked()}
           <div class="banner warn">{liveServicesLockMessage()}</div>
         {/if}
-        <div class="row actions-buttons-row">
+        <div class="row actions-buttons-row kitsune-header-actions">
           <button class="secondary" on:click={loadKitsuneStatus} disabled={kitsuneBusy}>
             {tr('Check Installation', 'Validar Instalacion')}
           </button>
           <button class="secondary" on:click={() => runKitsuneCommand(['help'])} disabled={kitsuneBusy}>
             {tr('Reload Commands', 'Recargar Comandos')}
           </button>
-          <button class="secondary" on:click={runKitsuneUpdate} disabled={kitsuneBusy || kitsuneUpdateBusy}>
-            {kitsuneUpdateBusy ? tr('Updating...', 'Actualizando...') : tr('Update Kitsune', 'Actualizar Kitsune')}
-          </button>
+          {#if kitsuneUpdateBusy || kitsuneHasAvailableUpdate()}
+            <button class="secondary" on:click={runKitsuneUpdate} disabled={kitsuneBusy || kitsuneUpdateBusy}>
+              {kitsuneUpdateBusy ? tr('Updating...', 'Actualizando...') : tr('Update Kitsune', 'Actualizar Kitsune')}
+            </button>
+          {/if}
         </div>
         {#if kitsuneBusy}
-          <p class="muted">{tr('Checking Kitsune installation...', 'Validando instalacion de Kitsune...')}</p>
-        {:else if kitsuneStatus}
-          <div class="row">
+          <p class="muted">{tr('Refreshing Kitsune state...', 'Actualizando estado de Kitsune...')}</p>
+        {/if}
+        {#if kitsuneStatus}
+          <div class="row kitsune-header-badges">
             <span class={`badge status ${kitsuneStatus.installed ? 'ok' : 'bad'}`}>
               {tr('installed', 'instalado')}: {kitsuneStatus.installed ? 'true' : 'false'}
             </span>
             <span class="badge">{tr('commands detected', 'comandos detectados')}: {kitsuneStatus.commands.length}</span>
-          </div>
-          <div class="row">
             <span class={`badge status ${kitsuneStatus.versions?.kitsune?.update_available ? 'warn' : 'ok'}`}>
               Kitsune: {kitsuneStatus.versions?.kitsune?.local_version ? `v${kitsuneStatus.versions?.kitsune?.local_version}` : tr('unknown', 'desconocida')}
               {#if kitsuneStatus.versions?.kitsune?.latest_version}
@@ -6328,18 +6800,147 @@ import {onDestroy, onMount, tick} from 'svelte';
             {#if kitsuneStatus.versions?.kitsune?.update_available || kitsuneStatus.versions?.rendercore?.update_available}
               <p class="muted">{tr('A newer Kitsune release was detected. Use "Update Kitsune" to refresh host binaries.', 'Se detecto una release mas nueva de Kitsune. Usa "Actualizar Kitsune" para refrescar los binarios del host.')}</p>
             {/if}
-            <p class="muted">{tr('Kitsune is installed. Use top tabs to access each submodule.', 'Kitsune esta instalado. Usa las tabs de arriba para entrar a cada submodulo.')}</p>
+            <p class="muted">{tr('Studio is the main daily surface. Advanced keeps the legacy controls grouped in one place.', 'Studio es la superficie principal del dia a dia. Advanced agrupa los controles heredados en un solo lugar.')}</p>
             <div class="kitsune-tabs">
+              <button class={`kitsune-tab ${kitsuneTab === 'control' ? 'active' : ''}`} on:click={() => selectKitsuneTab('control')}>{tr('Control Center', 'Centro de control')}</button>
               <button class={`kitsune-tab ${kitsuneTab === 'studio' ? 'active' : ''}`} on:click={() => selectKitsuneTab('studio')}>{tr('Studio', 'Studio')}</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'core' ? 'active' : ''}`} on:click={() => selectKitsuneTab('core')}>Core</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'profiles' ? 'active' : ''}`} on:click={() => selectKitsuneTab('profiles')}>Profiles Lab</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'group' ? 'active' : ''}`} on:click={() => selectKitsuneTab('group')}>Group Composer</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'visual' ? 'active' : ''}`} on:click={() => selectKitsuneTab('visual')}>Visual FX</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'render' ? 'active' : ''}`} on:click={() => selectKitsuneTab('render')}>Render</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'monitors' ? 'active' : ''}`} on:click={() => selectKitsuneTab('monitors')}>Monitors & Color</button>
-              <button class={`kitsune-tab ${kitsuneTab === 'system' ? 'active' : ''}`} on:click={() => selectKitsuneTab('system')}>System & Instances</button>
+              <button class={`kitsune-tab ${kitsuneTab === 'advanced' ? 'active' : ''}`} on:click={() => selectKitsuneTab('advanced')}>{tr('Advanced', 'Advanced')}</button>
               <button class={`kitsune-tab ${kitsuneTab === 'logs' ? 'active' : ''}`} on:click={() => selectKitsuneTab('logs')}>{tr('Logs & Diagnostics', 'Logs y Diagnostico')}</button>
             </div>
+            {#if kitsuneTab === 'advanced'}
+              <div class="kitsune-tabs kitsune-subtabs">
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'core' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('core')}>Core</button>
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'profiles' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('profiles')}>Profiles Lab</button>
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'group' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('group')}>Group Composer</button>
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'visual' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('visual')}>Visual FX</button>
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'render' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('render')}>Render</button>
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'monitors' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('monitors')}>Monitors & Color</button>
+                <button class={`kitsune-tab ${kitsuneAdvancedTab === 'system' ? 'active' : ''}`} on:click={() => selectKitsuneAdvancedTab('system')}>System & Instances</button>
+              </div>
+            {/if}
+
+            {#if kitsuneTab === 'control'}
+              <div class="grid kitsune-grid kitsune-profiles-grid">
+                <div class="card">
+                  <h3>{tr('Operational Summary', 'Resumen operativo')}</h3>
+                  <p class="muted">{tr('Use this surface for quick validation, launch and recovery. Studio stays focused on shaping the visual result.', 'Usa esta superficie para validar, iniciar y recuperar rapido. Studio queda enfocado en moldear el resultado visual.')}</p>
+                  <div class="row kitsune-header-badges">
+                    <span class={`badge status ${kitsuneStatus?.installed ? 'ok' : 'bad'}`}>{tr('installed', 'instalado')}: {kitsuneStatus?.installed ? 'true' : 'false'}</span>
+                    <span class="badge">{tr('monitor', 'monitor')}: {kitsuneStartMonitor || kitsuneMonitorName || tr('auto', 'auto')}</span>
+                    <span class="badge">{tr('profile', 'perfil')}: {kitsuneProfileName || tr('default', 'default')}</span>
+                    <span class="badge">{tr('mode', 'modo')}: {kitsuneVisualMode}/{kitsuneVisualStyle}</span>
+                    <span class="badge">{tr('spectrum', 'espectro')}: {kitsuneSpectrumMode}</span>
+                    <span class="badge">runtime: {kitsuneRuntime}</span>
+                    <span class={`badge status ${kitsuneDynamicColor ? 'ok' : 'warn'}`}>{tr('dynamic color', 'color dinamico')}: {kitsuneDynamicColor ? 'on' : 'off'}</span>
+                  </div>
+                  <div class="row">
+                    <span class={`badge status ${kitsuneStatus?.versions?.kitsune?.update_available ? 'warn' : 'ok'}`}>
+                      Kitsune: {kitsuneStatus?.versions?.kitsune?.local_version ? `v${kitsuneStatus?.versions?.kitsune?.local_version}` : tr('unknown', 'desconocida')}
+                    </span>
+                    <span class={`badge status ${kitsuneStatus?.versions?.rendercore?.update_available ? 'warn' : 'ok'}`}>
+                      RenderCore: {kitsuneStatus?.versions?.rendercore?.local_version ? `v${kitsuneStatus?.versions?.rendercore?.local_version}` : tr('unknown', 'desconocida')}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <h3>{tr('Quick Actions', 'Acciones rapidas')}</h3>
+                  <div class="row">
+                    <GsSelect
+                      bind:value={kitsuneStartMonitor}
+                      placeholder={tr('monitor (auto)', 'monitor (auto)')}
+                      options={[{value: '', label: tr('monitor (auto)', 'monitor (auto)')}, ...kitsuneMonitorOptions.map(monitorName => ({value: monitorName, label: monitorName}))]}
+                    />
+                    <GsSelect
+                      bind:value={kitsuneControlLaunchMode}
+                      options={[
+                        {value: 'static', label: tr('Static visual', 'Visual estatico')},
+                        {value: 'group', label: tr('Group visual', 'Visual por grupo')}
+                      ]}
+                      on:change={() => handleKitsuneControlLaunchModeChange(kitsuneControlLaunchMode)}
+                    />
+                  </div>
+                  {#if kitsuneControlLaunchMode === 'static'}
+                    <div class="row">
+                      <GsSelect
+                        bind:value={kitsuneVisualMode}
+                        options={kitsuneVisualModeOptions}
+                      />
+                      <GsSelect
+                        bind:value={kitsuneVisualStyle}
+                        options={kitsuneVisualStyleOptions}
+                      />
+                      <GsSelect
+                        bind:value={kitsuneProfileName}
+                        placeholder={tr('profile (optional)', 'perfil (opcional)')}
+                        options={[{value: '', label: tr('profile (optional)', 'perfil (opcional)')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]}
+                      />
+                    </div>
+                    <div class="row">
+                      <button class="secondary" on:click={() => {
+                        const args = ['start'];
+                        if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
+                        if (kitsuneProfileName.trim()) args.push('--profile', kitsuneProfileName.trim());
+                        args.push('--target', 'layer-shell', '--mode', kitsuneVisualMode);
+                        void runKitsuneBatch([
+                          ...kitsunePersistSelectedProfileCommands(kitsuneProfileName),
+                          ['spectrum-mode', 'single'],
+                          ['visual', kitsuneVisualMode, kitsuneVisualStyle],
+                          args
+                        ], tr('Static Kitsune visual started', 'Visual estatico de Kitsune iniciado'));
+                      }} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Start Static', 'Iniciar estatico')}</button>
+                      <button class="secondary" on:click={() => selectKitsuneTab('studio')}>{tr('Open Studio', 'Abrir Studio')}</button>
+                    </div>
+                  {:else}
+                    <div class="row">
+                      <GsSelect
+                        bind:value={kitsuneGroupFile}
+                        placeholder={tr('group file', 'archivo group')}
+                        options={[{value: '', label: tr('group file', 'archivo group')}, ...kitsuneGroupOptions.map(groupName => ({value: groupName, label: groupName}))]}
+                      />
+                      <button class="secondary" on:click={() => void loadKitsuneGroupData()} disabled={kitsuneBusy}>{tr('Reload Groups', 'Recargar Groups')}</button>
+                    </div>
+                    <div class="row">
+                      <button class="secondary" on:click={() => {
+                        const args = ['start'];
+                        if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
+                        args.push('--target', 'layer-shell', '--mode', kitsuneVisualMode);
+                        void runKitsuneBatch([
+                          ['spectrum-mode', 'group'],
+                          ...(kitsuneGroupFile.trim() ? [['group-file', kitsuneGroupFile.trim()]] : []),
+                          args
+                        ], tr('Group Kitsune visual started', 'Visual group de Kitsune iniciado'));
+                      }} disabled={kitsuneBusy || isLiveServicesLocked() || !kitsuneGroupFile.trim()}>{tr('Start Group', 'Iniciar group')}</button>
+                      <button class="secondary" on:click={() => { selectKitsuneTab('advanced'); selectKitsuneAdvancedTab('group'); }}>{tr('Open Group Composer', 'Abrir Group Composer')}</button>
+                    </div>
+                  {/if}
+                  <div class="row">
+                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Stop', 'Detener')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['status'])} disabled={kitsuneBusy}>{tr('Status', 'Status')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['layer-status'])} disabled={kitsuneBusy}>{tr('Layer Status', 'Estado Layer')}</button>
+                    <button class="secondary" on:click={() => runKitsuneCommand(['doctor'])} disabled={kitsuneBusy}>{tr('Doctor', 'Doctor')}</button>
+                    <button class="secondary" on:click={() => selectKitsuneTab('logs')}>{tr('Open Logs', 'Abrir Logs')}</button>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <h3>{tr('Current Palette', 'Paleta actual')}</h3>
+                  <p class="muted">{tr('This is the active wallpaper-driven palette used by dynamic roles.', 'Esta es la paleta activa basada en el wallpaper usada por los roles dinamicos.')}</p>
+                  <div class="row">
+                    <span class="badge" style={`background:${kitsunePalette.accent_light || '#d8dce6'};color:#111;`}>{tr('light', 'claro')}</span>
+                    <span class="badge" style={`background:${kitsunePalette.accent_mid || '#a9b4c8'};color:#111;`}>{tr('mid', 'medio')}</span>
+                    <span class="badge" style={`background:${kitsunePalette.accent_dark || '#44506b'};color:#fff;`}>{tr('dark', 'oscuro')}</span>
+                  </div>
+                  <div class="row">
+                    <button class="secondary" on:click={() => void loadKitsunePalette()} disabled={kitsuneBusy}>{tr('Refresh Palette', 'Recargar Paleta')}</button>
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('wallpaper')}>{tr('Apply Wallpaper Roles', 'Aplicar Roles del Wallpaper')}</button>
+                  </div>
+                  <div class="row">
+                    <span class="muted">{kitsunePalette.path}</span>
+                  </div>
+                </div>
+              </div>
+            {/if}
 
             {#if kitsuneTab === 'studio'}
               <div class="grid kitsune-grid kitsune-profiles-grid">
@@ -6347,37 +6948,13 @@ import {onDestroy, onMount, tick} from 'svelte';
                   <h3>{tr('Quick Start', 'Inicio Rapido')}</h3>
                   <p class="muted">{tr('This is the simplified surface for daily use. The other tabs remain available for advanced work.', 'Esta es la superficie simplificada para uso diario. Las otras pestañas siguen disponibles para trabajo avanzado.')}</p>
                   <div class="row">
-                    <select bind:value={kitsuneStartMonitor}>
-                      <option value="">{tr('monitor (optional)', 'monitor (opcional)')}</option>
-                      {#each kitsuneMonitorOptions as monitorName}
-                        <option value={monitorName}>{monitorName}</option>
-                      {/each}
-                    </select>
-                    <select bind:value={kitsuneVisualMode}>
-                      <option value="bars">bars</option>
-                      <option value="ring">ring</option>
-                    </select>
-                    <select bind:value={kitsuneVisualStyle}>
-                      <option value="bars">bars</option>
-                      <option value="bars_fill">bars_fill</option>
-                      <option value="waves">waves</option>
-                      <option value="waves_fill">waves_fill</option>
-                      <option value="dots">dots</option>
-                      <option value="triangle">triangle</option>
-                      <option value="polygon">polygon</option>
-                    </select>
-                    <select bind:value={kitsuneSpectrumMode}>
-                      <option value="single">single</option>
-                      <option value="group">group</option>
-                    </select>
+                    <GsSelect bind:value={kitsuneStartMonitor} placeholder={tr('monitor (optional)', 'monitor (opcional)')} options={[{value: '', label: tr('monitor (optional)', 'monitor (opcional)')}, ...kitsuneMonitorOptions.map(monitorName => ({value: monitorName, label: monitorName}))]} />
+                    <GsSelect bind:value={kitsuneVisualMode} options={kitsuneVisualModeOptions} />
+                    <GsSelect bind:value={kitsuneVisualStyle} options={kitsuneVisualStyleOptions} />
+                    <GsSelect bind:value={kitsuneSpectrumMode} options={kitsuneSpectrumModeOptions} />
                   </div>
                   <div class="row">
-                    <select bind:value={kitsuneProfileName} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)}>
-                      <option value="">{tr('profile', 'perfil')}</option>
-                      {#each kitsuneProfileOptions as profileName}
-                        <option value={profileName}>{profileName}</option>
-                      {/each}
-                    </select>
+                    <GsSelect bind:value={kitsuneProfileName} placeholder={tr('profile', 'perfil')} options={[{value: '', label: tr('profile', 'perfil')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)} />
                     <button class="secondary" on:click={() => void loadKitsuneStudioProfile()} disabled={kitsuneBusy || !kitsuneProfileOptions.length}>
                       {tr('Load Profile', 'Cargar Perfil')}
                     </button>
@@ -6386,7 +6963,10 @@ import {onDestroy, onMount, tick} from 'svelte';
                       if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
                       if (kitsuneProfileName.trim()) args.push('--profile', kitsuneProfileName.trim());
                       args.push('--target', 'layer-shell', '--mode', kitsuneVisualMode);
-                      void runKitsuneCommand(args);
+                      void runKitsuneBatch([
+                        ...kitsunePersistSelectedProfileCommands(kitsuneProfileName),
+                        args
+                      ], tr('Kitsune started with selected profile', 'Kitsune iniciado con el perfil seleccionado'));
                     }} disabled={kitsuneBusy || isLiveServicesLocked()}>
                       {tr('Start', 'Iniciar')}
                     </button>
@@ -6402,6 +6982,13 @@ import {onDestroy, onMount, tick} from 'svelte';
                   <div class="row">
                     <button class="secondary" on:click={() => applyKitsuneStudioPreset('balanced')}>{tr('Balanced preset', 'Preset balanceado')}</button>
                     <button class="secondary" on:click={() => applyKitsuneStudioPreset('compact')}>{tr('Compact preset', 'Preset compacto')}</button>
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('neon_ring')}>{tr('Neon ring', 'Anillo neon')}</button>
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('segmented')}>{tr('Segmented', 'Segmentado')}</button>
+                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('wallpaper')}>{tr('Wallpaper roles', 'Roles del wallpaper')}</button>
+                    <button class="secondary" on:click={() => {
+                      kitsuneStudioColorMode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'primary');
+                      kitsuneStudioColor2Mode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'secondary');
+                    }}>{tr('Suggest Roles', 'Sugerir Roles')}</button>
                     <button class="secondary" on:click={() => void applyKitsuneStudioVisual()} disabled={kitsuneBusy || isLiveServicesLocked()}>
                       {tr('Apply Visual Studio', 'Aplicar Studio Visual')}
                     </button>
@@ -6420,6 +7007,18 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <button class="secondary" on:click={() => runKitsuneCommand(['color-poll', String(Math.max(1, Math.floor(Number(kitsuneColorPollSeconds) || 1)))])} disabled={kitsuneBusy}>
                       {tr('Apply Poll', 'Aplicar Poll')}
                     </button>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('palette', 'paleta')}</span>
+                    <span class="badge" style={`background:${kitsunePalette.accent_light || '#d8dce6'};color:#111;`}>light</span>
+                    <span class="badge" style={`background:${kitsunePalette.accent_mid || '#a9b4c8'};color:#111;`}>mid</span>
+                    <span class="badge" style={`background:${kitsunePalette.accent_dark || '#44506b'};color:#fff;`}>dark</span>
+                    <button class="secondary" on:click={() => void loadKitsunePalette()} disabled={kitsuneBusy}>
+                      {tr('Refresh Palette', 'Recargar Paleta')}
+                    </button>
+                  </div>
+                  <div class="row">
+                    <span class="muted">{kitsunePalette.path}</span>
                   </div>
                   <div class="row">
                     <span class="field-label">{tr('bars count', 'cantidad barras')}</span>
@@ -6446,6 +7045,18 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <span class="badge">{Math.round(Number(kitsuneStudioLineMaxHeightRatio) * 100)}%</span>
                   </div>
                   <div class="row">
+                    <label class="inline-check">
+                      <input type="checkbox" bind:checked={kitsuneStudioSegmentedBars} />
+                      {tr('segmented bars', 'barras segmentadas')}
+                    </label>
+                    <span class="field-label">{tr('segment length', 'largo segmento')}</span>
+                    <input type="range" min="2" max="24" step="0.5" bind:value={kitsuneStudioSegmentLength} />
+                    <span class="badge">{Number(kitsuneStudioSegmentLength).toFixed(1)}</span>
+                    <span class="field-label">{tr('segment gap', 'gap segmento')}</span>
+                    <input type="range" min="0" max="16" step="0.5" bind:value={kitsuneStudioSegmentGap} />
+                    <span class="badge">{Number(kitsuneStudioSegmentGap).toFixed(1)}</span>
+                  </div>
+                  <div class="row">
                     <span class="field-label">{tr('ring inner', 'anillo interno')}</span>
                     <input type="range" min="0.05" max="0.5" step="0.01" bind:value={kitsuneStudioRingInnerRatio} />
                     <span class="badge">{Number(kitsuneStudioRingInnerRatio).toFixed(2)}</span>
@@ -6454,25 +7065,57 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <span class="badge">{Number(kitsuneStudioRingLengthRatio).toFixed(2)}</span>
                   </div>
                   <div class="row">
+                    <span class="field-label">{tr('bars wave', 'wave barras')}</span>
+                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioBarsWaveThickness} />
+                    <span class="badge">{Number(kitsuneStudioBarsWaveThickness).toFixed(1)}</span>
+                    <span class="field-label">{tr('bars dots', 'dots barras')}</span>
+                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioBarsDotRadius} />
+                    <span class="badge">{Number(kitsuneStudioBarsDotRadius).toFixed(1)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('ring wave', 'wave anillo')}</span>
+                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioRingWaveThickness} />
+                    <span class="badge">{Number(kitsuneStudioRingWaveThickness).toFixed(1)}</span>
+                    <span class="field-label">{tr('ring dots', 'dots anillo')}</span>
+                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioRingDotRadius} />
+                    <span class="badge">{Number(kitsuneStudioRingDotRadius).toFixed(1)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('wave smooth', 'suavidad wave')}</span>
+                    <input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioBarsWaveRoundness} />
+                    <span class="badge">{Number(kitsuneStudioBarsWaveRoundness).toFixed(2)}</span>
+                    <span class="field-label">{tr('ring smooth', 'suavidad anillo')}</span>
+                    <input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioRingWaveRoundness} />
+                    <span class="badge">{Number(kitsuneStudioRingWaveRoundness).toFixed(2)}</span>
+                  </div>
+                  <div class="row">
+                    <span class="field-label">{tr('fill softness', 'suavidad fill')}</span>
+                    <input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioRingFillSoftness} />
+                    <span class="badge">{Number(kitsuneStudioRingFillSoftness).toFixed(2)}</span>
+                    <span class="field-label">{tr('fill overlap', 'overlap fill')}</span>
+                    <input type="range" min="0" max="8" step="0.1" bind:value={kitsuneStudioRingFillOverlapPx} />
+                    <span class="badge">{Number(kitsuneStudioRingFillOverlapPx).toFixed(1)}</span>
+                  </div>
+                  <div class="row">
                     <span class="field-label">{tr('primary color', 'color primario')}</span>
                     <input type="color" bind:value={kitsuneStudioColor} />
                     <input bind:value={kitsuneStudioColor} placeholder="#RRGGBB" />
+                    <GsSelect bind:value={kitsuneStudioColorMode} options={kitsuneColorRoleOptions} />
                     <span class="field-label">{tr('secondary color', 'color secundario')}</span>
                     <input type="color" bind:value={kitsuneStudioColor2} />
                     <input bind:value={kitsuneStudioColor2} placeholder="#RRGGBB" />
+                    <GsSelect bind:value={kitsuneStudioColor2Mode} options={kitsuneColorRoleOptions} />
                   </div>
+                  {#if kitsuneDynamicColor}
+                    <p class="muted">{tr('Dynamic palette roles: accent_light, accent_mid and accent_dark are generated from the current wallpaper and can be assigned independently.', 'Los roles dinamicos accent_light, accent_mid y accent_dark se generan desde el wallpaper actual y se pueden asignar de forma independiente.')}</p>
+                  {/if}
                 </div>
 
                 <div class="card">
                   <h3>{tr('EQ Profile Shaper', 'Moldeador EQ del Perfil')}</h3>
                   <p class="muted">{tr('Edit the profile graphically instead of typing profile-edit commands. In runtime test, the selected profile is hot-loaded into test.profile.', 'Edita el perfil graficamente en vez de escribir comandos profile-edit. En runtime test, el perfil seleccionado se carga en caliente en test.profile.')}</p>
                   <div class="row">
-                    <select bind:value={kitsuneProfileName} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)}>
-                      <option value="">{tr('profile', 'perfil')}</option>
-                      {#each kitsuneProfileOptions as profileName}
-                        <option value={profileName}>{profileName}</option>
-                      {/each}
-                    </select>
+                    <GsSelect bind:value={kitsuneProfileName} placeholder={tr('profile', 'perfil')} options={[{value: '', label: tr('profile', 'perfil')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)} />
                     <button class="secondary" on:click={() => void loadKitsuneStudioProfile()} disabled={kitsuneBusy || !kitsuneProfileOptions.length}>
                       {tr('Reload Values', 'Recargar Valores')}
                     </button>
@@ -6516,7 +7159,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/if}
 
-            {#if kitsuneTab === 'core'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'core'}
               <div class="grid kitsune-grid">
                 <div class="card">
                   <h3>Lifecycle</h3>
@@ -6616,9 +7259,9 @@ import {onDestroy, onMount, tick} from 'svelte';
                       {/if}
                     </div>
                     <span class="field-label">{tr('target', 'objetivo')}</span>
-                    <select bind:value={kitsuneStartTarget}><option value="layer-shell">layer-shell</option></select>
+                    <GsSelect bind:value={kitsuneStartTarget} options={kitsuneOutputTargetOptions} />
                     <span class="field-label">{tr('mode', 'modo')}</span>
-                    <select bind:value={kitsuneStartMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <GsSelect bind:value={kitsuneStartMode} options={kitsuneVisualModeOptions} />
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => {
@@ -6641,28 +7284,18 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/if}
 
-            {#if kitsuneTab === 'profiles'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'profiles'}
               <div class="grid kitsune-grid kitsune-profiles-grid">
                 <div class="card">
                   <h3>{tr('Profiles', 'Perfiles')}</h3>
                   <div class="row">
-                    <select bind:value={kitsuneProfilesMode}><option value="all">{tr('all', 'todas')}</option><option value="bars">{tr('bars', 'barras')}</option><option value="ring">{tr('ring', 'anillo')}</option></select>
+                    <GsSelect bind:value={kitsuneProfilesMode} options={kitsuneProfilesModeOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'list', ...(kitsuneProfilesMode === 'all' ? [] : [kitsuneProfilesMode])])} disabled={kitsuneBusy}>{tr('List', 'Listar')}</button>
-                    <select bind:value={kitsuneProfileName}>
-                      <option value="">{tr('profile name', 'nombre del perfil')}</option>
-                      {#each kitsuneProfileOptions as profileName}
-                        <option value={profileName}>{profileName}</option>
-                      {/each}
-                    </select>
+                    <GsSelect bind:value={kitsuneProfileName} placeholder={tr('profile name', 'nombre del perfil')} options={[{value: '', label: tr('profile name', 'nombre del perfil')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'show', kitsuneProfileName.trim()])} disabled={kitsuneBusy || !kitsuneProfileName.trim()}>{tr('Show', 'Mostrar')}</button>
                   </div>
                   <div class="row">
-                    <select bind:value={kitsuneProfileBase}>
-                      <option value="">{tr('clone base', 'base a clonar')}</option>
-                      {#each kitsuneProfileOptions as profileName}
-                        <option value={profileName}>{profileName}</option>
-                      {/each}
-                    </select>
+                    <GsSelect bind:value={kitsuneProfileBase} placeholder={tr('clone base', 'base a clonar')} options={[{value: '', label: tr('clone base', 'base a clonar')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]} />
                     <input bind:value={kitsuneProfileNew} placeholder={tr('clone new', 'nuevo clon')} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'clone', kitsuneProfileBase.trim(), kitsuneProfileNew.trim()])} disabled={kitsuneBusy || !kitsuneProfileBase.trim() || !kitsuneProfileNew.trim()}>{tr('Clone', 'Clonar')}</button>
                   </div>
@@ -6691,11 +7324,11 @@ import {onDestroy, onMount, tick} from 'svelte';
                   </div>
                   <div class="row">
                     <input bind:value={kitsuneProfileListValue} placeholder={tr('p1,p2,p3', 'p1,p2,p3')} />
-                    <select bind:value={kitsuneProfileListMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <GsSelect bind:value={kitsuneProfileListMode} options={kitsuneRingBarsModeOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['profiles', 'set-list', kitsuneProfileListMode, kitsuneProfileListValue.trim()])} disabled={kitsuneBusy || !kitsuneProfileListValue.trim()}>{tr('Set Profile List', 'Definir Lista de Perfiles')}</button>
                   </div>
                   <div class="row">
-                    <select bind:value={kitsuneTuneMode}><option value="bars">bars</option><option value="ring">ring</option></select>
+                    <GsSelect bind:value={kitsuneTuneMode} options={kitsuneRingBarsModeOptions} />
                     <input bind:value={kitsuneTunePreset} placeholder={tr('preset', 'preset')} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['tune', kitsuneTunePreset.trim(), kitsuneTuneMode])} disabled={kitsuneBusy || !kitsuneTunePreset.trim()}>{tr('Tune', 'Ajustar')}</button>
                   </div>
@@ -6703,7 +7336,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/if}
 
-            {#if kitsuneTab === 'group'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'group'}
               <div class="grid kitsune-grid">
                 <div class="card">
                   <h3>Group Composer</h3>
@@ -6752,6 +7385,22 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <button class="secondary" on:click={() => runKitsuneCommand(['group', 'validate', kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>Validate</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['group', 'list-layers', kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>List Layers</button>
                   </div>
+                  <div class="row">
+                    <input bind:value={kitsuneGroupSchemeName} placeholder={tr('scheme name', 'nombre del esquema')} />
+                    <button class="secondary" on:click={() => void saveKitsuneGroupScheme()} disabled={kitsuneBusy || !kitsuneGroupSchemeName.trim() || kitsuneGroupLayers.length === 0}>
+                      {tr('Save Scheme', 'Guardar Esquema')}
+                    </button>
+                    <span class="muted">{kitsuneGroupSchemesPath || ''}</span>
+                  </div>
+                  {#if kitsuneGroupSchemes.length > 0}
+                    <div class="row">
+                      {#each kitsuneGroupSchemes as scheme}
+                        <button class="secondary" on:click={() => void applyKitsuneGroupScheme(scheme.name)} disabled={kitsuneBusy}>
+                          {tr('Apply', 'Aplicar')} {scheme.name}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
                   <div class="row">
                     <div class="multi-select">
                       <button type="button" class="multi-select-trigger" on:click|stopPropagation={() => (kitsuneGroupAddLayerOpen = !kitsuneGroupAddLayerOpen)}>
@@ -6839,6 +7488,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('bars')}>bars</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('bars_fill')}>bars_fill</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves')}>waves</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_kwy')}>waves_kwy</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_fill')}>waves_fill</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('dots')}>dots</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('triangle')}>triangle</button>
@@ -6882,6 +7532,10 @@ import {onDestroy, onMount, tick} from 'svelte';
                     </div>
                     <span class="field-label">color</span>
                     <input bind:value={kitsuneGroupLayerColor} placeholder="#RRGGBB" />
+                    <GsSelect bind:value={kitsuneGroupLayerColorMode} options={kitsuneColorRoleOptions} />
+                    <button class="secondary" on:click={applyKitsuneGroupRoleSuggestion} disabled={kitsuneBusy}>
+                      {tr('Suggest Role', 'Sugerir Rol')}
+                    </button>
                     <span class="field-label">alpha</span>
                     <input type="number" step="0.01" min="0" max="1" bind:value={kitsuneGroupLayerAlpha} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['group', 'update-layer', String(Math.max(1, Math.floor(Number(kitsuneGroupLayerIndex) || 1))), buildKitsuneGroupLayerSpec(), kitsuneGroupFile.trim()])} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>Update Layer</button>
@@ -6905,6 +7559,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                               <span class="badge">profile: {layer.profile || '-'}</span>
                               <span class="badge">color: {layer.color || '-'}</span>
                               <span class="badge">alpha: {layer.alpha || '-'}</span>
+                              {#if layer.colorMode}<span class="badge">color_mode: {layer.colorMode}</span>{/if}
                               {#if layer.runtime}<span class="badge">runtime: {layer.runtime}</span>{/if}
                               {#if layer.rotate}<span class="badge">rotate: {layer.rotate}</span>{/if}
                               {#if layer.profilesPipe}<span class="badge">profiles: {layer.profilesPipe}</span>{/if}
@@ -6918,33 +7573,20 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/if}
 
-            {#if kitsuneTab === 'visual'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'visual'}
               <div class="grid kitsune-grid">
                 <div class="card">
                   <h3>Visual Controls</h3>
                   <div class="row">
-                    <select bind:value={kitsuneVisualMode}><option value="bars">bars</option><option value="ring">ring</option></select>
-                    <select bind:value={kitsuneVisualStyle}>
-                      <option value="bars">bars</option>
-                      <option value="bars_fill">bars_fill</option>
-                      <option value="waves">waves</option>
-                      <option value="waves_fill">waves_fill</option>
-                      <option value="dots">dots</option>
-                      <option value="triangle">triangle</option>
-                      <option value="polygon">polygon</option>
-                    </select>
+                    <GsSelect bind:value={kitsuneVisualMode} options={kitsuneVisualModeOptions} />
+                    <GsSelect bind:value={kitsuneVisualStyle} options={kitsuneVisualStyleOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['visual', kitsuneVisualMode, kitsuneVisualStyle])} disabled={kitsuneBusy}>Apply Visual</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['style', kitsuneVisualMode, kitsuneVisualStyle])} disabled={kitsuneBusy}>Apply Style</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['mode', kitsuneVisualMode])} disabled={kitsuneBusy}>Apply Mode</button>
                   </div>
                   <div class="row">
                     <button class="secondary" on:click={() => runKitsuneCommand(['particles-preset', kitsuneParticlesPreset])} disabled={kitsuneBusy}>Particles Preset</button>
-                    <select bind:value={kitsuneParticlesPreset}>
-                      <option value="off">off</option>
-                      <option value="low">low</option>
-                      <option value="balanced">balanced</option>
-                      <option value="high">high</option>
-                    </select>
+                    <GsSelect bind:value={kitsuneParticlesPreset} options={kitsuneParticlesPresetOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['debug', 'overlay', '1', '--apply'])} disabled={kitsuneBusy}>Overlay On</button>
                     <button class="secondary" on:click={() => runKitsuneCommand(['debug', 'overlay', '0', '--apply'])} disabled={kitsuneBusy}>Overlay Off</button>
                   </div>
@@ -6963,34 +7605,34 @@ import {onDestroy, onMount, tick} from 'svelte';
                     <span class="field-label">glow mix</span>
                     <input type="number" step="0.01" bind:value={kitsunePostfxGlowMix} />
                     <span class="field-label">scope</span>
-                    <select bind:value={kitsunePostfxScope}><option value="final">final</option><option value="layer">layer</option><option value="mixed">mixed</option></select>
+                    <GsSelect bind:value={kitsunePostfxScope} options={kitsunePostfxScopeOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['postfx', String(kitsunePostfxEnable), String(kitsunePostfxBlurPasses), String(kitsunePostfxBlurMix), String(kitsunePostfxGlowStrength), String(kitsunePostfxGlowMix), kitsunePostfxScope])} disabled={kitsuneBusy}>Apply PostFX</button>
                   </div>
                 </div>
               </div>
             {/if}
 
-            {#if kitsuneTab === 'render'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'render'}
               <div class="grid kitsune-grid">
                 <div class="card">
                   <h3>Render & Runtime</h3>
                   <div class="row">
-                    <select bind:value={kitsuneBackend}><option value="cpu">cpu</option><option value="gpu">gpu</option></select>
+                    <GsSelect bind:value={kitsuneBackend} options={kitsuneBackendOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['backend', kitsuneBackend])} disabled={kitsuneBusy}>Set Backend</button>
-                    <select bind:value={kitsuneOutputTarget}><option value="layer-shell">layer-shell</option></select>
+                    <GsSelect bind:value={kitsuneOutputTarget} options={kitsuneOutputTargetOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['output-target', kitsuneOutputTarget])} disabled={kitsuneBusy}>Set Output Target</button>
                   </div>
                   <div class="row">
-                    <select bind:value={kitsuneSpectrumMode}><option value="single">single</option><option value="group">group</option></select>
+                    <GsSelect bind:value={kitsuneSpectrumMode} options={kitsuneSpectrumModeOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['spectrum-mode', kitsuneSpectrumMode])} disabled={kitsuneBusy}>Set Spectrum Mode</button>
-                    <select bind:value={kitsuneRuntime}><option value="standard">standard</option><option value="test">test</option></select>
+                    <GsSelect bind:value={kitsuneRuntime} options={kitsuneRuntimeOptions} />
                     <button class="secondary" on:click={() => runKitsuneCommand(['runtime', kitsuneRuntime])} disabled={kitsuneBusy}>Set Runtime</button>
                   </div>
                 </div>
               </div>
             {/if}
 
-            {#if kitsuneTab === 'monitors'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'monitors'}
               <div class="grid kitsune-grid">
                 <div class="card">
                   <h3>Monitors</h3>
@@ -7046,7 +7688,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               </div>
             {/if}
 
-            {#if kitsuneTab === 'system'}
+            {#if kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'system'}
               <div class="grid kitsune-grid">
                 <div class="card">
                   <h3>Instances</h3>
@@ -7139,14 +7781,7 @@ import {onDestroy, onMount, tick} from 'svelte';
                 <div class="card">
                   <h3>{tr('Logs & Diagnostics', 'Logs y Diagnostico')}</h3>
                   <div class="row">
-                    <select bind:value={kitsuneLogSource}>
-                      <option value="all">{tr('all', 'todas')}</option>
-                      <option value="renderer">renderer</option>
-                      <option value="cava">cava</option>
-                      <option value="layer">layer</option>
-                      <option value="colorwatch">colorwatch</option>
-                      <option value="monitorwatch">monitorwatch</option>
-                    </select>
+                    <GsSelect bind:value={kitsuneLogSource} options={kitsuneLogSourceOptions} />
                     <input type="number" bind:value={kitsuneLogLines} min="1" />
                     <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogAllInstances} /> {tr('all instances', 'todas las instancias')}</label>
                     <label class="inline-check"><input type="checkbox" bind:checked={kitsuneLogFollow} /> {tr('follow', 'seguir')}</label>
@@ -7175,7 +7810,7 @@ import {onDestroy, onMount, tick} from 'svelte';
               <pre class="kitsune-output">{kitsuneOutput || tr('No command output yet.', 'Aun no hay salida de comandos.')}</pre>
             </div>
           {/if}
-        {:else}
+        {:else if !kitsuneBusy}
           <p class="muted">{tr('Press "Check Installation" to validate Kitsune and load options.', 'Presiona "Validar Instalacion" para validar Kitsune y cargar opciones.')}</p>
         {/if}
       </div>

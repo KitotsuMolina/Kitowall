@@ -69,6 +69,11 @@ async function fileExists(targetPath) {
   }
 }
 
+async function resolveBootstrapPath() {
+  if (await fileExists(DEV_BOOTSTRAP)) return DEV_BOOTSTRAP;
+  return PACKAGED_BOOTSTRAP;
+}
+
 async function shellPathEntries() {
   try {
     const home = await hostHomeDir();
@@ -248,6 +253,26 @@ async function runRawCommand(base, args = [], extraEnv = {}, cwd) {
   return out.stdout;
 }
 
+async function readKitsunePalette(palettePath = '/tmp/kitsune-accent.palette') {
+  try {
+    const raw = await fs.readFile(palettePath, 'utf8');
+    const out = {accent_light: '', accent_mid: '', accent_dark: '', path: palettePath, ok: true};
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+      const idx = trimmed.indexOf('=');
+      const key = trimmed.slice(0, idx).trim();
+      const value = trimmed.slice(idx + 1).trim();
+      if (key === 'accent_light' || key === 'accent_mid' || key === 'accent_dark') {
+        out[key] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {ok: false, accent_light: '', accent_mid: '', accent_dark: '', path: palettePath};
+  }
+}
+
 async function resolveKitowallCmd() {
   if (process.env.KITOWALL_CMD) {
     const [base, ...args] = process.env.KITOWALL_CMD.split(/\s+/).filter(Boolean);
@@ -286,25 +311,47 @@ async function resolveKitsuneCmd() {
     return {base, prefixArgs: args, cwd: await hostHomeDir()};
   }
 
-  const localScript = path.join(ROOT_DIR, 'Kitsune', 'scripts', 'kitsune.sh');
-  if (await fileExists(localScript)) {
-    return {base: localScript, prefixArgs: [], cwd: ROOT_DIR};
-  }
-
   const home = await hostHomeDir();
+  const hostBin = await resolveHostBinPath('kitsune');
+  if (hostBin) return {base: hostBin, prefixArgs: [], cwd: home};
+
   const userScript = path.join(home, '.local', 'share', 'kitsune', 'scripts', 'kitsune.sh');
   if (await fileExists(userScript)) {
     return {base: userScript, prefixArgs: [], cwd: home};
   }
 
-  const hostBin = await resolveHostBinPath('kitsune');
-  if (hostBin) return {base: hostBin, prefixArgs: [], cwd: home};
+  const localScript = path.join(ROOT_DIR, 'Kitsune', 'scripts', 'kitsune.sh');
+  if (await fileExists(localScript)) {
+    return {base: localScript, prefixArgs: [], cwd: ROOT_DIR};
+  }
 
   return {base: 'kitsune', prefixArgs: [], cwd: home};
 }
 
 async function bootstrapVersionsPath() {
   return path.join(await hostHomeDir(), '.local', 'share', 'kitowall', 'bootstrap-versions.json');
+}
+
+async function kitsuneGroupSchemesPath() {
+  return path.join(await hostHomeDir(), '.local', 'share', 'kitowall', 'kitsune-group-schemes.json');
+}
+
+async function readKitsuneGroupSchemesStore() {
+  const target = await kitsuneGroupSchemesPath();
+  try {
+    const raw = await fs.readFile(target, 'utf8');
+    const data = JSON.parse(raw);
+    return typeof data === 'object' && data ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeKitsuneGroupSchemesStore(data) {
+  const target = await kitsuneGroupSchemesPath();
+  await fs.mkdir(path.dirname(target), {recursive: true});
+  await fs.writeFile(target, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  return target;
 }
 
 async function readBootstrapVersion(component) {
@@ -568,7 +615,7 @@ export async function createBackend(win) {
         }
         case 'kitowall_preflight_install': {
           const namespace = args.namespace || 'kitowall';
-          const bootstrapPath = process.env.NODE_ENV === 'development' ? DEV_BOOTSTRAP : PACKAGED_BOOTSTRAP;
+          const bootstrapPath = await resolveBootstrapPath();
           const home = await hostHomeDir();
           const out = await runProcess('bash', [bootstrapPath], {
             env: await hostAwareEnv({HOME: home}),
@@ -612,7 +659,7 @@ export async function createBackend(win) {
         }
         case 'kitowall_preflight_update_kitsune': {
           const namespace = args.namespace || 'kitowall';
-          const bootstrapPath = process.env.NODE_ENV === 'development' ? DEV_BOOTSTRAP : PACKAGED_BOOTSTRAP;
+          const bootstrapPath = await resolveBootstrapPath();
           const out = await runProcess('bash', [bootstrapPath], {
             env: await hostAwareEnv({KITOWALL_BOOTSTRAP_MODE: 'kitsune-only'}),
             allowNonZero: true
@@ -954,6 +1001,44 @@ export async function createBackend(win) {
         }
         case 'kitowall_kitsune_versions':
           return {kitsune: await componentUpdateInfo('kitsune'), rendercore: await componentUpdateInfo('kitsune-rendercore')};
+        case 'kitowall_kitsune_palette': {
+          const palettePath = cleanString(args.path) || '/tmp/kitsune-accent.palette';
+          return await readKitsunePalette(palettePath);
+        }
+        case 'kitowall_kitsune_group_schemes_list': {
+          const groupFile = cleanString(args.groupFile);
+          const store = await readKitsuneGroupSchemesStore();
+          const items = Array.isArray(store[groupFile]) ? store[groupFile] : [];
+          return {ok: true, groupFile, items, path: await kitsuneGroupSchemesPath()};
+        }
+        case 'kitowall_kitsune_group_schemes_save': {
+          const groupFile = cleanString(args.groupFile);
+          const name = cleanString(args.name);
+          const layers = Array.isArray(args.layers) ? args.layers : [];
+          if (!groupFile || !name || layers.length === 0) {
+            throw new Error('groupFile, name and layers are required');
+          }
+          const normalized = layers
+            .map(item => ({
+              index: Number(item?.index ?? 0),
+              rawSpec: String(item?.rawSpec ?? '').trim()
+            }))
+            .filter(item => Number.isFinite(item.index) && item.index > 0 && item.rawSpec);
+          if (normalized.length === 0) {
+            throw new Error('no valid layers to save');
+          }
+          const store = await readKitsuneGroupSchemesStore();
+          const existing = Array.isArray(store[groupFile]) ? store[groupFile] : [];
+          const next = existing.filter(item => String(item?.name ?? '') !== name);
+          next.push({
+            name,
+            savedAt: Date.now(),
+            layers: normalized
+          });
+          store[groupFile] = next.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+          const savedPath = await writeKitsuneGroupSchemesStore(store);
+          return {ok: true, groupFile, name, path: savedPath, count: normalized.length};
+        }
         case 'kitowall_kitsune_run': {
           const cmdArgs = Array.isArray(args.args) ? args.args.map(String) : [];
           if (cmdArgs.length === 0) throw new Error('kitsune args are required');

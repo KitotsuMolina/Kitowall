@@ -121,6 +121,36 @@ main {
   display: none;
 }
 
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 14, 219, 0.58) rgba(255, 255, 255, 0.05);
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(165, 14, 219, 0.9), rgba(107, 63, 194, 0.92));
+  border: 2px solid rgba(13, 14, 22, 0.78);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(190, 63, 255, 0.95), rgba(129, 86, 226, 0.95));
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 h1 {
   font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
   font-size: 28px;
@@ -805,6 +835,22 @@ label {
 
 .next-pack-btn {
   animation: fadeInLift 180ms ease-out;
+}
+
+.kitsune-header-actions {
+  margin-top: 6px;
+  margin-bottom: 16px;
+}
+
+.kitsune-header-badges {
+  gap: 10px;
+  margin-bottom: 14px;
+  align-items: stretch;
+}
+
+.kitsune-header-badges .badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .kitsune-tabs {
