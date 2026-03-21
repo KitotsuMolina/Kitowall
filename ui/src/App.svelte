@@ -470,6 +470,7 @@
   let kitsuneVisibleProfileOptions: string[] = [];
   let kitsuneStartProfilesSelected: string[] = [];
   let kitsuneStartProfilesOpen = false;
+  let kitsuneQuickStaticProfile = '';
   let kitsuneStartTarget: 'layer-shell' = 'layer-shell';
   let kitsuneStartMode: 'bars' | 'ring' = 'bars';
   let kitsuneInstallPackages = false;
@@ -497,7 +498,7 @@
   let kitsuneGroupLayerEnabledOpen = false;
   let kitsuneGroupLayerMode: 'bars' | 'ring' = 'bars';
   let kitsuneGroupLayerModeOpen = false;
-  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'bars';
+  let kitsuneGroupLayerStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_ocean' | 'waves_ocean_fill' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'bars';
   let kitsuneGroupLayerStyleOpen = false;
   let kitsuneGroupLayerProfile = 'bars_balanced';
   let kitsuneGroupLayerProfileOpen = false;
@@ -513,7 +514,7 @@
   let kitsuneGroupSchemes: KitsuneGroupSchemeEntry[] = [];
   let kitsuneGroupSchemesPath = '';
   let kitsuneVisualMode: 'bars' | 'ring' = 'bars';
-  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
+  let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_ocean' | 'waves_ocean_fill' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
   let kitsunePostfxEnable = 1;
   let kitsunePostfxBlurPasses = 1;
   let kitsunePostfxBlurMix = 0.18;
@@ -828,6 +829,8 @@
     {value: 'bars_fill', label: 'bars_fill'},
     {value: 'waves', label: 'waves'},
     {value: 'waves_kwy', label: 'waves_kwy'},
+    {value: 'waves_ocean', label: 'waves_ocean'},
+    {value: 'waves_ocean_fill', label: 'waves_ocean_fill'},
     {value: 'waves_fill', label: 'waves_fill'},
     {value: 'dots', label: 'dots'},
     {value: 'triangle', label: 'triangle'},
@@ -3058,7 +3061,7 @@
   }
 
   function selectKitsuneControlVisualStyle(value: string): void {
-    if (value === 'bars' || value === 'bars_fill' || value === 'waves' || value === 'waves_kwy' || value === 'waves_fill' || value === 'dots' || value === 'triangle' || value === 'polygon') {
+    if (value === 'bars' || value === 'bars_fill' || value === 'waves' || value === 'waves_kwy' || value === 'waves_ocean' || value === 'waves_fill' || value === 'dots' || value === 'triangle' || value === 'polygon') {
       kitsuneVisualStyle = value;
     }
     gsSelectOpen = null;
@@ -3232,19 +3235,54 @@
     return kitsuneProfileOptions.find(p => p.startsWith(preferredPrefix)) ?? kitsuneProfileOptions[0] ?? '';
   }
 
+  function kitsuneProfilesForVisualMode(mode: 'bars' | 'ring'): string[] {
+    const prefix = mode === 'ring' ? 'ring' : 'bars';
+    return kitsuneProfileOptions.filter(profileName => profileName.startsWith(prefix));
+  }
+
+  function kitsuneDefaultQuickStaticProfile(mode: 'bars' | 'ring'): string {
+    const profiles = kitsuneProfilesForVisualMode(mode);
+    if (mode === 'bars') {
+      return (
+        profiles.find(profileName => profileName === 'bars_soft') ??
+        profiles.find(profileName => profileName === 'bars_balanced') ??
+        profiles[0] ??
+        ''
+      );
+    }
+    return (
+      profiles.find(profileName => profileName === 'ring_video_uno') ??
+      profiles.find(profileName => profileName === 'ring_video_dos') ??
+      profiles[0] ??
+      ''
+    );
+  }
+
+  function syncKitsuneQuickStaticProfile(modeArg?: 'bars' | 'ring'): void {
+    const mode = modeArg ?? kitsuneVisualMode;
+    const available = kitsuneProfilesForVisualMode(mode);
+    if (!available.length) {
+      kitsuneQuickStaticProfile = '';
+      return;
+    }
+    if (!kitsuneQuickStaticProfile || !available.includes(kitsuneQuickStaticProfile)) {
+      kitsuneQuickStaticProfile = kitsuneDefaultQuickStaticProfile(mode);
+    }
+  }
+
   function kitsuneProfileFileArg(name: string): string {
     return `./config/profiles/${name}.profile`;
   }
 
   function suggestKitsuneColorMode(
     mode: 'bars' | 'ring',
-    style: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon',
+    style: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_ocean' | 'waves_ocean_fill' | 'waves_fill' | 'dots' | 'triangle' | 'polygon',
     slot: 'primary' | 'secondary' = 'primary'
   ): 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' {
     if (mode === 'ring') {
       return slot === 'primary' ? 'accent_dark' : 'accent_light';
     }
-    if (style === 'waves' || style === 'waves_kwy' || style === 'waves_fill') {
+    if (style === 'waves' || style === 'waves_kwy' || style === 'waves_ocean' || style === 'waves_ocean_fill' || style === 'waves_fill') {
       return slot === 'primary' ? 'accent_mid' : 'accent_dark';
     }
     if (style === 'triangle' || style === 'polygon') {
@@ -3582,6 +3620,7 @@
         kitsuneStartMode = cfgMode;
         kitsuneVisualMode = cfgMode;
         kitsuneTuneMode = cfgMode;
+        syncKitsuneQuickStaticProfile(cfgMode);
       }
 
       const cfgVisualStyle =
@@ -3593,6 +3632,8 @@
         cfgVisualStyle === 'bars_fill' ||
         cfgVisualStyle === 'waves' ||
         cfgVisualStyle === 'waves_kwy' ||
+        cfgVisualStyle === 'waves_ocean' ||
+        cfgVisualStyle === 'waves_ocean_fill' ||
         cfgVisualStyle === 'waves_fill' ||
         cfgVisualStyle === 'dots' ||
         cfgVisualStyle === 'triangle' ||
@@ -3663,6 +3704,9 @@
       const staticProfile = configMap.static_profile?.trim();
       if (staticProfile && profiles.includes(staticProfile)) {
         kitsuneProfileName = staticProfile;
+        if ((cfgMode === 'ring' && staticProfile.startsWith('ring')) || (cfgMode !== 'ring' && staticProfile.startsWith('bars'))) {
+          kitsuneQuickStaticProfile = staticProfile;
+        }
       }
 
       if (kitsuneStartMonitor && !monitors.includes(kitsuneStartMonitor)) kitsuneStartMonitor = monitors[0] ?? '';
@@ -3671,6 +3715,7 @@
       if (kitsuneAutostartMonitor && !monitors.includes(kitsuneAutostartMonitor)) kitsuneAutostartMonitor = '';
       if (kitsuneStartProfile && !profiles.includes(kitsuneStartProfile)) kitsuneStartProfile = '';
       kitsuneStartProfilesSelected = kitsuneStartProfilesSelected.filter(p => profiles.includes(p));
+      syncKitsuneQuickStaticProfile();
 
       const studioProfile = kitsuneSelectedProfileName();
       if (studioProfile) {
@@ -3839,7 +3884,7 @@
     kitsuneGroupLayerModeOpen = false;
   }
 
-  function chooseKitsuneGroupLayerStyle(value: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_fill' | 'dots' | 'triangle' | 'polygon'): void {
+  function chooseKitsuneGroupLayerStyle(value: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_ocean' | 'waves_ocean_fill' | 'waves_fill' | 'dots' | 'triangle' | 'polygon'): void {
     kitsuneGroupLayerStyle = value;
     kitsuneGroupLayerStyleOpen = false;
   }
@@ -6878,6 +6923,9 @@
                     <div class="row">
                       <GsSelect
                         bind:value={kitsuneVisualMode}
+                        on:change={() => {
+                          syncKitsuneQuickStaticProfile(kitsuneVisualMode);
+                        }}
                         options={kitsuneVisualModeOptions}
                       />
                       <GsSelect
@@ -6885,19 +6933,22 @@
                         options={kitsuneVisualStyleOptions}
                       />
                       <GsSelect
-                        bind:value={kitsuneProfileName}
-                        placeholder={tr('profile (optional)', 'perfil (opcional)')}
-                        options={[{value: '', label: tr('profile (optional)', 'perfil (opcional)')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]}
+                        bind:value={kitsuneQuickStaticProfile}
+                        on:change={() => {
+                          kitsuneProfileName = kitsuneQuickStaticProfile;
+                        }}
+                        placeholder={tr('behavior profile', 'perfil de comportamiento')}
+                        options={kitsuneProfilesForVisualMode(kitsuneVisualMode).map(profileName => ({value: profileName, label: profileName}))}
                       />
                     </div>
                     <div class="row">
                       <button class="secondary" on:click={() => {
                         const args = ['start'];
                         if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
-                        if (kitsuneProfileName.trim()) args.push('--profile', kitsuneProfileName.trim());
+                        if (kitsuneQuickStaticProfile.trim()) args.push('--profile', kitsuneQuickStaticProfile.trim());
                         args.push('--target', 'layer-shell', '--mode', kitsuneVisualMode);
                         void runKitsuneBatch([
-                          ...kitsunePersistSelectedProfileCommands(kitsuneProfileName),
+                          ...kitsunePersistSelectedProfileCommands(kitsuneQuickStaticProfile),
                           ['spectrum-mode', 'single'],
                           ['visual', kitsuneVisualMode, kitsuneVisualStyle],
                           args
@@ -7503,6 +7554,7 @@
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('bars_fill')}>bars_fill</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves')}>waves</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_kwy')}>waves_kwy</button>
+                          <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_ocean')}>waves_ocean</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('waves_fill')}>waves_fill</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('dots')}>dots</button>
                           <button type="button" class="pack-option" on:click|stopPropagation={() => chooseKitsuneGroupLayerStyle('triangle')}>triangle</button>
