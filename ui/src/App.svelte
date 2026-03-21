@@ -825,16 +825,16 @@
     {value: 'ring', label: 'circle'}
   ] as const;
   const kitsuneVisualStyleOptions = [
-    {value: 'bars', label: 'bars'},
-    {value: 'bars_fill', label: 'bars_fill'},
-    {value: 'waves', label: 'waves'},
-    {value: 'waves_kwy', label: 'waves_kwy'},
-    {value: 'waves_ocean', label: 'waves_ocean'},
-    {value: 'waves_ocean_fill', label: 'waves_ocean_fill'},
-    {value: 'waves_fill', label: 'waves_fill'},
-    {value: 'dots', label: 'dots'},
-    {value: 'triangle', label: 'triangle'},
-    {value: 'polygon', label: 'polygon'}
+    {value: 'bars', label: 'Bars'},
+    {value: 'bars_fill', label: 'Bars Fill'},
+    {value: 'waves', label: 'Waves'},
+    {value: 'waves_kwy', label: 'Ribbon'},
+    {value: 'waves_ocean', label: 'Ocean'},
+    {value: 'waves_ocean_fill', label: 'Ocean Fill'},
+    {value: 'waves_fill', label: 'Waves Fill'},
+    {value: 'dots', label: 'Dots'},
+    {value: 'triangle', label: 'Triangle'},
+    {value: 'polygon', label: 'Polygon'}
   ] as const;
   const kitsuneSpectrumModeOptions = [
     {value: 'single', label: 'single'},
@@ -3268,6 +3268,14 @@
     if (!kitsuneQuickStaticProfile || !available.includes(kitsuneQuickStaticProfile)) {
       kitsuneQuickStaticProfile = kitsuneDefaultQuickStaticProfile(mode);
     }
+  }
+
+  function applyKitsuneQuickOceanPreset(): void {
+    kitsuneControlLaunchMode = 'static';
+    kitsuneVisualMode = 'bars';
+    kitsuneVisualStyle = 'waves_ocean_fill';
+    kitsuneQuickStaticProfile = 'bars_soft';
+    kitsuneProfileName = 'bars_soft';
   }
 
   function kitsuneProfileFileArg(name: string): string {
@@ -6885,7 +6893,7 @@
                   <div class="row kitsune-header-badges">
                     <span class={`badge status ${kitsuneStatus?.installed ? 'ok' : 'bad'}`}>{tr('installed', 'instalado')}: {kitsuneStatus?.installed ? 'true' : 'false'}</span>
                     <span class="badge">{tr('monitor', 'monitor')}: {kitsuneStartMonitor || kitsuneMonitorName || tr('auto', 'auto')}</span>
-                    <span class="badge">{tr('profile', 'perfil')}: {kitsuneProfileName || tr('default', 'default')}</span>
+                    <span class="badge">{tr('profile', 'perfil')}: {(kitsuneControlLaunchMode === 'static' ? kitsuneQuickStaticProfile : kitsuneProfileName) || tr('default', 'default')}</span>
                     <span class="badge">{tr('mode', 'modo')}: {kitsuneVisualMode}/{kitsuneVisualStyle}</span>
                     <span class="badge">{tr('spectrum', 'espectro')}: {kitsuneSpectrumMode}</span>
                     <span class="badge">runtime: {kitsuneRuntime}</span>
@@ -6942,6 +6950,9 @@
                       />
                     </div>
                     <div class="row">
+                      <button class="secondary" on:click={() => applyKitsuneQuickOceanPreset()} disabled={kitsuneBusy}>
+                        {tr('Ocean Preset', 'Preset Ocean')}
+                      </button>
                       <button class="secondary" on:click={() => {
                         const args = ['start'];
                         if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
