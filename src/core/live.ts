@@ -7,7 +7,7 @@ import {pipeline} from 'node:stream/promises';
 import {run} from '../utils/exec';
 import {fetchWithRetry} from '../utils/net';
 import {ensureDir} from '../utils/fs';
-import {workshopCoexistenceEnter, workshopCoexistenceExit, workshopSetActive} from './workshop';
+import {workshopCoexistenceEnter, workshopCoexistenceExit, workshopSetActive, workshopStop} from './workshop';
 
 export type LiveProvider = 'moewalls' | 'motionbgs';
 export type LiveQuality = 'auto' | 'hd' | '4k';
@@ -2253,7 +2253,13 @@ export async function liveServiceAutostart(
     } else if (action === 'start' || action === 'enable' || action === 'install') {
       out = integratedRendercoreStart(bin);
     } else if (action === 'stop' || action === 'disable') {
+      const stopped = await workshopStop({all: true});
       out = integratedRendercoreStop(bin);
+      out.stdout = [
+        out.stdout.trim(),
+        `restored_units=${stopped.restored_units.join(',') || '-'}`,
+        `stopped_instances=${stopped.stopped_instances.join(',') || '-'}`
+      ].filter(Boolean).join('\n');
     } else {
       integratedRendercoreStop(bin);
       out = integratedRendercoreStart(bin);
@@ -2294,14 +2300,26 @@ export async function liveServiceAutostart(
     await runSystemctlUser(['daemon-reload']);
     out = await runSystemctlUser(['enable', 'kitsune-rendercore.service']);
   } else if (action === 'disable') {
+    const stopped = await workshopStop({all: true});
     out = await runSystemctlUser(['disable', '--now', 'kitsune-rendercore.service'], true);
+    out.stdout = [
+      out.stdout.trim(),
+      `restored_units=${stopped.restored_units.join(',') || '-'}`,
+      `stopped_instances=${stopped.stopped_instances.join(',') || '-'}`
+    ].filter(Boolean).join('\n');
   } else if (action === 'start') {
     const binPath = await resolveHostExecutablePath(bin);
     ensureRendercoreServiceFiles(binPath, index.apply_defaults);
     await runSystemctlUser(['daemon-reload']);
     out = await runSystemctlUser(['start', 'kitsune-rendercore.service']);
   } else if (action === 'stop') {
+    const stopped = await workshopStop({all: true});
     out = await runSystemctlUser(['stop', 'kitsune-rendercore.service'], true);
+    out.stdout = [
+      out.stdout.trim(),
+      `restored_units=${stopped.restored_units.join(',') || '-'}`,
+      `stopped_instances=${stopped.stopped_instances.join(',') || '-'}`
+    ].filter(Boolean).join('\n');
   } else {
     const binPath = await resolveHostExecutablePath(bin);
     ensureRendercoreServiceFiles(binPath, index.apply_defaults);

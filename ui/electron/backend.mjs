@@ -1200,6 +1200,36 @@ export async function createBackend(win) {
           await fs.copyFile(sourcePath, targetPath);
           return {ok: true, canceled: false, groupFile: defaultName, path: targetPath, sourcePath};
         }
+        case 'kitowall_kitsune_group_duplicate': {
+          const groupFile = cleanString(args.groupFile);
+          const targetName = normalizeGroupFileNameValue(args.targetName);
+          if (!groupFile || !targetName) throw new Error('groupFile and targetName are required');
+          const sourcePath = await resolveKitsuneGroupFilePath(groupFile);
+          const targetDir = await resolveKitsuneGroupsDir();
+          await fs.mkdir(targetDir, {recursive: true});
+          const targetPath = path.join(targetDir, targetName);
+          await fs.copyFile(sourcePath, targetPath);
+          return {ok: true, groupFile: targetName, path: targetPath, sourcePath};
+        }
+        case 'kitowall_kitsune_group_rename': {
+          const groupFile = cleanString(args.groupFile);
+          const targetName = normalizeGroupFileNameValue(args.targetName);
+          if (!groupFile || !targetName) throw new Error('groupFile and targetName are required');
+          const sourcePath = await resolveKitsuneGroupFilePath(groupFile);
+          const targetDir = await resolveKitsuneGroupsDir();
+          await fs.mkdir(targetDir, {recursive: true});
+          const targetPath = path.join(targetDir, targetName);
+          await fs.copyFile(sourcePath, targetPath);
+          await fs.unlink(sourcePath);
+          return {ok: true, groupFile: targetName, path: targetPath, sourcePath};
+        }
+        case 'kitowall_kitsune_group_delete': {
+          const groupFile = cleanString(args.groupFile);
+          if (!groupFile) throw new Error('groupFile is required');
+          const sourcePath = await resolveKitsuneGroupFilePath(groupFile);
+          await fs.unlink(sourcePath);
+          return {ok: true, groupFile, path: sourcePath};
+        }
         case 'kitowall_kitsune_run': {
           const cmdArgs = Array.isArray(args.args) ? args.args.map(String) : [];
           if (cmdArgs.length === 0) throw new Error('kitsune args are required');

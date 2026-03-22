@@ -383,6 +383,24 @@
     sourcePath?: string;
   };
 
+  type KitsunePreviewBarRect = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    opacity: number;
+    radius: number;
+  };
+
+  type KitsunePreviewRingSegment = {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    opacity: number;
+    strokeWidth: number;
+  };
+
   type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
   type UiLanguage = 'en' | 'es';
   type KitsuneTabId =
@@ -532,6 +550,9 @@
   let kitsuneGroupSchemesPath = '';
   let showKitsuneGroupCreateModal = false;
   let kitsuneStudioNewGroupName = '';
+  let showKitsuneGroupRenameModal = false;
+  let showKitsuneGroupDeleteModal = false;
+  let kitsuneStudioRenameGroupName = '';
   let kitsuneStudioDragLayerIndex: number | null = null;
   let kitsuneVisualMode: 'bars' | 'ring' = 'bars';
   let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_ocean' | 'waves_ocean_fill' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
@@ -3338,6 +3359,92 @@
     return tr('Static', 'Estatico');
   }
 
+  function clampPreview(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function normalizePreviewHex(value: string | undefined, fallback: string): string {
+    const color = (value ?? '').trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(color) || /^#[0-9a-fA-F]{8}$/.test(color)) return color;
+    return fallback;
+  }
+
+  function kitsunePreviewLayerColor(layer: GroupLayerEntry, layerPos: number): string {
+    const fallbackCycle = ['#8ad8ff', '#f89cc8', '#ffe082', '#9df5c8'];
+    const fallback = fallbackCycle[layerPos % fallbackCycle.length];
+    const mode = (layer.colorMode ?? 'static').trim();
+    if (mode === 'accent_light') return normalizePreviewHex(kitsunePalette.accent_light, '#d7ebff');
+    if (mode === 'accent_mid') return normalizePreviewHex(kitsunePalette.accent_mid, '#89c8ff');
+    if (mode === 'accent_dark') return normalizePreviewHex(kitsunePalette.accent_dark, '#456ea6');
+    return normalizePreviewHex(layer.color, fallback);
+  }
+
+  function kitsunePreviewLayerAlpha(layer: GroupLayerEntry): number {
+    const alpha = Number(layer.alpha ?? '0.35');
+    return Number.isFinite(alpha) ? clampPreview(alpha, 0.12, 0.92) : 0.35;
+  }
+
+  function kitsunePreviewBars(layer: GroupLayerEntry, layerPos: number): KitsunePreviewBarRect[] {
+    const count = 26;
+    const startX = 26;
+    const endX = 294;
+    const baseline = 156;
+    const maxHeight = 88;
+    const gap = 2.4;
+    const usable = endX - startX;
+    const width = (usable - gap * (count - 1)) / count;
+    const seed = layer.index * 0.41 + layerPos * 0.27;
+    const style = (layer.style || '').trim();
+    const radius = style.includes('waves') ? 8 : style === 'dots' ? width / 2 : 4;
+    return Array.from({length: count}, (_, idx) => {
+      const t = idx / Math.max(1, count - 1);
+      const envelope = 0.52 + 0.26 * Math.sin(t * Math.PI) + 0.12 * Math.sin(t * Math.PI * 3 + seed);
+      const jitter = 0.16 * Math.sin(idx * 0.92 + seed * 2.3) + 0.08 * Math.cos(idx * 0.37 + seed * 1.7);
+      const energy = clampPreview(envelope + jitter, 0.16, 1);
+      const height = style === 'dots' ? Math.max(width * 0.9, 8) : 12 + energy * maxHeight;
+      const x = startX + idx * (width + gap);
+      const y = baseline - height;
+      return {
+        x,
+        y,
+        width,
+        height,
+        opacity: clampPreview(0.34 + energy * 0.52, 0.22, 0.95),
+        radius: Math.min(radius, height / 2, width / 2)
+      };
+    });
+  }
+
+  function kitsunePreviewRingSegments(layer: GroupLayerEntry, layerPos: number): KitsunePreviewRingSegment[] {
+    const count = 30;
+    const cx = 160;
+    const cy = 88;
+    const inner = 34;
+    const maxLength = 34;
+    const seed = layer.index * 0.63 + layerPos * 0.19;
+    const style = (layer.style || '').trim();
+    return Array.from({length: count}, (_, idx) => {
+      const angle = (Math.PI * 2 * idx) / count - Math.PI / 2;
+      const envelope = 0.55 + 0.18 * Math.sin(angle * 3 + seed) + 0.12 * Math.cos(idx * 0.61 + seed * 2.1);
+      const energy = clampPreview(envelope, 0.18, 1);
+      const length = 8 + energy * maxLength;
+      const strokeWidth = style === 'dots' ? 5 : style.includes('waves') ? 4 : 6;
+      const x1 = cx + Math.cos(angle) * inner;
+      const y1 = cy + Math.sin(angle) * inner;
+      const x2 = cx + Math.cos(angle) * (inner + length);
+      const y2 = cy + Math.sin(angle) * (inner + length);
+      return {
+        x1, y1, x2, y2,
+        opacity: clampPreview(0.28 + energy * 0.58, 0.18, 0.96),
+        strokeWidth
+      };
+    });
+  }
+
+  function kitsunePreviewLayerZIndex(layerPos: number): number {
+    return Math.max(1, kitsuneGroupLayers.length - layerPos);
+  }
+
   function kitsuneHasAvailableUpdate(): boolean {
     return Boolean(
       kitsuneStatus?.versions?.kitsune?.update_available ||
@@ -4085,6 +4192,26 @@
     kitsuneStudioNewGroupName = '';
   }
 
+  function openKitsuneGroupRenameModal(): void {
+    if (!kitsuneGroupFile.trim()) return;
+    kitsuneStudioRenameGroupName = normalizeGroupFileName(kitsuneGroupFile) || kitsuneGroupFile.trim();
+    showKitsuneGroupRenameModal = true;
+  }
+
+  function closeKitsuneGroupRenameModal(): void {
+    showKitsuneGroupRenameModal = false;
+    kitsuneStudioRenameGroupName = '';
+  }
+
+  function openKitsuneGroupDeleteModal(): void {
+    if (!kitsuneGroupFile.trim()) return;
+    showKitsuneGroupDeleteModal = true;
+  }
+
+  function closeKitsuneGroupDeleteModal(): void {
+    showKitsuneGroupDeleteModal = false;
+  }
+
   async function confirmKitsuneGroupCreate(): Promise<void> {
     kitsuneGroupPickerFilter = kitsuneStudioNewGroupName.trim();
     const candidate = normalizeGroupFileName(kitsuneGroupPickerFilter);
@@ -4096,6 +4223,82 @@
     await createKitsuneGroupFile();
     if (!lastError) {
       closeKitsuneGroupCreateModal();
+    }
+  }
+
+  async function duplicateKitsuneGroupFile(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    const baseName = normalizeGroupFileName(groupFile)?.replace(/\.group$/, '') || 'group-copy';
+    const targetName = normalizeGroupFileName(`${baseName}-copy`);
+    if (!groupFile || !targetName || kitsuneBusy) return;
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const result = await invoke<KitsuneGroupTransferResult>('kitowall_kitsune_group_duplicate', {
+        groupFile,
+        targetName
+      });
+      if (!result.ok || !result.groupFile) {
+        throw new Error(tr('Failed to duplicate group file', 'No se pudo duplicar el group'));
+      }
+      kitsuneGroupFile = result.groupFile;
+      pushToast(tr('Group duplicated', 'Group duplicado'), 'success');
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  async function confirmKitsuneGroupRename(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    const targetName = normalizeGroupFileName(kitsuneStudioRenameGroupName);
+    if (!groupFile || !targetName || kitsuneBusy) return;
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const result = await invoke<KitsuneGroupTransferResult>('kitowall_kitsune_group_rename', {
+        groupFile,
+        targetName
+      });
+      if (!result.ok || !result.groupFile) {
+        throw new Error(tr('Failed to rename group file', 'No se pudo renombrar el group'));
+      }
+      kitsuneGroupFile = result.groupFile;
+      closeKitsuneGroupRenameModal();
+      pushToast(tr('Group renamed', 'Group renombrado'), 'success');
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  async function confirmKitsuneGroupDelete(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    if (!groupFile || kitsuneBusy) return;
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const result = await invoke<KitsuneGroupTransferResult>('kitowall_kitsune_group_delete', {
+        groupFile
+      });
+      if (!result.ok) {
+        throw new Error(tr('Failed to delete group file', 'No se pudo borrar el group'));
+      }
+      closeKitsuneGroupDeleteModal();
+      kitsuneGroupFile = 'default.group';
+      pushToast(tr('Group deleted', 'Group borrado'), 'success');
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
     }
   }
 
@@ -7217,6 +7420,15 @@
                       <button class="secondary" on:click={() => void exportKitsuneGroupFile()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
                         {tr('Export', 'Exportar')}
                       </button>
+                      <button class="secondary" on:click={() => void duplicateKitsuneGroupFile()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+                        {tr('Duplicate', 'Duplicar')}
+                      </button>
+                      <button class="secondary" on:click={openKitsuneGroupRenameModal} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+                        {tr('Rename', 'Renombrar')}
+                      </button>
+                      <button class="secondary danger-outline" on:click={openKitsuneGroupDeleteModal} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+                        {tr('Delete', 'Borrar')}
+                      </button>
                       <button class="secondary" on:click={openKitsuneGroupCreateModal} disabled={kitsuneBusy}>
                         {tr('Create', 'Crear')}
                       </button>
@@ -7267,6 +7479,64 @@
                         {/each}
                       </div>
                     {/if}
+                  </div>
+                  <div class="group-layers-section kitsune-group-preview-section">
+                    <h4>{tr('Preview', 'Vista previa')}</h4>
+                    <p class="muted">{tr('Static mock of how this group is organized on screen.', 'Mock estatico de como se organiza este group en pantalla.')}</p>
+                    <div class="kitsune-group-preview-card">
+                      <div class="kitsune-group-preview-screen" role="img" aria-label={tr('Group preview', 'Vista previa del group')}>
+                        <div class="kitsune-group-preview-noise"></div>
+                        {#if kitsuneGroupLayers.length === 0}
+                          <div class="kitsune-group-preview-empty muted">{tr('No layers to preview', 'No hay capas para previsualizar')}</div>
+                        {:else}
+                          {#each kitsuneGroupLayers as layer, layerPos}
+                            {#if layer.enabled !== '0'}
+                              {#if layer.mode === 'ring'}
+                                <svg
+                                  class="kitsune-group-preview-layer kitsune-group-preview-layer-ring"
+                                  viewBox="0 0 320 180"
+                                  preserveAspectRatio="none"
+                                  style={`z-index:${kitsunePreviewLayerZIndex(layerPos)};opacity:${kitsunePreviewLayerAlpha(layer)};--preview-color:${kitsunePreviewLayerColor(layer, layerPos)};`}
+                                >
+                                  <circle class="kitsune-group-preview-ring-core" cx="160" cy="88" r="28"></circle>
+                                  {#each kitsunePreviewRingSegments(layer, layerPos) as segment}
+                                    <line
+                                      class="kitsune-group-preview-ring-segment"
+                                      x1={segment.x1}
+                                      y1={segment.y1}
+                                      x2={segment.x2}
+                                      y2={segment.y2}
+                                      stroke-opacity={segment.opacity}
+                                      stroke-width={segment.strokeWidth}
+                                    ></line>
+                                  {/each}
+                                </svg>
+                              {:else}
+                                <svg
+                                  class="kitsune-group-preview-layer kitsune-group-preview-layer-bars"
+                                  viewBox="0 0 320 180"
+                                  preserveAspectRatio="none"
+                                  style={`z-index:${kitsunePreviewLayerZIndex(layerPos)};opacity:${kitsunePreviewLayerAlpha(layer)};--preview-color:${kitsunePreviewLayerColor(layer, layerPos)};`}
+                                >
+                                  <rect class="kitsune-group-preview-bars-base" x="18" y="156" width="284" height="8" rx="4"></rect>
+                                  {#each kitsunePreviewBars(layer, layerPos) as bar}
+                                    <rect
+                                      class="kitsune-group-preview-bar"
+                                      x={bar.x}
+                                      y={bar.y}
+                                      width={bar.width}
+                                      height={bar.height}
+                                      rx={bar.radius}
+                                      opacity={bar.opacity}
+                                    ></rect>
+                                  {/each}
+                                </svg>
+                              {/if}
+                            {/if}
+                          {/each}
+                        {/if}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -8885,6 +9155,77 @@
                 {tr('Create', 'Crear')}
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if showKitsuneGroupRenameModal}
+      <div
+        class="modal-backdrop"
+        role="button"
+        tabindex="0"
+        on:click|self={closeKitsuneGroupRenameModal}
+        on:keydown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') closeKitsuneGroupRenameModal();
+        }}
+      >
+        <div
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label={tr('Rename Kitsune group', 'Renombrar group de Kitsune')}
+        >
+          <h3>{tr('Rename Group', 'Renombrar Group')}</h3>
+          <div class="stack">
+            <input
+              bind:value={kitsuneStudioRenameGroupName}
+              placeholder="my-group"
+              on:keydown={(e) => {
+                if (e.key === 'Enter') void confirmKitsuneGroupRename();
+              }}
+            />
+            <div class="row">
+              <button class="secondary" on:click={closeKitsuneGroupRenameModal} disabled={kitsuneBusy}>
+                {tr('Cancel', 'Cancelar')}
+              </button>
+              <button class="secondary" on:click={() => void confirmKitsuneGroupRename()} disabled={kitsuneBusy || !kitsuneStudioRenameGroupName.trim()}>
+                {tr('Rename', 'Renombrar')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if showKitsuneGroupDeleteModal}
+      <div
+        class="modal-backdrop"
+        role="button"
+        tabindex="0"
+        on:click|self={closeKitsuneGroupDeleteModal}
+        on:keydown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') closeKitsuneGroupDeleteModal();
+        }}
+      >
+        <div
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label={tr('Delete Kitsune group', 'Borrar group de Kitsune')}
+        >
+          <h3>{tr('Delete Group', 'Borrar Group')}</h3>
+          <p class="muted">{tr('This will delete the selected group file from ~/.config/kitsune/groups.', 'Esto borrara el archivo group seleccionado de ~/.config/kitsune/groups.')}</p>
+          <div class="row">
+            <span class="badge">{kitsuneGroupFile || '-'}</span>
+          </div>
+          <div class="row">
+            <button class="secondary" on:click={closeKitsuneGroupDeleteModal} disabled={kitsuneBusy}>
+              {tr('Cancel', 'Cancelar')}
+            </button>
+            <button class="secondary danger-outline" on:click={() => void confirmKitsuneGroupDelete()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+              {tr('Delete', 'Borrar')}
+            </button>
           </div>
         </div>
       </div>

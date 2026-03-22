@@ -2086,3 +2086,85 @@ label {
     grid-template-columns: 1fr;
   }
 }
+
+.kitsune-group-preview-section {
+  display: grid;
+  gap: 10px;
+}
+
+.kitsune-group-preview-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.kitsune-group-preview-screen {
+  position: relative;
+  width: 100%;
+  min-height: 240px;
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 52%, rgba(40, 48, 66, 0.55), transparent 34%),
+    linear-gradient(180deg, rgba(9, 12, 18, 0.98), rgba(2, 3, 6, 1));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.kitsune-group-preview-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 28%),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 4px);
+  opacity: 0.55;
+}
+
+.kitsune-group-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.kitsune-group-preview-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kitsune-group-preview-layer-bars,
+.kitsune-group-preview-layer-ring {
+  color: var(--preview-color);
+}
+
+.kitsune-group-preview-bar,
+.kitsune-group-preview-bars-base,
+.kitsune-group-preview-ring-core,
+.kitsune-group-preview-ring-segment {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.kitsune-group-preview-bars-base {
+  opacity: 0.22;
+  filter: drop-shadow(0 0 10px currentColor);
+}
+
+.kitsune-group-preview-bar {
+  filter: drop-shadow(0 0 10px color-mix(in srgb, currentColor 72%, transparent));
+}
+
+.kitsune-group-preview-ring-core {
+  fill: none;
+  stroke-width: 10;
+  opacity: 0.08;
+}
+
+.kitsune-group-preview-ring-segment {
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, currentColor 74%, transparent));
+}
