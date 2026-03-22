@@ -7,6 +7,7 @@ import {ensureDir, writeJson} from '../utils/fs';
 import {fetchWithRetry} from '../utils/net';
 import {appendSystemLog} from './logs';
 import {run} from '../utils/exec';
+import {initKitowall} from './init';
 
 const WE_APP_ID = 431960;
 const SEARCH_TTL_MS = 10 * 60 * 1000;
@@ -1296,6 +1297,9 @@ export async function workshopStop(options?: {monitor?: string; all?: boolean}):
   }
 
   const coexist = shouldRestore ? await workshopCoexistenceExit() : {ok: true, restored: [] as string[]};
+  if (shouldRestore) {
+    await initKitowall({namespace: 'kitowall', apply: true, force: true});
+  }
   return {
     ok: true,
     stopped_instances: stopped,
