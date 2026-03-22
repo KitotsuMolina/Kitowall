@@ -74,6 +74,55 @@ async function resolveBootstrapPath() {
   return PACKAGED_BOOTSTRAP;
 }
 
+function normalizeGroupFileNameValue(value) {
+  const clean = String(value ?? '').trim();
+  if (!clean) return '';
+  return clean.endsWith('.group') ? clean : `${clean}.group`;
+}
+
+async function resolveKitsuneGroupsDir() {
+  const home = await hostHomeDir();
+  return path.join(home, '.config', 'kitsune', 'groups');
+}
+
+async function resolveKitsuneGroupsDirs() {
+  const home = await hostHomeDir();
+  const canonical = path.join(home, '.config', 'kitsune', 'groups');
+  return [
+    canonical,
+    path.join(home, '.local', 'share', 'kitsune', 'config', 'groups'),
+    path.join(home, 'config', 'groups'),
+    path.join(ROOT_DIR, 'Kitsune', 'config', 'groups')
+  ];
+}
+
+async function resolveKitsuneGroupFilePath(groupFile) {
+  const normalized = normalizeGroupFileNameValue(groupFile);
+  if (!normalized) throw new Error('groupFile is required');
+  if (path.isAbsolute(normalized)) return normalized;
+  const cleaned = normalized.replace(/^[.][/]/, '');
+  const candidateDirs = await resolveKitsuneGroupsDirs();
+  if (cleaned.startsWith('config/groups/')) {
+    const stripped = cleaned.slice('config/groups/'.length);
+    for (const dir of candidateDirs) {
+      const candidate = path.join(dir, stripped);
+      try {
+        await fs.access(candidate);
+        return candidate;
+      } catch {}
+    }
+    return path.join(candidateDirs[0], stripped);
+  }
+  for (const dir of candidateDirs) {
+    const candidate = path.join(dir, normalized);
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {}
+  }
+  return path.join(candidateDirs[0], normalized);
+}
+
 async function shellPathEntries() {
   try {
     const home = await hostHomeDir();
@@ -1048,6 +1097,108 @@ export async function createBackend(win) {
           store[groupFile] = next.sort((a, b) => String(a.name).localeCompare(String(b.name)));
           const savedPath = await writeKitsuneGroupSchemesStore(store);
           return {ok: true, groupFile, name, path: savedPath, count: normalized.length};
+        }
+        case 'kitowall_kitsune_group_reorder': {
+          const groupFile = cleanString(args.groupFile);
+          const fromIndex = Number(args.fromIndex ?? 0);
+          const toIndex = Number(args.toIndex ?? 0);
+          if (!groupFile) throw new Error('groupFile is required');
+          if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex <= 0 || toIndex <= 0) {
+            throw new Error('fromIndex and toIndex must be positive integers');
+          }
+          const targetPath = await resolveKitsuneGroupFilePath(groupFile);
+          const raw = await fs.readFile(targetPath, 'utf8');
+          const lines = raw.split('\n');
+          const layerIndexes = [];
+          for (let i = 0; i < lines.length; i += 1) {
+            if (/^\s*layer=/.test(lines[i])) layerIndexes.push(i);
+          }
+          if (fromIndex > layerIndexes.length || toIndex > layerIndexes.length) {
+            throw new Error(`layer index out of range for ${groupFile}`);
+          }
+          if (fromIndex === toIndex) {
+            return {ok: true, groupFile, path: targetPath, count: layerIndexes.length};
+          }
+          const orderedLayers = layerIndexes.map(idx => lines[idx]);
+          const [moved] = orderedLayers.splice(fromIndex - 1, 1);
+          orderedLayers.splice(toIndex - 1, 0, moved);
+          layerIndexes.forEach((lineIndex, i) => {
+            lines[lineIndex] = orderedLayers[i];
+          });
+          await fs.writeFile(targetPath, lines.join('\n'));
+          return {ok: true, groupFile, path: targetPath, count: orderedLayers.length};
+        }
+        case 'kitowall_kitsune_group_files_list': {
+          const groupsDirs = await resolveKitsuneGroupsDirs();
+          const itemSet = new Set();
+          for (const groupsDir of groupsDirs) {
+            let entries = [];
+            try {
+              entries = await fs.readdir(groupsDir, {withFileTypes: true});
+            } catch {
+              continue;
+            }
+            for (const entry of entries) {
+              if (entry.isFile() && entry.name.endsWith('.group')) {
+                itemSet.add(entry.name);
+              }
+            }
+          }
+          const items = [...itemSet].sort((a, b) => a.localeCompare(b));
+          return {ok: true, path: groupsDirs[0], items, paths: groupsDirs};
+        }
+        case 'kitowall_kitsune_group_layers_read': {
+          const groupFile = cleanString(args.groupFile);
+          if (!groupFile) throw new Error('groupFile is required');
+          const targetPath = await resolveKitsuneGroupFilePath(groupFile);
+          const raw = await fs.readFile(targetPath, 'utf8');
+          const lines = raw.split('\n');
+          const items = [];
+          let idx = 0;
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            if (!trimmed.startsWith('layer=')) continue;
+            idx += 1;
+            items.push(`${idx}: ${trimmed}`);
+          }
+          return {ok: true, groupFile, path: targetPath, stdout: items.join('\n')};
+        }
+        case 'kitowall_kitsune_group_import': {
+          const targetDir = await resolveKitsuneGroupsDir();
+          await fs.mkdir(targetDir, {recursive: true});
+          const result = await dialog.showOpenDialog(win, {
+            properties: ['openFile'],
+            filters: [{name: 'Kitsune Groups', extensions: ['group']}]
+          });
+          if (result.canceled || !result.filePaths?.[0]) {
+            return {ok: false, canceled: true};
+          }
+          const sourcePath = result.filePaths[0];
+          const fileName = normalizeGroupFileNameValue(path.basename(sourcePath));
+          if (!fileName) throw new Error('invalid group file');
+          const targetPath = path.join(targetDir, fileName);
+          await fs.copyFile(sourcePath, targetPath);
+          return {ok: true, canceled: false, groupFile: fileName, path: targetPath, sourcePath};
+        }
+        case 'kitowall_kitsune_group_export': {
+          const groupFile = cleanString(args.groupFile);
+          if (!groupFile) throw new Error('groupFile is required');
+          const sourcePath = await resolveKitsuneGroupFilePath(groupFile);
+          const defaultName = normalizeGroupFileNameValue(path.basename(sourcePath));
+          const result = await dialog.showSaveDialog(win, {
+            defaultPath: defaultName,
+            filters: [{name: 'Kitsune Groups', extensions: ['group']}]
+          });
+          if (result.canceled || !result.filePath) {
+            return {ok: false, canceled: true};
+          }
+          let targetPath = result.filePath;
+          if (!targetPath.endsWith('.group')) {
+            targetPath = `${targetPath}.group`;
+          }
+          await fs.copyFile(sourcePath, targetPath);
+          return {ok: true, canceled: false, groupFile: defaultName, path: targetPath, sourcePath};
         }
         case 'kitowall_kitsune_run': {
           const cmdArgs = Array.isArray(args.args) ? args.args.map(String) : [];

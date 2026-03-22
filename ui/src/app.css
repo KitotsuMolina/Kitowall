@@ -44,6 +44,14 @@ main {
   min-height: 100vh;
 }
 
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 1fr;
+}
+
+.app-shell.sidebar-collapsed main {
+  padding-top: 84px;
+}
+
 .side-menu {
   display: flex;
   flex-direction: column;
@@ -56,11 +64,35 @@ main {
   box-sizing: border-box;
 }
 
+.app-shell.sidebar-collapsed .side-menu {
+  display: none;
+}
+
+.sidebar-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 .side-title {
   font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
   font-size: 20px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
   color: var(--text-main);
+}
+
+.sidebar-hide,
+.sidebar-restore {
+  white-space: nowrap;
+}
+
+.sidebar-restore {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 60;
 }
 
 .menu-items {
@@ -881,6 +913,67 @@ label {
   margin-top: 10px;
 }
 
+.kitsune-studio-group-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.kitsune-studio-group-select {
+  width: min(360px, 48vw);
+  min-width: 220px;
+}
+
+.kitsune-studio-layers-list {
+  margin-top: 10px;
+}
+
+.kitsune-studio-layer-item {
+  cursor: grab;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.kitsune-studio-layer-item:hover {
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.kitsune-studio-layer-item.is-dragging {
+  opacity: 0.7;
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.07);
+  transform: scale(0.99);
+}
+
+.kitsune-studio-layer-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.kitsune-studio-layer-grip {
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  user-select: none;
+  padding-top: 3px;
+}
+
+.kitsune-studio-layer-meta {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.kitsune-studio-layer-title,
+.kitsune-studio-layer-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .kitsune-console {
   margin-top: 12px;
 }
@@ -931,6 +1024,11 @@ label {
 @media (max-width: 760px) {
   .app-shell {
     display: block;
+  }
+
+  .sidebar-restore,
+  .sidebar-hide {
+    display: none;
   }
 
   .menu-toggle {

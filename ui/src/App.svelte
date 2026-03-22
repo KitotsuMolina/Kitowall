@@ -368,6 +368,21 @@
     profilesPipe?: string;
   };
 
+  type KitsuneGroupReorderResult = {
+    ok: boolean;
+    groupFile: string;
+    path: string;
+    count: number;
+  };
+
+  type KitsuneGroupTransferResult = {
+    ok: boolean;
+    canceled?: boolean;
+    groupFile?: string;
+    path?: string;
+    sourcePath?: string;
+  };
+
   type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
   type UiLanguage = 'en' | 'es';
   type KitsuneTabId =
@@ -407,9 +422,11 @@
   let showHistoryClearConfirm = false;
   let showLogsClearConfirm = false;
   let mobileMenuOpen = false;
+  let sidebarCollapsed = false;
   let activeSection: SectionId = 'control';
   const SELECTED_PACK_KEY = 'kitowall:selected-pack';
   const UI_LANG_KEY = 'kitowall:ui-language';
+  const SIDEBAR_COLLAPSED_KEY = 'kitowall:sidebar-collapsed';
   let uiLanguage: UiLanguage = 'en';
   let toastSeq = 1;
   let settingsMode: 'manual' | 'rotate' = 'manual';
@@ -485,7 +502,7 @@
   let kitsuneRotationSeconds = 10;
   let kitsuneTunePreset = 'balanced';
   let kitsuneTuneMode: 'bars' | 'ring' = 'bars';
-  let kitsuneGroupFile = './config/groups/default.group';
+  let kitsuneGroupFile = 'default.group';
   let kitsuneGroupOptions: string[] = [];
   let kitsuneGroupPickerOpen = false;
   let kitsuneGroupPickerFilter = '';
@@ -513,6 +530,9 @@
   let kitsuneGroupSchemeName = '';
   let kitsuneGroupSchemes: KitsuneGroupSchemeEntry[] = [];
   let kitsuneGroupSchemesPath = '';
+  let showKitsuneGroupCreateModal = false;
+  let kitsuneStudioNewGroupName = '';
+  let kitsuneStudioDragLayerIndex: number | null = null;
   let kitsuneVisualMode: 'bars' | 'ring' = 'bars';
   let kitsuneVisualStyle: 'bars' | 'bars_fill' | 'waves' | 'waves_kwy' | 'waves_ocean' | 'waves_ocean_fill' | 'waves_fill' | 'dots' | 'triangle' | 'polygon' = 'waves_fill';
   let kitsunePostfxEnable = 1;
@@ -1049,6 +1069,15 @@
     }
     if (id === 'packs') {
       void loadPacksRaw();
+    }
+  }
+
+  function setSidebarCollapsed(next: boolean): void {
+    sidebarCollapsed = next;
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+    } catch {
+      // ignore persistence failures
     }
   }
 
@@ -3737,8 +3766,8 @@
 
   async function loadKitsuneGroupFiles(): Promise<void> {
     try {
-      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {args: ['group', 'files']});
-      const groups = result.ok ? parseKitsuneGroupFiles(result.stdout ?? '') : [];
+      const result = await invoke<{ok: boolean; path: string; items: string[]}>('kitowall_kitsune_group_files_list');
+      const groups = result.ok ? (result.items ?? []) : [];
       const current = normalizeGroupFileName(kitsuneGroupFile);
       kitsuneGroupOptions = current && !groups.includes(current) ? [...groups, current] : groups;
     } catch {
@@ -3771,8 +3800,8 @@
     }
     kitsuneGroupLayersBusy = true;
     try {
-      const result = await invoke<KitsuneRunResult>('kitowall_kitsune_run', {
-        args: ['group', 'list-layers', groupFile]
+      const result = await invoke<{ok: boolean; path: string; stdout: string}>('kitowall_kitsune_group_layers_read', {
+        groupFile
       });
       kitsuneGroupLayers = result.ok ? parseKitsuneGroupLayers(result.stdout ?? '') : [];
     } catch {
@@ -3786,6 +3815,61 @@
     await loadKitsuneGroupFiles();
     await loadKitsuneGroupLayers();
     await loadKitsuneGroupSchemes();
+  }
+
+  function resetKitsuneStudioLayerDrag(): void {
+    kitsuneStudioDragLayerIndex = null;
+  }
+
+  function onKitsuneStudioLayerDragStart(event: DragEvent, index: number): void {
+    kitsuneStudioDragLayerIndex = index;
+    event.dataTransfer?.setData('text/plain', String(index));
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  function onKitsuneStudioLayerDragOver(event: DragEvent): void {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  async function reorderKitsuneStudioLayer(toIndex: number): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    const fromIndex = kitsuneStudioDragLayerIndex;
+    if (kitsuneBusy || !groupFile || fromIndex == null || fromIndex === toIndex) {
+      resetKitsuneStudioLayerDrag();
+      return;
+    }
+    kitsuneBusy = true;
+    lastError = null;
+    const nextLayers = [...kitsuneGroupLayers];
+    const [moved] = nextLayers.splice(fromIndex - 1, 1);
+    if (moved) {
+      nextLayers.splice(toIndex - 1, 0, moved);
+      kitsuneGroupLayers = nextLayers;
+    }
+    try {
+      const result = await invoke<KitsuneGroupReorderResult>('kitowall_kitsune_group_reorder', {
+        groupFile,
+        fromIndex,
+        toIndex
+      });
+      if (!result.ok) {
+        throw new Error(tr('Failed to reorder group layers', 'No se pudo reordenar las capas del grupo'));
+      }
+      pushToast(tr('Group layer order updated', 'Orden de capas actualizado'), 'success');
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+      resetKitsuneStudioLayerDrag();
+    }
   }
 
   async function saveKitsuneGroupScheme(): Promise<void> {
@@ -3810,6 +3894,47 @@
       }
     } catch (e) {
       pushToast(String(e), 'error');
+    }
+  }
+
+  async function importKitsuneGroupFile(): Promise<void> {
+    if (kitsuneBusy) return;
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const result = await invoke<KitsuneGroupTransferResult>('kitowall_kitsune_group_import');
+      if (result.canceled) return;
+      if (!result.ok || !result.groupFile) {
+        throw new Error(tr('Failed to import group file', 'No se pudo importar el group'));
+      }
+      kitsuneGroupFile = result.groupFile;
+      pushToast(tr('Group imported', 'Group importado'), 'success');
+      await loadKitsuneGroupData();
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
+    }
+  }
+
+  async function exportKitsuneGroupFile(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    if (kitsuneBusy || !groupFile) return;
+    kitsuneBusy = true;
+    lastError = null;
+    try {
+      const result = await invoke<KitsuneGroupTransferResult>('kitowall_kitsune_group_export', {groupFile});
+      if (result.canceled) return;
+      if (!result.ok || !result.path) {
+        throw new Error(tr('Failed to export group file', 'No se pudo exportar el group'));
+      }
+      pushToast(tr('Group exported', 'Group exportado'), 'success');
+    } catch (e) {
+      lastError = String(e);
+      pushToast(String(e), 'error');
+    } finally {
+      kitsuneBusy = false;
     }
   }
 
@@ -3947,6 +4072,30 @@
       pushToast(String(e), 'error');
     } finally {
       kitsuneBusy = false;
+    }
+  }
+
+  function openKitsuneGroupCreateModal(): void {
+    kitsuneStudioNewGroupName = '';
+    showKitsuneGroupCreateModal = true;
+  }
+
+  function closeKitsuneGroupCreateModal(): void {
+    showKitsuneGroupCreateModal = false;
+    kitsuneStudioNewGroupName = '';
+  }
+
+  async function confirmKitsuneGroupCreate(): Promise<void> {
+    kitsuneGroupPickerFilter = kitsuneStudioNewGroupName.trim();
+    const candidate = normalizeGroupFileName(kitsuneGroupPickerFilter);
+    kitsuneGroupCreateCandidate = candidate && !kitsuneGroupOptions.includes(candidate) ? candidate : '';
+    if (!kitsuneGroupCreateCandidate) {
+      pushToast(tr('Enter a valid new group name', 'Escribe un nombre valido para el grupo'), 'info');
+      return;
+    }
+    await createKitsuneGroupFile();
+    if (!lastError) {
+      closeKitsuneGroupCreateModal();
     }
   }
 
@@ -4748,6 +4897,9 @@
     if (id === 'advanced' && kitsuneAdvancedTab === 'group' && kitsuneStatus?.installed) {
       void loadKitsuneGroupData();
     }
+    if (id === 'studio' && kitsuneStatus?.installed) {
+      void loadKitsuneGroupData();
+    }
     if ((id === 'control' || id === 'studio' || id === 'advanced') && kitsuneStatus?.installed) {
       void loadKitsuneRuntimeOptions();
     }
@@ -5288,6 +5440,11 @@
         uiLanguage = savedLang;
       }
     } catch {}
+    try {
+      const savedSidebar = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (savedSidebar === '1') sidebarCollapsed = true;
+      if (savedSidebar === '0') sidebarCollapsed = false;
+    } catch {}
 
     runHealth();
     loadPreflightStatus();
@@ -5359,13 +5516,32 @@
   });
 </script>
 
-<div class="app-shell">
+<div class={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
   <button class="menu-toggle" on:click={() => (mobileMenuOpen = !mobileMenuOpen)} aria-label={tr('Toggle menu', 'Mostrar menu')}>
     {tr('Menu', 'Menu')}
   </button>
 
+  {#if sidebarCollapsed}
+    <button
+      class="sidebar-restore"
+      on:click={() => setSidebarCollapsed(false)}
+      aria-label={tr('Show sidebar', 'Mostrar sidebar')}
+    >
+      {tr('Show Menu', 'Mostrar Menu')}
+    </button>
+  {/if}
+
   <aside class={`side-menu ${mobileMenuOpen ? 'open' : ''}`}>
-    <div class="side-title">Kitowall</div>
+    <div class="sidebar-topbar">
+      <div class="side-title">Kitowall</div>
+      <button
+        class="secondary sidebar-hide"
+        on:click={() => setSidebarCollapsed(true)}
+        aria-label={tr('Hide sidebar', 'Ocultar sidebar')}
+      >
+        {tr('Hide', 'Ocultar')}
+      </button>
+    </div>
     <div class="menu-items">
     <button class={`menu-item ${activeSection === 'control' ? 'active' : ''}`} on:click={() => selectSection('control')}>
       {tr('Control Center', 'Centro de Control')}
@@ -7019,217 +7195,78 @@
             {/if}
 
             {#if kitsuneTab === 'studio'}
-              <div class="grid kitsune-grid kitsune-profiles-grid">
+              <div class="grid kitsune-grid">
                 <div class="card">
-                  <h3>{tr('Quick Start', 'Inicio Rapido')}</h3>
-                  <p class="muted">{tr('This is the simplified surface for daily use. The other tabs remain available for advanced work.', 'Esta es la superficie simplificada para uso diario. Las otras pestañas siguen disponibles para trabajo avanzado.')}</p>
                   <div class="row">
-                    <GsSelect bind:value={kitsuneStartMonitor} placeholder={tr('monitor (optional)', 'monitor (opcional)')} options={[{value: '', label: tr('monitor (optional)', 'monitor (opcional)')}, ...kitsuneMonitorOptions.map(monitorName => ({value: monitorName, label: monitorName}))]} on:change={() => void loadKitsunePalette()} />
-                    <GsSelect bind:value={kitsuneVisualMode} options={kitsuneVisualModeOptions} />
-                    <GsSelect bind:value={kitsuneVisualStyle} options={kitsuneVisualStyleOptions} />
-                    <GsSelect bind:value={kitsuneSpectrumMode} options={kitsuneSpectrumModeOptions} />
+                    <span class="field-label">{tr('group', 'group')}</span>
+                    <div class="kitsune-studio-group-row">
+                      <div class="kitsune-studio-group-select">
+                        <GsSelect
+                          bind:value={kitsuneGroupFile}
+                          placeholder={tr('group file', 'archivo group')}
+                          options={[{value: '', label: tr('group file', 'archivo group')}, ...kitsuneGroupOptions.map(groupName => ({value: groupName, label: groupName}))]}
+                          on:change={() => void loadKitsuneGroupData()}
+                        />
+                      </div>
+                      <button class="secondary" on:click={() => void loadKitsuneGroupData()} disabled={kitsuneBusy}>
+                        {tr('Reload', 'Recargar')}
+                      </button>
+                      <button class="secondary" on:click={() => void importKitsuneGroupFile()} disabled={kitsuneBusy}>
+                        {tr('Import', 'Importar')}
+                      </button>
+                      <button class="secondary" on:click={() => void exportKitsuneGroupFile()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+                        {tr('Export', 'Exportar')}
+                      </button>
+                      <button class="secondary" on:click={openKitsuneGroupCreateModal} disabled={kitsuneBusy}>
+                        {tr('Create', 'Crear')}
+                      </button>
+                    </div>
                   </div>
-                  <div class="row">
-                    <GsSelect bind:value={kitsuneProfileName} placeholder={tr('profile', 'perfil')} options={[{value: '', label: tr('profile', 'perfil')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)} />
-                    <button class="secondary" on:click={() => void loadKitsuneStudioProfile()} disabled={kitsuneBusy || !kitsuneProfileOptions.length}>
-                      {tr('Load Profile', 'Cargar Perfil')}
-                    </button>
-                    <button class="secondary" on:click={() => {
-                      const args = ['start'];
-                      if (kitsuneStartMonitor.trim()) args.push(kitsuneStartMonitor.trim());
-                      if (kitsuneProfileName.trim()) args.push('--profile', kitsuneProfileName.trim());
-                      args.push('--target', 'layer-shell', '--mode', kitsuneVisualMode);
-                      void runKitsuneBatch([
-                        ...kitsunePersistSelectedProfileCommands(kitsuneProfileName),
-                        args
-                      ], tr('Kitsune started with selected profile', 'Kitsune iniciado con el perfil seleccionado'));
-                    }} disabled={kitsuneBusy || isLiveServicesLocked()}>
-                      {tr('Start', 'Iniciar')}
-                    </button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['stop', ...(kitsuneStartMonitor.trim() ? [kitsuneStartMonitor.trim()] : [])])} disabled={kitsuneBusy || isLiveServicesLocked()}>
-                      {tr('Stop', 'Detener')}
-                    </button>
-                  </div>
-                </div>
-
-                <div class="card">
-                  <h3>{tr('Geometry & Color', 'Geometria y Color')}</h3>
-                  <p class="muted">{tr('Use fewer, thicker bars with controlled max height for a cleaner visual.', 'Usa menos barras, mas gruesas y con altura maxima controlada para un visual mas limpio.')}</p>
-                  <div class="row">
-                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('balanced')}>{tr('Balanced preset', 'Preset balanceado')}</button>
-                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('compact')}>{tr('Compact preset', 'Preset compacto')}</button>
-                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('neon_ring')}>{tr('Neon ring', 'Anillo neon')}</button>
-                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('segmented')}>{tr('Segmented', 'Segmentado')}</button>
-                    <button class="secondary" on:click={() => applyKitsuneStudioPreset('wallpaper')}>{tr('Wallpaper roles', 'Roles del wallpaper')}</button>
-                    <button class="secondary" on:click={() => {
-                      kitsuneStudioColorMode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'primary');
-                      kitsuneStudioColor2Mode = suggestKitsuneColorMode(kitsuneVisualMode, kitsuneVisualStyle, 'secondary');
-                    }}>{tr('Suggest Roles', 'Sugerir Roles')}</button>
-                    <button class="secondary" on:click={() => void applyKitsuneStudioVisual()} disabled={kitsuneBusy || isLiveServicesLocked()}>
-                      {tr('Apply Visual Studio', 'Aplicar Studio Visual')}
-                    </button>
-                  </div>
-                  <div class="row">
-                    <label class="inline-check">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(kitsuneDynamicColor)}
-                        on:change={handleKitsuneDynamicColorToggle}
-                      />
-                      {tr('dynamic color', 'color dinamico')}
-                    </label>
-                    <span class="field-label">{tr('poll s', 'poll s')}</span>
-                    <input type="number" min="1" bind:value={kitsuneColorPollSeconds} />
-                    <button class="secondary" on:click={() => runKitsuneCommand(['color-poll', String(Math.max(1, Math.floor(Number(kitsuneColorPollSeconds) || 1)))])} disabled={kitsuneBusy}>
-                      {tr('Apply Poll', 'Aplicar Poll')}
-                    </button>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('palette', 'paleta')}</span>
-                    <span class="badge" style={`background:${kitsunePalette.accent_light || '#d8dce6'};color:#111;`}>light</span>
-                    <span class="badge" style={`background:${kitsunePalette.accent_mid || '#a9b4c8'};color:#111;`}>mid</span>
-                    <span class="badge" style={`background:${kitsunePalette.accent_dark || '#44506b'};color:#fff;`}>dark</span>
-                    <button class="secondary" on:click={() => void loadKitsunePalette()} disabled={kitsuneBusy}>
-                      {tr('Refresh Palette', 'Recargar Paleta')}
-                    </button>
-                  </div>
-                  <div class="row">
-                    <span class="muted">{kitsunePalette.path}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('bars count', 'cantidad barras')}</span>
-                    <input type="range" min="24" max="240" step="8" bind:value={kitsuneStudioBars} />
-                    <span class="badge">{kitsuneStudioBars}</span>
-                    <span class="field-label">{tr('fps', 'fps')}</span>
-                    <input type="range" min="24" max="60" step="1" bind:value={kitsuneStudioFps} />
-                    <span class="badge">{kitsuneStudioFps}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('bar width', 'ancho barra')}</span>
-                    <input type="range" min="2" max="20" step="0.5" bind:value={kitsuneStudioBarWidth} />
-                    <span class="badge">{Number(kitsuneStudioBarWidth).toFixed(1)}</span>
-                    <span class="field-label">{tr('gap', 'gap')}</span>
-                    <input type="range" min="0" max="12" step="0.5" bind:value={kitsuneStudioBarGap} />
-                    <span class="badge">{Number(kitsuneStudioBarGap).toFixed(1)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('corner radius', 'radio esquinas')}</span>
-                    <input type="range" min="0" max="12" step="0.5" bind:value={kitsuneStudioBarCornerRadius} />
-                    <span class="badge">{Number(kitsuneStudioBarCornerRadius).toFixed(1)}</span>
-                    <span class="field-label">{tr('max height', 'altura maxima')}</span>
-                    <input type="range" min="0.2" max="1" step="0.01" bind:value={kitsuneStudioLineMaxHeightRatio} />
-                    <span class="badge">{Math.round(Number(kitsuneStudioLineMaxHeightRatio) * 100)}%</span>
-                  </div>
-                  <div class="row">
-                    <label class="inline-check">
-                      <input type="checkbox" bind:checked={kitsuneStudioSegmentedBars} />
-                      {tr('segmented bars', 'barras segmentadas')}
-                    </label>
-                    <span class="field-label">{tr('segment length', 'largo segmento')}</span>
-                    <input type="range" min="2" max="24" step="0.5" bind:value={kitsuneStudioSegmentLength} />
-                    <span class="badge">{Number(kitsuneStudioSegmentLength).toFixed(1)}</span>
-                    <span class="field-label">{tr('segment gap', 'gap segmento')}</span>
-                    <input type="range" min="0" max="16" step="0.5" bind:value={kitsuneStudioSegmentGap} />
-                    <span class="badge">{Number(kitsuneStudioSegmentGap).toFixed(1)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('ring inner', 'anillo interno')}</span>
-                    <input type="range" min="0.05" max="0.5" step="0.01" bind:value={kitsuneStudioRingInnerRatio} />
-                    <span class="badge">{Number(kitsuneStudioRingInnerRatio).toFixed(2)}</span>
-                    <span class="field-label">{tr('ring length', 'largo anillo')}</span>
-                    <input type="range" min="0.05" max="0.4" step="0.01" bind:value={kitsuneStudioRingLengthRatio} />
-                    <span class="badge">{Number(kitsuneStudioRingLengthRatio).toFixed(2)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('bars wave', 'wave barras')}</span>
-                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioBarsWaveThickness} />
-                    <span class="badge">{Number(kitsuneStudioBarsWaveThickness).toFixed(1)}</span>
-                    <span class="field-label">{tr('bars dots', 'dots barras')}</span>
-                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioBarsDotRadius} />
-                    <span class="badge">{Number(kitsuneStudioBarsDotRadius).toFixed(1)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('ring wave', 'wave anillo')}</span>
-                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioRingWaveThickness} />
-                    <span class="badge">{Number(kitsuneStudioRingWaveThickness).toFixed(1)}</span>
-                    <span class="field-label">{tr('ring dots', 'dots anillo')}</span>
-                    <input type="range" min="1" max="12" step="0.1" bind:value={kitsuneStudioRingDotRadius} />
-                    <span class="badge">{Number(kitsuneStudioRingDotRadius).toFixed(1)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('wave smooth', 'suavidad wave')}</span>
-                    <input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioBarsWaveRoundness} />
-                    <span class="badge">{Number(kitsuneStudioBarsWaveRoundness).toFixed(2)}</span>
-                    <span class="field-label">{tr('ring smooth', 'suavidad anillo')}</span>
-                    <input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioRingWaveRoundness} />
-                    <span class="badge">{Number(kitsuneStudioRingWaveRoundness).toFixed(2)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('fill softness', 'suavidad fill')}</span>
-                    <input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioRingFillSoftness} />
-                    <span class="badge">{Number(kitsuneStudioRingFillSoftness).toFixed(2)}</span>
-                    <span class="field-label">{tr('fill overlap', 'overlap fill')}</span>
-                    <input type="range" min="0" max="8" step="0.1" bind:value={kitsuneStudioRingFillOverlapPx} />
-                    <span class="badge">{Number(kitsuneStudioRingFillOverlapPx).toFixed(1)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('primary color', 'color primario')}</span>
-                    <input type="color" bind:value={kitsuneStudioColor} />
-                    <input bind:value={kitsuneStudioColor} placeholder="#RRGGBB" />
-                    <GsSelect bind:value={kitsuneStudioColorMode} options={kitsuneColorRoleOptions} />
-                    <span class="field-label">{tr('secondary color', 'color secundario')}</span>
-                    <input type="color" bind:value={kitsuneStudioColor2} />
-                    <input bind:value={kitsuneStudioColor2} placeholder="#RRGGBB" />
-                    <GsSelect bind:value={kitsuneStudioColor2Mode} options={kitsuneColorRoleOptions} />
-                  </div>
-                  {#if kitsuneDynamicColor}
-                    <p class="muted">{tr('Dynamic palette roles: accent_light, accent_mid and accent_dark are generated from the current wallpaper and can be assigned independently.', 'Los roles dinamicos accent_light, accent_mid y accent_dark se generan desde el wallpaper actual y se pueden asignar de forma independiente.')}</p>
-                  {/if}
-                </div>
-
-                <div class="card">
-                  <h3>{tr('EQ Profile Shaper', 'Moldeador EQ del Perfil')}</h3>
-                  <p class="muted">{tr('Edit the profile graphically instead of typing profile-edit commands. In runtime test, the selected profile is hot-loaded into test.profile.', 'Edita el perfil graficamente en vez de escribir comandos profile-edit. En runtime test, el perfil seleccionado se carga en caliente en test.profile.')}</p>
-                  <div class="row">
-                    <GsSelect bind:value={kitsuneProfileName} placeholder={tr('profile', 'perfil')} options={[{value: '', label: tr('profile', 'perfil')}, ...kitsuneProfileOptions.map(profileName => ({value: profileName, label: profileName}))]} on:change={() => void loadKitsuneStudioProfile(kitsuneProfileName)} />
-                    <button class="secondary" on:click={() => void loadKitsuneStudioProfile()} disabled={kitsuneBusy || !kitsuneProfileOptions.length}>
-                      {tr('Reload Values', 'Recargar Valores')}
-                    </button>
-                    <button class="secondary" on:click={() => void applyKitsuneStudioEq()} disabled={kitsuneBusy || isLiveServicesLocked()}>
-                      {tr('Apply EQ Profile', 'Aplicar Perfil EQ')}
-                    </button>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">gain</span>
-                    <input type="range" min="0.5" max="5" step="0.05" bind:value={kitsuneStudioEqGain} />
-                    <span class="badge">{Number(kitsuneStudioEqGain).toFixed(2)}</span>
-                    <span class="field-label">curve</span>
-                    <input type="range" min="0.1" max="3" step="0.01" bind:value={kitsuneStudioEqCurveDrive} />
-                    <span class="badge">{Number(kitsuneStudioEqCurveDrive).toFixed(2)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('low', 'bajos')}</span>
-                    <input type="range" min="0" max="2.5" step="0.01" bind:value={kitsuneStudioEqLowBandGain} />
-                    <span class="badge">{Number(kitsuneStudioEqLowBandGain).toFixed(2)}</span>
-                    <span class="field-label">{tr('mid', 'medios')}</span>
-                    <input type="range" min="0" max="2.5" step="0.01" bind:value={kitsuneStudioEqMidBandGain} />
-                    <span class="badge">{Number(kitsuneStudioEqMidBandGain).toFixed(2)}</span>
-                    <span class="field-label">{tr('high', 'agudos')}</span>
-                    <input type="range" min="0" max="2.5" step="0.01" bind:value={kitsuneStudioEqHighBandGain} />
-                    <span class="badge">{Number(kitsuneStudioEqHighBandGain).toFixed(2)}</span>
-                  </div>
-                  <div class="row">
-                    <span class="field-label">{tr('floor', 'piso')}</span>
-                    <input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEqLoudFloor} />
-                    <span class="badge">{Number(kitsuneStudioEqLoudFloor).toFixed(2)}</span>
-                    <span class="field-label">{tr('height scale', 'escala altura')}</span>
-                    <input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioEqHeightScale} />
-                    <span class="badge">{Number(kitsuneStudioEqHeightScale).toFixed(2)}</span>
-                  </div>
-                  <div class="row">
-                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'test'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Runtime Test', 'Runtime Test')}</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['runtime', 'standard'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Runtime Standard', 'Runtime Standard')}</button>
-                    <button class="secondary" on:click={() => runKitsuneCommand(['rotate', 'next', '--apply'])} disabled={kitsuneBusy || isLiveServicesLocked()}>{tr('Rotate Next', 'Rotar Siguiente')}</button>
+                  <div class="group-layers-section">
+                    <h4>{tr('Layers', 'Capas')}</h4>
+                    <p class="muted">{tr('Drag a layer to change its render order. Higher layers are drawn above lower ones.', 'Arrastra una capa para cambiar su orden de render. Las capas superiores se dibujan encima de las inferiores.')}</p>
+                    {#if kitsuneGroupLayersBusy}
+                      <p class="muted">{tr('Loading layers...', 'Cargando capas...')}</p>
+                    {:else if kitsuneGroupLayers.length === 0}
+                      <p class="muted">{tr('No layers found in this group file.', 'No se encontraron capas en este archivo group.')}</p>
+                    {:else}
+                      <div class="group-layers-list kitsune-studio-layers-list">
+                        {#each kitsuneGroupLayers as layer, layerPos}
+                          <div
+                            class="group-layer-item kitsune-studio-layer-item"
+                            class:is-dragging={kitsuneStudioDragLayerIndex === layerPos + 1}
+                            role="listitem"
+                            draggable={!kitsuneBusy}
+                            on:dragstart={(event) => onKitsuneStudioLayerDragStart(event, layerPos + 1)}
+                            on:dragover={onKitsuneStudioLayerDragOver}
+                            on:drop|preventDefault={() => void reorderKitsuneStudioLayer(layerPos + 1)}
+                            on:dragend={resetKitsuneStudioLayerDrag}
+                          >
+                            <div class="kitsune-studio-layer-main">
+                              <span class="kitsune-studio-layer-grip">⋮⋮</span>
+                              <div class="kitsune-studio-layer-meta">
+                                <div class="kitsune-studio-layer-title">
+                                  <span class="badge">{tr('Order', 'Orden')} #{layerPos + 1}</span>
+                                  <span class="badge">{tr('Layer', 'Capa')} #{layer.index}</span>
+                                  <span class="badge">{layer.mode || '-'}</span>
+                                  <span class="badge">{layer.style || '-'}</span>
+                                </div>
+                                <div class="kitsune-studio-layer-details">
+                                  <span class="badge">profile: {layer.profile || '-'}</span>
+                                  <span class="badge">alpha: {layer.alpha || '-'}</span>
+                                  {#if layer.colorMode}
+                                    <span class="badge">color_mode: {layer.colorMode}</span>
+                                  {/if}
+                                  {#if layer.color}
+                                    <span class="badge">color: {layer.color}</span>
+                                  {/if}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 </div>
               </div>
@@ -8809,6 +8846,45 @@
           </div>
           <div class="row actions-buttons-row">
             <button class="secondary" on:click={() => (showColorModal = false)}>{tr('Close', 'Cerrar')}</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if showKitsuneGroupCreateModal}
+      <div
+        class="modal-backdrop"
+        role="button"
+        tabindex="0"
+        on:click|self={closeKitsuneGroupCreateModal}
+        on:keydown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') closeKitsuneGroupCreateModal();
+        }}
+      >
+        <div
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label={tr('Create Kitsune group', 'Crear group de Kitsune')}
+        >
+          <h3>{tr('Create Group', 'Crear Group')}</h3>
+          <p class="muted">{tr('Write the new group name. The .group extension is added automatically if needed.', 'Escribe el nombre del grupo nuevo. La extension .group se agrega automaticamente si hace falta.')}</p>
+          <div class="stack">
+            <input
+              bind:value={kitsuneStudioNewGroupName}
+              placeholder="my-group"
+              on:keydown={(e) => {
+                if (e.key === 'Enter') void confirmKitsuneGroupCreate();
+              }}
+            />
+            <div class="row">
+              <button class="secondary" on:click={closeKitsuneGroupCreateModal} disabled={kitsuneBusy}>
+                {tr('Cancel', 'Cancelar')}
+              </button>
+              <button class="secondary" on:click={() => void confirmKitsuneGroupCreate()} disabled={kitsuneBusy || !kitsuneStudioNewGroupName.trim()}>
+                {tr('Create', 'Crear')}
+              </button>
+            </div>
           </div>
         </div>
       </div>
