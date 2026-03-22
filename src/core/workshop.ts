@@ -1263,47 +1263,59 @@ export async function workshopStop(options?: {monitor?: string; all?: boolean}):
   restored_units: string[];
   had_active: boolean;
 }> {
-  let state = readActiveState();
+  const state = readActiveState();
   const hadActive = !!state;
   const stopped: string[] = [];
   let shouldRestore = false;
+  const monitor = options?.monitor;
+  const stopAll = !!options?.all || !monitor;
 
   if (state?.instances) {
-    if (options?.monitor) {
-      const inst = state.instances[options.monitor];
-      if (killPid(inst?.pid)) stopped.push(options.monitor);
-      delete state.instances[options.monitor];
-      if (Object.keys(state.instances).length > 0 && !options?.all) {
-        writeActiveState(state);
+    if (monitor && !options?.all) {
+      const nextState: WorkshopActiveState = {
+        ...state,
+        instances: {...state.instances}
+      };
+      const inst = nextState.instances[monitor];
+      if (killPid(inst?.pid)) stopped.push(monitor);
+      delete nextState.instances[monitor];
+      if (Object.keys(nextState.instances).length > 0) {
+        writeActiveState(nextState);
       } else {
         clearActiveState();
         shouldRestore = true;
       }
     } else {
-      for (const [monitor, inst] of Object.entries(state.instances)) {
-        if (killPid(inst?.pid)) stopped.push(monitor);
-      }
-      clearActiveState();
       shouldRestore = true;
+      stopped.push(...Object.keys(state.instances));
     }
-  } else if (options?.all) {
+  } else if (stopAll) {
+    shouldRestore = true;
+  }
+
+  // Use the same handoff strategy as "Repair": first restore the static stack,
+  // then tear down rendercore/live processes so the user is not left with a gap.
+  if (shouldRestore) {
+    await initKitowall({namespace: 'kitowall', apply: true, force: true});
     await stopKnownLiveProcesses();
     clearActiveState();
-    shouldRestore = true;
+    const coexist = await workshopCoexistenceExit();
+    return {
+      ok: true,
+      stopped_instances: stopped,
+      restored_units: coexist.restored,
+      had_active: hadActive
+    };
   }
 
   if (options?.all) {
     await stopKnownLiveProcesses();
   }
 
-  const coexist = shouldRestore ? await workshopCoexistenceExit() : {ok: true, restored: [] as string[]};
-  if (shouldRestore) {
-    await initKitowall({namespace: 'kitowall', apply: true, force: true});
-  }
   return {
     ok: true,
     stopped_instances: stopped,
-    restored_units: coexist.restored,
+    restored_units: [],
     had_active: hadActive
   };
 }
