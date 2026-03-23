@@ -305,7 +305,17 @@ async function runRawCommand(base, args = [], extraEnv = {}, cwd) {
 async function readKitsunePalette(palettePath = '/tmp/kitsune-accent.palette') {
   try {
     const raw = await fs.readFile(palettePath, 'utf8');
-    const out = {accent_light: '', accent_mid: '', accent_dark: '', path: palettePath, ok: true};
+    const out = {
+      accent_light: '',
+      accent_mid: '',
+      accent_dark: '',
+      candidates: [],
+      candidate_r: [],
+      candidate_g: [],
+      candidate_b: [],
+      path: palettePath,
+      ok: true
+    };
     for (const line of raw.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
@@ -314,11 +324,27 @@ async function readKitsunePalette(palettePath = '/tmp/kitsune-accent.palette') {
       const value = trimmed.slice(idx + 1).trim();
       if (key === 'accent_light' || key === 'accent_mid' || key === 'accent_dark') {
         out[key] = value;
+        continue;
+      }
+      if (/^candidate_\d+$/i.test(key)) {
+        out.candidates.push(value);
+        continue;
+      }
+      if (/^candidate_r_\d+$/i.test(key)) {
+        out.candidate_r.push(value);
+        continue;
+      }
+      if (/^candidate_g_\d+$/i.test(key)) {
+        out.candidate_g.push(value);
+        continue;
+      }
+      if (/^candidate_b_\d+$/i.test(key)) {
+        out.candidate_b.push(value);
       }
     }
     return out;
   } catch {
-    return {ok: false, accent_light: '', accent_mid: '', accent_dark: '', path: palettePath};
+    return {ok: false, accent_light: '', accent_mid: '', accent_dark: '', candidates: [], candidate_r: [], candidate_g: [], candidate_b: [], path: palettePath};
   }
 }
 
@@ -1063,6 +1089,36 @@ export async function createBackend(win) {
         case 'kitowall_kitsune_palette': {
           const palettePath = cleanString(args.path) || kitsunePalettePathForMonitor(cleanString(args.monitor));
           return await readKitsunePalette(palettePath);
+        }
+        case 'kitowall_kitsune_resolve_layer_colors': {
+          const groupFile = cleanString(args.groupFile);
+          const layerOrder = Number(args.layerOrder ?? 0);
+          const spec = cleanString(args.spec);
+          if (!groupFile) throw new Error('groupFile is required');
+          if (!Number.isInteger(layerOrder) || layerOrder <= 0) {
+            throw new Error('layerOrder must be a positive integer');
+          }
+          const cmdArgs = ['color', 'resolve-layer', String(layerOrder), groupFile];
+          if (spec) {
+            cmdArgs.push('--spec', spec);
+          }
+          let out;
+          try {
+            const localScript = path.join(ROOT_DIR, 'Kitsune', 'scripts', 'kitsune.sh');
+            if (!(await fileExists(localScript))) throw new Error('local kitsune.sh not found');
+            out = await runProcess(localScript, cmdArgs, {
+              env: await hostAwareEnv(),
+              cwd: path.join(ROOT_DIR, 'Kitsune')
+            });
+          } catch (error) {
+            appendKitsuneUiLog(`kitowall_kitsune_resolve_layer_colors: local failed message=${error?.message ?? error}`);
+            const {base, prefixArgs, cwd} = await resolveKitsuneCmd();
+            out = await runProcess(base, [...prefixArgs, ...cmdArgs], {
+              env: await hostAwareEnv(),
+              cwd
+            });
+          }
+          return JSON.parse(out.stdout.trim());
         }
         case 'kitowall_kitsune_group_schemes_list': {
           const groupFile = cleanString(args.groupFile);

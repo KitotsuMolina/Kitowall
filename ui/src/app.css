@@ -950,6 +950,7 @@ label {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  flex: 1 1 auto;
 }
 
 .kitsune-studio-layer-grip {
@@ -974,6 +975,28 @@ label {
   gap: 8px;
 }
 
+.kitsune-studio-layer-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.kitsune-layer-edit-modal {
+  width: min(980px, 100%);
+}
+
+.kitsune-layer-readonly {
+  display: grid;
+  gap: 6px;
+}
+
+.kitsune-layer-extras-textarea {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+}
+
 .kitsune-console {
   margin-top: 12px;
 }
@@ -982,6 +1005,18 @@ label {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px dashed var(--border-soft);
+}
+
+.kitsune-global-config-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kitsune-global-config-row > div {
+  display: grid;
+  gap: 6px;
 }
 
 .group-layers-list {
@@ -1111,6 +1146,98 @@ label {
   animation: modalIn 160ms ease-out;
 }
 
+.kitsune-global-config-modal {
+  width: min(900px, 100%);
+  max-height: min(82vh, 920px);
+  overflow: auto;
+}
+
+.kitsune-global-config-accordion {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+
+.kitsune-global-config-section {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: visible;
+}
+
+.kitsune-global-config-section.is-open {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.kitsune-global-config-summary {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kitsune-global-config-summary:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.kitsune-global-config-summary h4 {
+  margin: 0 0 4px;
+}
+
+.kitsune-global-config-summary p {
+  margin: 0;
+}
+
+.kitsune-global-config-chevron {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  font-size: 18px;
+}
+
+.kitsune-global-config-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 16px 16px;
+  overflow: visible;
+}
+
+.kitsune-global-config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.kitsune-global-config-item span {
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.kitsune-global-config-item strong {
+  color: var(--text-main);
+  text-align: right;
+  word-break: break-word;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1136,9 +1263,127 @@ label {
   gap: 6px;
 }
 
+.settings-field > span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.settings-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: visible;
+}
+
+.settings-field-header > span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.settings-field-inline-toggle {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
 .settings-field input,
 .settings-field select {
   width: 100%;
+}
+
+.settings-range-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-range-display {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-range-field input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.settings-range-display input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.settings-range-field input[type="number"] {
+  width: 100%;
+}
+
+.settings-range-display strong {
+  min-width: 48px;
+  color: var(--text-main);
+  text-align: right;
+  font-size: 12px;
+}
+
+.settings-warning {
+  margin: 0;
+  font-size: 12px;
+  color: #f3bf63;
+}
+
+.kitsune-color-field {
+  display: grid;
+  grid-template-columns: 20px 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.kitsune-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.kitsune-color-picker {
+  width: 46px !important;
+  min-width: 46px;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.kitsune-global-config-modal .help-wrap {
+  position: relative;
+  overflow: visible;
+}
+
+.kitsune-global-config-modal .help-tooltip {
+  left: auto;
+  right: 0;
+  top: calc(100% + 8px);
+  transform: none;
+  width: min(320px, calc(100vw - 96px));
+  max-width: calc(100vw - 96px);
+  z-index: 90;
+}
+
+.compact-toggle {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 999px;
+}
+
+.compact-toggle.is-on {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .timer-interval-row {
@@ -2102,7 +2347,8 @@ label {
 .kitsune-group-preview-screen {
   position: relative;
   width: 100%;
-  min-height: 240px;
+  aspect-ratio: 16 / 9;
+  min-height: 320px;
   border-radius: 16px;
   overflow: hidden;
   background:
@@ -2160,11 +2406,11 @@ label {
 
 .kitsune-group-preview-ring-core {
   fill: none;
-  stroke-width: 10;
-  opacity: 0.08;
+  stroke-width: 7;
+  opacity: 0.1;
 }
 
 .kitsune-group-preview-ring-segment {
   stroke-linecap: round;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, currentColor 74%, transparent));
+  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 74%, transparent));
 }
