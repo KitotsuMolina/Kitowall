@@ -1102,6 +1102,7 @@ export async function createBackend(win) {
           if (spec) {
             cmdArgs.push('--spec', spec);
           }
+          appendKitsuneUiLog(`kitowall_kitsune_resolve_layer_colors: begin groupFile=${groupFile} layerOrder=${layerOrder} spec=${JSON.stringify(spec)}`);
           let out;
           try {
             const localScript = path.join(ROOT_DIR, 'Kitsune', 'scripts', 'kitsune.sh');
@@ -1110,6 +1111,7 @@ export async function createBackend(win) {
               env: await hostAwareEnv(),
               cwd: path.join(ROOT_DIR, 'Kitsune')
             });
+            appendKitsuneUiLog(`kitowall_kitsune_resolve_layer_colors: local ok stdout=${JSON.stringify(out.stdout.trim())}`);
           } catch (error) {
             appendKitsuneUiLog(`kitowall_kitsune_resolve_layer_colors: local failed message=${error?.message ?? error}`);
             const {base, prefixArgs, cwd} = await resolveKitsuneCmd();
@@ -1117,6 +1119,7 @@ export async function createBackend(win) {
               env: await hostAwareEnv(),
               cwd
             });
+            appendKitsuneUiLog(`kitowall_kitsune_resolve_layer_colors: fallback ok base=${base} stdout=${JSON.stringify(out.stdout.trim())}`);
           }
           return JSON.parse(out.stdout.trim());
         }

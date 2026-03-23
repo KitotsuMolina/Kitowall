@@ -204,6 +204,8 @@ h3 {
   border: 1px solid var(--border-soft);
   border-radius: 12px;
   padding: 16px;
+  min-width: 0;
+  max-width: 100%;
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.25);
   transition: border-color 140ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
@@ -913,6 +915,33 @@ label {
   margin-top: 10px;
 }
 
+.kitsune-control-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  align-items: start;
+}
+
+.kitsune-control-grid .card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kitsune-control-grid .row > * {
+  min-width: 0;
+}
+
+.kitsune-control-grid .gs-select {
+  flex: 1 1 220px;
+  min-width: min(100%, 220px);
+}
+
+.kitsune-control-grid .kitsune-header-badges {
+  overflow-wrap: anywhere;
+}
+
+.kitsune-control-grid .badge {
+  max-width: 100%;
+}
+
 .kitsune-studio-group-row {
   display: inline-flex;
   align-items: center;
@@ -927,10 +956,14 @@ label {
 
 .kitsune-studio-layers-list {
   margin-top: 10px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .kitsune-studio-layer-item {
   cursor: grab;
+  min-width: 0;
+  max-width: 100%;
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
 
@@ -973,6 +1006,15 @@ label {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
+}
+
+.kitsune-studio-layer-title .badge,
+.kitsune-studio-layer-details .badge,
+.group-layer-item .badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .kitsune-studio-layer-actions {
@@ -999,12 +1041,28 @@ label {
 
 .kitsune-console {
   margin-top: 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.kitsune-console .row {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.kitsune-console .badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .group-layers-section {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px dashed var(--border-soft);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .kitsune-global-config-row {
@@ -1036,11 +1094,16 @@ label {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   padding: 10px;
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.25);
   color: var(--text-main);
   max-height: 320px;
-  overflow: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 12px;
 }
@@ -1279,6 +1342,58 @@ label {
 .settings-field-header > span {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.kitsune-layer-edit-modal .settings-field-header[data-help] {
+  position: relative;
+  padding-right: 28px;
+}
+
+.kitsune-layer-edit-modal .settings-field-header[data-help]::after {
+  content: '?';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: help;
+}
+
+.kitsune-layer-edit-modal .settings-field-header[data-help]::before {
+  content: attr(data-help);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(320px, 70vw);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-soft);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  z-index: 45;
+  white-space: normal;
+}
+
+.kitsune-layer-edit-modal .settings-field-header[data-help]:hover::before,
+.kitsune-layer-edit-modal .settings-field-header[data-help]:hover::after {
+  opacity: 1;
+  border-color: var(--primary);
+  color: var(--text-main);
 }
 
 .settings-field-inline-toggle {

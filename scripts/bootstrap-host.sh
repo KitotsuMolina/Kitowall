@@ -336,8 +336,10 @@ install_kitsune_bins() {
   # Prefer prebuilt binaries from GitHub Releases to avoid local toolchain/submodule issues.
   if install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-linux-x86_64" "$share_bin_dir/kitsune" && \
      install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-overlay-linux-x86_64" "$share_bin_dir/kitsune-overlay" && \
+     install_github_release_bin "KitotsuMolina/Kitsune" "kitsune-color-resolve-linux-x86_64" "$share_bin_dir/kitsune-color-resolve" && \
      install_github_release_bin "KitotsuMolina/Kitsune-RenderCore" "kitsune-rendercore-linux-x86_64" "$bin_dir/kitsune-rendercore"; then
     ln -sf "$share_bin_dir/kitsune-overlay" "$bin_dir/kitsune-overlay"
+    ln -sf "$share_bin_dir/kitsune-color-resolve" "$bin_dir/kitsune-color-resolve"
     BOOTSTRAP_KITSUNE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune" | sed 's/^v//')"
     BOOTSTRAP_RENDERCORE_VERSION="$(latest_release_tag "KitotsuMolina/Kitsune-RenderCore" | sed 's/^v//')"
     release_ok=1

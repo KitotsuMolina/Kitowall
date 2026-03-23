@@ -586,6 +586,7 @@
   let kitsuneStudioEditingLayerColorMode: 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' = 'static';
   let kitsuneStudioEditingLayerAlpha = 0.35;
   let kitsuneStudioEditingLayerBlendMode: 'normal' | 'add' | 'screen' | 'multiply' = 'normal';
+  let kitsuneStudioEditingLayerPaletteMonitor = '';
   let kitsuneStudioEditingLayerPaletteChannel: 'auto' | 'r' | 'g' | 'b' = 'auto';
   let kitsuneStudioEditingLayerTargetLuma = 0.52;
   let kitsuneStudioEditingLayerBarsAnchor: 'top' | 'bottom' | 'left' | 'right' = 'bottom';
@@ -603,6 +604,8 @@
   let kitsuneStudioEditingLayerParticlesStyle: 'soft' | 'spark' | 'dust' | 'neon' | 'orb' | 'trail' | 'burst' | 'orbit' = 'soft';
   let kitsuneStudioEditingLayerParticlesColor = '#7ae8ff';
   let kitsuneStudioEditingLayerParticlesColorMode: 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' = 'static';
+  let kitsuneStudioEditingLayerParticlesPaletteChannel: 'auto' | 'r' | 'g' | 'b' = 'auto';
+  let kitsuneStudioEditingLayerParticlesTargetLuma = 0.52;
   let kitsuneStudioEditingLayerParticlesGlowStrength = 1.2;
   let kitsuneStudioEditingLayerParticlesAlphaMult = 1;
   let kitsuneStudioEditingLayerParticlesSizeMult = 1;
@@ -618,6 +621,8 @@
   let kitsuneStudioEditingLayerBaseLightAlpha = 0.36;
   let kitsuneStudioEditingLayerBaseLightColor = '#7ae8ff';
   let kitsuneStudioEditingLayerBaseLightColorMode: 'static' | 'accent_light' | 'accent_mid' | 'accent_dark' = 'static';
+  let kitsuneStudioEditingLayerBaseLightPaletteChannel: 'auto' | 'r' | 'g' | 'b' = 'auto';
+  let kitsuneStudioEditingLayerBaseLightTargetLuma = 0.64;
   let kitsuneStudioEditingLayerExtras = '';
   let kitsuneStudioEffectiveLayerColor = '#7ae8ff';
   let kitsuneStudioEffectiveParticlesColor = '#7ae8ff';
@@ -3645,6 +3650,7 @@
     const extras: string[] = [];
     if (kitsuneStudioEditingLayerColorMode !== 'static') extras.push(`color_mode=${kitsuneStudioEditingLayerColorMode}`);
     if (kitsuneStudioEditingLayerBlendMode !== 'normal') extras.push(`blend_mode=${kitsuneStudioEditingLayerBlendMode}`);
+    if (kitsuneStudioEditingLayerPaletteMonitor.trim()) extras.push(`palette_monitor=${kitsuneStudioEditingLayerPaletteMonitor.trim()}`);
     if (kitsuneStudioEditingLayerPaletteChannel !== 'auto') extras.push(`palette_channel=${kitsuneStudioEditingLayerPaletteChannel}`);
     if (Math.abs(kitsuneStudioEditingLayerTargetLuma - defaultTargetLumaForColorMode(kitsuneStudioEditingLayerColorMode)) > 0.001) {
       extras.push(`target_luma=${Number(kitsuneStudioEditingLayerTargetLuma).toFixed(2)}`);
@@ -3669,6 +3675,8 @@
       if (kitsuneStudioEditingLayerParticlesStyle !== 'soft') extras.push(`particles_style=${kitsuneStudioEditingLayerParticlesStyle}`);
       extras.push(`particles_color=${(kitsuneStudioEditingLayerParticlesColor || '#7ae8ff').trim() || '#7ae8ff'}`);
       if (kitsuneStudioEditingLayerParticlesColorMode !== 'static') extras.push(`particles_color_mode=${kitsuneStudioEditingLayerParticlesColorMode}`);
+      if (kitsuneStudioEditingLayerParticlesColorMode !== 'static' && kitsuneStudioEditingLayerParticlesPaletteChannel !== 'auto') extras.push(`particles_palette_channel=${kitsuneStudioEditingLayerParticlesPaletteChannel}`);
+      if (kitsuneStudioEditingLayerParticlesColorMode !== 'static') extras.push(`particles_target_luma=${Number(kitsuneStudioEditingLayerParticlesTargetLuma).toFixed(2)}`);
       extras.push(`particles_glow_strength=${Number(kitsuneStudioEditingLayerParticlesGlowStrength).toFixed(2)}`);
       extras.push(`particles_alpha_mult=${Number(kitsuneStudioEditingLayerParticlesAlphaMult).toFixed(2)}`);
       extras.push(`particles_size_mult=${Number(kitsuneStudioEditingLayerParticlesSizeMult).toFixed(2)}`);
@@ -3690,6 +3698,8 @@
       extras.push(`base_light_alpha=${Number(kitsuneStudioEditingLayerBaseLightAlpha).toFixed(2)}`);
       extras.push(`base_light_color=${(kitsuneStudioEditingLayerBaseLightColor || '#7ae8ff').trim() || '#7ae8ff'}`);
       if (kitsuneStudioEditingLayerBaseLightColorMode !== 'static') extras.push(`base_light_color_mode=${kitsuneStudioEditingLayerBaseLightColorMode}`);
+      if (kitsuneStudioEditingLayerBaseLightColorMode !== 'static' && kitsuneStudioEditingLayerBaseLightPaletteChannel !== 'auto') extras.push(`base_light_palette_channel=${kitsuneStudioEditingLayerBaseLightPaletteChannel}`);
+      if (kitsuneStudioEditingLayerBaseLightColorMode !== 'static') extras.push(`base_light_target_luma=${Number(kitsuneStudioEditingLayerBaseLightTargetLuma).toFixed(2)}`);
     }
     extras.push(...kitsuneParseAdditionalLayerExtras(kitsuneStudioEditingLayerExtras));
     return [
@@ -3708,14 +3718,21 @@
     const fallbackColor = normalizePreviewHex(kitsuneStudioEditingLayerColor, '#7ae8ff');
     const fallbackParticles = normalizePreviewHex(kitsuneStudioEditingLayerParticlesColor, fallbackColor);
     const fallbackBaseLight = normalizePreviewHex(kitsuneStudioEditingLayerBaseLightColor, fallbackColor);
+    const spec = buildKitsuneStudioLayerSpec();
+    console.debug('[kitowall][studio-layer-colors] request', {
+      groupFile: kitsuneGroupFile.trim(),
+      layerOrder: kitsuneStudioEditingLayerOrder,
+      spec
+    });
     kitsuneStudioEffectiveColorsBusy = true;
     kitsuneStudioEffectiveColorsError = '';
     try {
       const result = await invoke<KitsuneResolvedLayerColors>('kitowall_kitsune_resolve_layer_colors', {
         groupFile: kitsuneGroupFile.trim(),
         layerOrder: kitsuneStudioEditingLayerOrder,
-        spec: buildKitsuneStudioLayerSpec()
+        spec
       });
+      console.debug('[kitowall][studio-layer-colors] response', result);
       if (seq !== kitsuneStudioResolveLayerColorsSeq) return;
       kitsuneStudioEffectiveLayerColor = normalizePreviewHex(result.layer_color, fallbackColor);
       kitsuneStudioEffectiveParticlesColor = normalizePreviewHex(result.particles_color, fallbackParticles);
@@ -3789,6 +3806,8 @@
     } else {
       kitsuneStudioEditingLayerBlendMode = 'normal';
     }
+    const paletteMonitor = (extrasMap.palette_monitor || '').trim();
+    kitsuneStudioEditingLayerPaletteMonitor = paletteMonitor;
     const paletteChannel = (extrasMap.palette_channel || 'auto').trim();
     if (paletteChannel === 'r' || paletteChannel === 'g' || paletteChannel === 'b' || paletteChannel === 'auto') {
       kitsuneStudioEditingLayerPaletteChannel = paletteChannel;
@@ -3837,6 +3856,18 @@
     } else {
       kitsuneStudioEditingLayerParticlesColorMode = 'static';
     }
+    const particlesPaletteChannel = (extrasMap.particles_palette_channel || extrasMap.palette_channel || 'auto').trim();
+    if (particlesPaletteChannel === 'r' || particlesPaletteChannel === 'g' || particlesPaletteChannel === 'b' || particlesPaletteChannel === 'auto') {
+      kitsuneStudioEditingLayerParticlesPaletteChannel = particlesPaletteChannel;
+    } else {
+      kitsuneStudioEditingLayerParticlesPaletteChannel = 'auto';
+    }
+    kitsuneStudioEditingLayerParticlesTargetLuma = clampRangeNumber(
+      Number(extrasMap.particles_target_luma ?? extrasMap.target_luma ?? kitsuneStudioEditingLayerTargetLuma),
+      0,
+      1,
+      kitsuneStudioEditingLayerTargetLuma
+    );
     kitsuneStudioEditingLayerParticlesGlowStrength = Math.max(0, Number(extrasMap.particles_glow_strength ?? 1.2) || 1.2);
     kitsuneStudioEditingLayerParticlesAlphaMult = Math.max(0, Number(extrasMap.particles_alpha_mult ?? 1) || 1);
     kitsuneStudioEditingLayerParticlesSizeMult = Math.max(0.1, Number(extrasMap.particles_size_mult ?? 1) || 1);
@@ -3862,6 +3893,19 @@
     } else {
       kitsuneStudioEditingLayerBaseLightColorMode = 'static';
     }
+    const baseLightPaletteChannel = (extrasMap.base_light_palette_channel || extrasMap.palette_channel || 'auto').trim();
+    if (baseLightPaletteChannel === 'r' || baseLightPaletteChannel === 'g' || baseLightPaletteChannel === 'b' || baseLightPaletteChannel === 'auto') {
+      kitsuneStudioEditingLayerBaseLightPaletteChannel = baseLightPaletteChannel;
+    } else {
+      kitsuneStudioEditingLayerBaseLightPaletteChannel = 'auto';
+    }
+    const defaultBaseLightLuma = clampRangeNumber(kitsuneStudioEditingLayerTargetLuma + 0.12, 0, 1, 0.64);
+    kitsuneStudioEditingLayerBaseLightTargetLuma = clampRangeNumber(
+      Number(extrasMap.base_light_target_luma ?? defaultBaseLightLuma),
+      0,
+      1,
+      defaultBaseLightLuma
+    );
     kitsuneStudioEditingLayerExtras = kitsuneLayerExtrasFromSpec(layer.rawSpec);
     kitsuneStudioEffectiveLayerColor = normalizePreviewHex(kitsuneStudioEditingLayerColor, '#7ae8ff');
     kitsuneStudioEffectiveParticlesColor = normalizePreviewHex(kitsuneStudioEditingLayerParticlesColor, kitsuneStudioEffectiveLayerColor);
@@ -3897,20 +3941,49 @@
     }
   }
 
+  async function duplicateKitsuneStudioLayer(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    if (kitsuneBusy || !groupFile || kitsuneStudioEditingLayerOrder <= 0) return;
+    const spec = buildKitsuneStudioLayerSpec();
+    await runKitsuneBatch([
+      ['group', 'add-layer', spec, groupFile]
+    ], tr('Layer duplicated', 'Capa duplicada'));
+    if (!lastError) {
+      closeKitsuneStudioLayerEditModal();
+    }
+  }
+
+  async function removeKitsuneStudioLayer(): Promise<void> {
+    const groupFile = kitsuneGroupFile.trim();
+    const layerIndex = Math.max(1, Math.floor(Number(kitsuneStudioEditingLayerIndex) || 1));
+    if (kitsuneBusy || !groupFile || kitsuneStudioEditingLayerOrder <= 0) return;
+    await runKitsuneBatch([
+      ['group', 'remove-layer', String(layerIndex), groupFile]
+    ], tr('Layer removed', 'Capa eliminada'));
+    if (!lastError) {
+      closeKitsuneStudioLayerEditModal();
+    }
+  }
+
   $: kitsuneStudioResolveLayerColorsKey = showKitsuneLayerEditModal
     ? [
         kitsuneGroupFile,
         kitsuneStudioEditingLayerOrder,
         kitsuneStudioEditingLayerColor,
         kitsuneStudioEditingLayerColorMode,
+        kitsuneStudioEditingLayerPaletteMonitor,
         kitsuneStudioEditingLayerPaletteChannel,
         kitsuneStudioEditingLayerTargetLuma,
         kitsuneStudioEditingLayerParticlesEnabled,
         kitsuneStudioEditingLayerParticlesColor,
         kitsuneStudioEditingLayerParticlesColorMode,
+        kitsuneStudioEditingLayerParticlesPaletteChannel,
+        kitsuneStudioEditingLayerParticlesTargetLuma,
         kitsuneStudioEditingLayerBaseLightEnabled,
         kitsuneStudioEditingLayerBaseLightColor,
-        kitsuneStudioEditingLayerBaseLightColorMode
+        kitsuneStudioEditingLayerBaseLightColorMode,
+        kitsuneStudioEditingLayerBaseLightPaletteChannel,
+        kitsuneStudioEditingLayerBaseLightTargetLuma
       ].join('|')
     : '';
 
@@ -4154,7 +4227,7 @@
       if (kitsuneStatus?.installed) {
         await loadKitsuneRuntimeOptions();
         await loadKitsunePalette();
-        if (kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'group') {
+        if ((kitsuneTab === 'advanced' && kitsuneAdvancedTab === 'group') || kitsuneTab === 'studio') {
           await loadKitsuneGroupData();
         }
         if (reloadProfile) {
@@ -4991,6 +5064,209 @@
       ring_hide_threshold: ['Audio energy below which ring visuals hide again.', 'Energia de audio por debajo de la cual el ring vuelve a ocultarse.'],
       ring_fade_in_sec: ['Fade-in duration for ring auto-show behavior.', 'Duracion del fade-in cuando el ring aparece automaticamente.'],
       ring_fade_out_sec: ['Fade-out duration for ring auto-hide behavior.', 'Duracion del fade-out cuando el ring se oculta automaticamente.']
+    };
+    const pair = help[key];
+    return pair ? tr(pair[0], pair[1]) : '';
+  }
+
+  function kitsuneLayerFieldHelp(key: string): string {
+    const help: Record<string, [string, string]> = {
+      palette_monitor: [
+        'Choose which monitor palette this layer should use when its colors come from the wallpaper. It affects the spectrum, particles, and base light.',
+        'Elige que paleta de monitor debe usar esta capa cuando sus colores vienen del wallpaper. Afecta al espectro, a las particulas y a la luz base.'
+      ],
+      enabled: [
+        'Turns this layer on or off without deleting it from the group.',
+        'Activa o desactiva esta capa sin borrarla del group.'
+      ],
+      visual_mode: [
+        'Select whether this layer renders as linear bars or as a ring.',
+        'Selecciona si esta capa se renderiza como barras lineales o como un ring.'
+      ],
+      style: [
+        'Visual style preset used by this layer for its selected mode.',
+        'Preset de estilo visual usado por esta capa para el modo seleccionado.'
+      ],
+      opacity: [
+        'Final opacity of this layer after all effects and visibility logic.',
+        'Opacidad final de esta capa despues de todos los efectos y de la logica de visibilidad.'
+      ],
+      audio_profile: [
+        'Assign which audio response profile drives this layer. Edit the profile internals in Advanced.',
+        'Asigna que perfil de respuesta de audio controla esta capa. Edita el interior del perfil en Advanced.'
+      ],
+      manual_color: [
+        'Fallback manual color used when the layer does not use wallpaper-driven color.',
+        'Color manual fallback usado cuando la capa no usa color guiado por el wallpaper.'
+      ],
+      color_source: [
+        'Choose between a manual color or a dynamic color resolved from the wallpaper palette.',
+        'Elige entre un color manual o un color dinamico resuelto desde la paleta del wallpaper.'
+      ],
+      blend_mode: [
+        'How this layer mixes with the layers below it. Useful for glow-heavy compositions.',
+        'Como se mezcla esta capa con las capas inferiores. Util para composiciones con mucho glow.'
+      ],
+      palette_channel: [
+        'Bias wallpaper-driven color toward red, green, blue, or let the resolver decide automatically.',
+        'Sesga el color dinamico del wallpaper hacia rojo, verde, azul o deja que el resolvedor decida automaticamente.'
+      ],
+      target_luma: [
+        'Target brightness for wallpaper-driven color. Lower values are darker, higher values are brighter.',
+        'Brillo objetivo para el color dinamico del wallpaper. Valores bajos son mas oscuros y altos mas brillantes.'
+      ],
+      effective_color: [
+        'Read-only preview of the final color that Kitsune resolves for this layer right now.',
+        'Vista de solo lectura del color final que Kitsune resuelve para esta capa en este momento.'
+      ],
+      particles: [
+        'Enable or disable particles specifically for this layer.',
+        'Activa o desactiva particulas especificamente para esta capa.'
+      ],
+      particles_mode: [
+        'Choose how particle origins are attached to this layer geometry.',
+        'Elige como se anclan los origenes de las particulas a la geometria de esta capa.'
+      ],
+      particles_style: [
+        'Preset that changes particle behavior, look, drift, glow, and movement.',
+        'Preset que cambia el comportamiento, aspecto, drift, glow y movimiento de las particulas.'
+      ],
+      particles_manual_color: [
+        'Fallback manual color for particles when they do not use wallpaper-driven color.',
+        'Color manual fallback para las particulas cuando no usan color guiado por el wallpaper.'
+      ],
+      particles_color_source: [
+        'Choose whether particles use a manual color or a dynamic color from the wallpaper.',
+        'Elige si las particulas usan un color manual o un color dinamico del wallpaper.'
+      ],
+      particles_palette_channel: [
+        'Channel preference used only for dynamic particles color.',
+        'Preferencia de canal usada solo para el color dinamico de las particulas.'
+      ],
+      particles_target_luma: [
+        'Target brightness used only for dynamic particles color.',
+        'Brillo objetivo usado solo para el color dinamico de las particulas.'
+      ],
+      particles_effective_color: [
+        'Read-only preview of the final particles color resolved by Kitsune.',
+        'Vista de solo lectura del color final de particulas resuelto por Kitsune.'
+      ],
+      particles_glow: [
+        'Intensity of the glow applied around this layer particles.',
+        'Intensidad del glow aplicado alrededor de las particulas de esta capa.'
+      ],
+      particles_alpha_mult: [
+        'Multiplier applied to particle opacity for this layer.',
+        'Multiplicador aplicado a la opacidad de las particulas en esta capa.'
+      ],
+      particles_size_mult: [
+        'Multiplier applied to particle size for this layer.',
+        'Multiplicador aplicado al tamano de las particulas en esta capa.'
+      ],
+      neon_glow: [
+        'Enable or disable the main glow pass for this layer visual.',
+        'Activa o desactiva la pasada principal de glow para el visual de esta capa.'
+      ],
+      glow_style: [
+        'Select how the glow spreads around the layer: inner, outer, neon, or soft bloom.',
+        'Selecciona como se expande el glow alrededor de la capa: interno, externo, neon o bloom suave.'
+      ],
+      neon_strength: [
+        'Overall intensity of the layer glow.',
+        'Intensidad global del glow de la capa.'
+      ],
+      neon_layers: [
+        'How many glow layers are rendered for this layer. More layers cost more performance.',
+        'Cuantas capas de glow se renderizan para esta capa. Mas capas consumen mas rendimiento.'
+      ],
+      afterglow: [
+        'Enable or disable the trail/ghost effect for this layer.',
+        'Activa o desactiva el efecto de estela o fantasma para esta capa.'
+      ],
+      afterglow_decay: [
+        'How quickly the afterglow trail fades out over time.',
+        'Que tan rapido se desvanece la estela de afterglow con el tiempo.'
+      ],
+      afterglow_alpha: [
+        'Opacity of the afterglow trail.',
+        'Opacidad de la estela de afterglow.'
+      ],
+      base_light: [
+        'Enable or disable the base light strip for this layer.',
+        'Activa o desactiva la franja de luz base para esta capa.'
+      ],
+      base_light_height: [
+        'Thickness or height of the base light strip.',
+        'Grosor o altura de la franja de luz base.'
+      ],
+      base_light_alpha: [
+        'Opacity of the base light strip.',
+        'Opacidad de la franja de luz base.'
+      ],
+      base_light_manual_color: [
+        'Fallback manual color for the base light when it does not use wallpaper-driven color.',
+        'Color manual fallback para la luz base cuando no usa color guiado por el wallpaper.'
+      ],
+      base_light_source: [
+        'Choose whether the base light uses a manual color or a dynamic color from the wallpaper.',
+        'Elige si la luz base usa un color manual o un color dinamico del wallpaper.'
+      ],
+      base_light_palette_channel: [
+        'Channel preference used only for dynamic base light color.',
+        'Preferencia de canal usada solo para el color dinamico de la luz base.'
+      ],
+      base_light_target_luma: [
+        'Target brightness used only for dynamic base light color.',
+        'Brillo objetivo usado solo para el color dinamico de la luz base.'
+      ],
+      base_light_effective_color: [
+        'Read-only preview of the final base light color resolved by Kitsune.',
+        'Vista de solo lectura del color final de la luz base resuelto por Kitsune.'
+      ],
+      bars_anchor: [
+        'Where bars are attached on screen for this layer.',
+        'Donde se anclan las barras en pantalla para esta capa.'
+      ],
+      bars_direction: [
+        'Direction in which the bars grow from their anchor.',
+        'Direccion en la que crecen las barras desde su anclaje.'
+      ],
+      bar_width_override: [
+        'Override the default bar thickness only for this layer.',
+        'Sobrescribe el grosor por defecto de barra solo para esta capa.'
+      ],
+      bar_gap_override: [
+        'Override the default spacing between bars only for this layer.',
+        'Sobrescribe la separacion por defecto entre barras solo para esta capa.'
+      ],
+      bars_max_height: [
+        'Maximum height that this bars layer can occupy.',
+        'Altura maxima que puede ocupar esta capa de barras.'
+      ],
+      segmented_bars: [
+        'Turn this bars layer into segmented blocks.',
+        'Convierte esta capa de barras en bloques segmentados.'
+      ],
+      segment_length: [
+        'Length of each segment when segmented bars are enabled for this layer.',
+        'Longitud de cada segmento cuando las barras segmentadas estan activadas en esta capa.'
+      ],
+      segment_gap: [
+        'Spacing between segments for this layer.',
+        'Separacion entre segmentos para esta capa.'
+      ],
+      ring_inner_ratio: [
+        'Size of the empty center area for this ring layer.',
+        'Tamano del area vacia central para esta capa ring.'
+      ],
+      ring_length_ratio: [
+        'Outward length of ring bars for this layer.',
+        'Longitud hacia afuera de las barras del ring para esta capa.'
+      ],
+      additional_parameters: [
+        'Advanced raw key=value overrides for layer features that still do not have dedicated controls.',
+        'Overrides avanzados en formato key=value para funciones de la capa que todavia no tienen controles dedicados.'
+      ]
     };
     const pair = help[key];
     return pair ? tr(pair[0], pair[1]) : '';
@@ -8057,7 +8333,7 @@
             {/if}
 
             {#if kitsuneTab === 'control'}
-              <div class="grid kitsune-grid kitsune-profiles-grid">
+              <div class="grid kitsune-grid kitsune-profiles-grid kitsune-control-grid">
                 <div class="card">
                   <h3>{tr('Operational Summary', 'Resumen operativo')}</h3>
                   <p class="muted">{tr('Use this surface for quick validation, launch and recovery. Studio stays focused on shaping the visual result.', 'Usa esta superficie para validar, iniciar y recuperar rapido. Studio queda enfocado en moldear el resultado visual.')}</p>
@@ -8238,8 +8514,57 @@
                     </div>
                   </div>
                   <div class="group-layers-section">
-                    <h4>{tr('Layers', 'Capas')}</h4>
-                    <p class="muted">{tr('Drag a layer to change its render order. Higher layers are drawn above lower ones.', 'Arrastra una capa para cambiar su orden de render. Las capas superiores se dibujan encima de las inferiores.')}</p>
+                    <div class="kitsune-global-config-row">
+                      <div>
+                        <h4>{tr('Layers', 'Capas')}</h4>
+                        <p class="muted">{tr('Drag a layer to change its render order. Higher layers are drawn above lower ones.', 'Arrastra una capa para cambiar su orden de render. Las capas superiores se dibujan encima de las inferiores.')}</p>
+                      </div>
+                      <div class="row">
+                        <button class="secondary" type="button" on:click={() => (kitsuneGroupAddLayerOpen = !kitsuneGroupAddLayerOpen)} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+                          {tr('Add Layer', 'Agregar layer')}
+                        </button>
+                      </div>
+                    </div>
+                    {#if kitsuneGroupAddLayerOpen}
+                      <div class="row">
+                        <div class="multi-select">
+                          <button type="button" class="multi-select-trigger" on:click|stopPropagation={() => (kitsuneGroupAddLayerOpen = !kitsuneGroupAddLayerOpen)}>
+                            <div class="multi-select-badges">
+                              {#if kitsuneGroupAddLayerSelected.length === 0}
+                                <span class="muted">{tr('Select layers to add', 'Selecciona capas para agregar')}</span>
+                              {:else}
+                                {#each kitsuneGroupAddLayerOptions.filter(o => kitsuneGroupAddLayerSelected.includes(o.id)) as selectedOption}
+                                  <span class="badge">{selectedOption.label}</span>
+                                {/each}
+                              {/if}
+                            </div>
+                            <span class="badge">{kitsuneGroupAddLayerSelected.length}</span>
+                          </button>
+                          <div class="multi-select-menu">
+                            {#each kitsuneGroupAddLayerOptions as option}
+                              <button
+                                type="button"
+                                class="multi-option"
+                                on:click|stopPropagation={() => toggleKitsuneGroupAddLayer(option.id)}
+                              >
+                                <span>{option.label}</span>
+                                <span class={`badge status ${kitsuneGroupAddLayerSelected.includes(option.id) ? 'ok' : 'bad'}`}>
+                                  {kitsuneGroupAddLayerSelected.includes(option.id) ? 'on' : 'off'}
+                                </span>
+                              </button>
+                            {/each}
+                          </div>
+                        </div>
+                        <div class="row">
+                          <button class="secondary" on:click={() => void runKitsuneGroupAddSelectedLayers()} disabled={kitsuneBusy || kitsuneGroupAddLayerSelected.length === 0 || !kitsuneGroupFile.trim()}>
+                            {tr('Add Selected Layers', 'Agregar capas seleccionadas')}
+                          </button>
+                          <button class="secondary" type="button" on:click={() => { kitsuneGroupAddLayerOpen = false; kitsuneGroupAddLayerSelected = []; }} disabled={kitsuneBusy}>
+                            {tr('Close', 'Cerrar')}
+                          </button>
+                        </div>
+                      </div>
+                    {/if}
                     {#if kitsuneGroupLayersBusy}
                       <p class="muted">{tr('Loading layers...', 'Cargando capas...')}</p>
                     {:else if kitsuneGroupLayers.length === 0}
@@ -10064,6 +10389,38 @@
         >
           <h3>{tr('Edit Layer', 'Editar capa')} #{kitsuneStudioEditingLayerOrder}</h3>
           <p class="muted">{tr('Edit the visual composition of this layer. Profile content still belongs to Advanced, but you can assign which profile this layer uses here.', 'Edita la composicion visual de esta capa. El contenido del perfil sigue en Advanced, pero aqui puedes asignar que perfil usa esta capa.')}</p>
+          <div class="settings-field">
+            <div class="settings-field-header">
+              <span>{tr('Wallpaper monitor source', 'Pantalla fuente del wallpaper')}</span>
+              <span class="help-wrap">
+                <button type="button" class="help-icon" aria-label={tr('Wallpaper monitor source help', 'Ayuda de pantalla fuente del wallpaper')}>?</button>
+                <span class="help-tooltip">
+                  {tr(
+                    'Choose which monitor palette this layer should use when any of its colors are driven by the wallpaper. This affects the spectrum, particles, and base light if they use dynamic color.',
+                    'Elige que paleta de monitor debe usar esta capa cuando cualquiera de sus colores depende del wallpaper. Esto afecta al espectro, a las particulas y a la luz base si usan color dinamico.'
+                  )}
+                </span>
+              </span>
+            </div>
+            <GsSelect
+              bind:value={kitsuneStudioEditingLayerPaletteMonitor}
+              options={[
+                {value: '', label: tr('Automatic / current', 'Automatica / actual')},
+                ...new Map(
+                  [
+                    ...kitsuneMonitorOptions,
+                    ...(kitsuneStudioEditingLayerPaletteMonitor ? [kitsuneStudioEditingLayerPaletteMonitor] : [])
+                  ].map(monitorName => [monitorName, {value: monitorName, label: monitorName}])
+                ).values()
+              ]}
+            />
+            <div class="row">
+              <span class="badge">
+                {tr('Palette source', 'Fuente de paleta')}: {kitsuneStudioEditingLayerPaletteMonitor || tr('Automatic / current', 'Automatica / actual')}
+              </span>
+            </div>
+            <span class="muted">{tr('Select which monitor palette this layer should use for dynamic color. It applies to the spectrum, particles, and base light when they use wallpaper-driven color.', 'Selecciona que paleta de pantalla debe usar esta capa para el color dinamico. Se aplica al espectro, a las particulas y a la luz base cuando usan color guiado por el wallpaper.')}</span>
+          </div>
           <div class="kitsune-global-config-accordion">
             <section class="kitsune-global-config-section" class:is-open={kitsuneLayerEditSection === 'general'}>
               <button type="button" class="kitsune-global-config-summary" aria-expanded={kitsuneLayerEditSection === 'general'} on:click={() => (kitsuneLayerEditSection = kitsuneLayerEditSection === 'general' ? 'color' : 'general')}>
@@ -10076,7 +10433,7 @@
               {#if kitsuneLayerEditSection === 'general'}
                 <div class="kitsune-global-config-list">
                   <div class="settings-field settings-field-inline-toggle">
-                    <div class="settings-field-header"><span>{tr('Enabled', 'Activa')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('enabled')}><span>{tr('Enabled', 'Activa')}</span></div>
                     <button
                       type="button"
                       class={`secondary compact-toggle ${kitsuneStudioEditingLayerEnabled === '1' ? 'is-on' : ''}`}
@@ -10086,11 +10443,11 @@
                       {kitsuneStudioEditingLayerEnabled === '1' ? tr('On', 'Encendida') : tr('Off', 'Apagada')}
                     </button>
                   </div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Visual mode', 'Modo visual')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerMode} options={[{value:'bars',label:'bars'},{value:'ring',label:'ring'}]} /></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Style', 'Estilo')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerStyle} options={kitsuneVisualStyleOptions} /></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Opacity', 'Opacidad')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerAlpha} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerAlpha)}</strong></div></label>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('visual_mode')}><span>{tr('Visual mode', 'Modo visual')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerMode} options={[{value:'bars',label:'bars'},{value:'ring',label:'ring'}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('style')}><span>{tr('Style', 'Estilo')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerStyle} options={kitsuneVisualStyleOptions} /></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('opacity')}><span>{tr('Opacity', 'Opacidad')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerAlpha} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerAlpha)}</strong></div></label>
                   <div class="settings-field">
-                    <div class="settings-field-header"><span>{tr('Audio profile', 'Perfil de audio')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('audio_profile')}><span>{tr('Audio profile', 'Perfil de audio')}</span></div>
                     <GsSelect
                       bind:value={kitsuneStudioEditingLayerProfile}
                       placeholder={tr('audio profile', 'perfil de audio')}
@@ -10122,7 +10479,7 @@
               {#if kitsuneLayerEditSection === 'color'}
                 <div class="kitsune-global-config-list">
                   <div class="settings-field">
-                    <div class="settings-field-header"><span>{tr('Manual color', 'Color manual')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('manual_color')}><span>{tr('Manual color', 'Color manual')}</span></div>
                     <div class="kitsune-color-field">
                       <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEditingLayerColor || '#000000'};`}></span>
                       <input class="kitsune-color-picker" type="color" bind:value={kitsuneStudioEditingLayerColor} disabled={kitsuneStudioEditingLayerColorMode !== 'static'} />
@@ -10132,12 +10489,12 @@
                       <span class="muted">{tr('Disabled while the layer uses wallpaper-driven dynamic color.', 'Desactivado mientras la capa usa color dinamico guiado por el wallpaper.')}</span>
                     {/if}
                   </div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Color source', 'Fuente de color')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerColorMode} options={[{value:'static',label:tr('Manual', 'Manual')},{value:'accent_mid',label:tr('Wallpaper Dynamic', 'Wallpaper dinamico')}]} /></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Blend mode', 'Modo de mezcla')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBlendMode} options={[{value:'normal',label:tr('Normal', 'Normal')},{value:'add',label:tr('Add', 'Sumar')},{value:'screen',label:tr('Screen', 'Screen')},{value:'multiply',label:tr('Multiply', 'Multiplicar')}]} /></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Palette channel', 'Canal de paleta')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerPaletteChannel} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'r',label:tr('Red', 'Rojo')},{value:'g',label:tr('Green', 'Verde')},{value:'b',label:tr('Blue', 'Azul')}]} /></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Target luma', 'Luma objetivo')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerTargetLuma} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerTargetLuma)}</strong></div></label>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('color_source')}><span>{tr('Color source', 'Fuente de color')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerColorMode} options={[{value:'static',label:tr('Manual', 'Manual')},{value:'accent_mid',label:tr('Wallpaper Dynamic', 'Wallpaper dinamico')}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('blend_mode')}><span>{tr('Blend mode', 'Modo de mezcla')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBlendMode} options={[{value:'normal',label:tr('Normal', 'Normal')},{value:'add',label:tr('Add', 'Sumar')},{value:'screen',label:tr('Screen', 'Screen')},{value:'multiply',label:tr('Multiply', 'Multiplicar')}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('palette_channel')}><span>{tr('Palette channel', 'Canal de paleta')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerPaletteChannel} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'r',label:tr('Red', 'Rojo')},{value:'g',label:tr('Green', 'Verde')},{value:'b',label:tr('Blue', 'Azul')}]} /></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('target_luma')}><span>{tr('Target luma', 'Luma objetivo')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerTargetLuma} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerTargetLuma)}</strong></div></label>
                   <div class="settings-field">
-                    <div class="settings-field-header"><span>{tr('Effective color', 'Color efectivo')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('effective_color')}><span>{tr('Effective color', 'Color efectivo')}</span></div>
                     <div class="kitsune-color-field">
                       <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEffectiveLayerColor};`}></span>
                       <input class="kitsune-color-picker" type="color" value={kitsuneStudioEffectiveLayerColor} disabled />
@@ -10171,40 +10528,80 @@
               </button>
               {#if kitsuneLayerEditSection === 'fx'}
                 <div class="kitsune-global-config-list">
-                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header"><span>{tr('Particles', 'Particulas')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerParticlesEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerParticlesEnabled} on:click={() => (kitsuneStudioEditingLayerParticlesEnabled = !kitsuneStudioEditingLayerParticlesEnabled)}>{kitsuneStudioEditingLayerParticlesEnabled ? tr('On', 'Encendidas') : tr('Off', 'Apagadas')}</button></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Particles mode', 'Modo de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesMode} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'bars_base',label:'bars_base'},{value:'ring_center',label:'ring_center'}]} /></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Particles style', 'Estilo de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesStyle} options={[{value:'soft',label:'soft'},{value:'spark',label:'spark'},{value:'dust',label:'dust'},{value:'neon',label:'neon'},{value:'orb',label:'orb'},{value:'trail',label:'trail'},{value:'burst',label:'burst'},{value:'orbit',label:'orbit'}]} /></div>
+                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles')}><span>{tr('Particles', 'Particulas')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerParticlesEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerParticlesEnabled} on:click={() => (kitsuneStudioEditingLayerParticlesEnabled = !kitsuneStudioEditingLayerParticlesEnabled)}>{kitsuneStudioEditingLayerParticlesEnabled ? tr('On', 'Encendidas') : tr('Off', 'Apagadas')}</button></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_mode')}><span>{tr('Particles mode', 'Modo de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesMode} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'bars_base',label:'bars_base'},{value:'ring_center',label:'ring_center'}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_style')}><span>{tr('Particles style', 'Estilo de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesStyle} options={[{value:'soft',label:'soft'},{value:'spark',label:'spark'},{value:'dust',label:'dust'},{value:'neon',label:'neon'},{value:'orb',label:'orb'},{value:'trail',label:'trail'},{value:'burst',label:'burst'},{value:'orbit',label:'orbit'}]} /></div>
                   <div class="settings-field">
-                    <div class="settings-field-header"><span>{tr('Particles color', 'Color de particulas')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_manual_color')}><span>{tr('Particles manual color', 'Color manual de particulas')}</span></div>
                     <div class="kitsune-color-field">
                       <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEditingLayerParticlesColor || '#000000'};`}></span>
-                      <input class="kitsune-color-picker" type="color" bind:value={kitsuneStudioEditingLayerParticlesColor} />
-                      <input type="text" bind:value={kitsuneStudioEditingLayerParticlesColor} />
+                      <input class="kitsune-color-picker" type="color" bind:value={kitsuneStudioEditingLayerParticlesColor} disabled={kitsuneStudioEditingLayerParticlesColorMode !== 'static'} />
+                      <input type="text" bind:value={kitsuneStudioEditingLayerParticlesColor} disabled={kitsuneStudioEditingLayerParticlesColorMode !== 'static'} />
                     </div>
+                    {#if kitsuneStudioEditingLayerParticlesColorMode !== 'static'}
+                      <span class="muted">{tr('Disabled while the particles use wallpaper-driven dynamic color.', 'Desactivado mientras las particulas usan color dinamico guiado por el wallpaper.')}</span>
+                    {/if}
                   </div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Particles color source', 'Fuente del color de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesColorMode} options={[{value:'static',label:tr('Static', 'Estatico')},{value:'accent_light',label:tr('Accent Light', 'Accent claro')},{value:'accent_mid',label:tr('Accent Mid', 'Accent medio')},{value:'accent_dark',label:tr('Accent Dark', 'Accent oscuro')}]} /></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Particles glow', 'Glow de particulas')}</span></div><div class="settings-range-field"><input type="range" min="0" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesGlowStrength} /><input type="number" min="0" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesGlowStrength} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Particles alpha mult', 'Multiplicador alpha particulas')}</span></div><div class="settings-range-field"><input type="range" min="0" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesAlphaMult} /><input type="number" min="0" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesAlphaMult} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Particles size mult', 'Multiplicador tamano particulas')}</span></div><div class="settings-range-field"><input type="range" min="0.1" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesSizeMult} /><input type="number" min="0.1" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesSizeMult} /></div></label>
-                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header"><span>{tr('Neon glow', 'Glow neon')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerNeonEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerNeonEnabled} on:click={() => (kitsuneStudioEditingLayerNeonEnabled = !kitsuneStudioEditingLayerNeonEnabled)}>{kitsuneStudioEditingLayerNeonEnabled ? tr('On', 'Encendido') : tr('Off', 'Apagado')}</button></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Glow style', 'Estilo de glow')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerGlowStyle} options={[{value:'neon',label:'neon'},{value:'inner',label:'inner'},{value:'outer',label:'outer'},{value:'soft_bloom',label:'soft_bloom'}]} /></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Neon strength', 'Intensidad neon')}</span></div><div class="settings-range-field"><input type="range" min="0" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerNeonStrength} /><input type="number" min="0" step="0.05" bind:value={kitsuneStudioEditingLayerNeonStrength} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Neon layers', 'Capas neon')}</span></div><div class="settings-range-field"><input type="range" min="1" max="8" step="1" bind:value={kitsuneStudioEditingLayerNeonLayers} /><input type="number" min="1" step="1" bind:value={kitsuneStudioEditingLayerNeonLayers} /></div></label>
-                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header"><span>{tr('Afterglow', 'Afterglow')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerAfterglowEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerAfterglowEnabled} on:click={() => (kitsuneStudioEditingLayerAfterglowEnabled = !kitsuneStudioEditingLayerAfterglowEnabled)}>{kitsuneStudioEditingLayerAfterglowEnabled ? tr('On', 'Encendido') : tr('Off', 'Apagado')}</button></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Afterglow decay', 'Decaimiento afterglow')}</span></div><div class="settings-range-field"><input type="range" min="0" max="1.5" step="0.01" bind:value={kitsuneStudioEditingLayerAfterglowDecay} /><input type="number" min="0" step="0.01" bind:value={kitsuneStudioEditingLayerAfterglowDecay} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Afterglow alpha', 'Alpha afterglow')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerAfterglowAlpha} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerAfterglowAlpha)}</strong></div></label>
-                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header"><span>{tr('Base light', 'Luz base')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerBaseLightEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerBaseLightEnabled} on:click={() => (kitsuneStudioEditingLayerBaseLightEnabled = !kitsuneStudioEditingLayerBaseLightEnabled)}>{kitsuneStudioEditingLayerBaseLightEnabled ? tr('On', 'Encendida') : tr('Off', 'Apagada')}</button></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Base light height', 'Altura luz base')}</span></div><div class="settings-range-field"><input type="range" min="0" max="64" step="1" bind:value={kitsuneStudioEditingLayerBaseLightHeight} /><input type="number" min="0" step="1" bind:value={kitsuneStudioEditingLayerBaseLightHeight} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Base light alpha', 'Alpha luz base')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerBaseLightAlpha} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerBaseLightAlpha)}</strong></div></label>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_color_source')}><span>{tr('Particles color source', 'Fuente del color de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesColorMode} options={[{value:'static',label:tr('Manual', 'Manual')},{value:'accent_mid',label:tr('Wallpaper Dynamic', 'Wallpaper dinamico')}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_palette_channel')}><span>{tr('Particles palette channel', 'Canal de paleta de particulas')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerParticlesPaletteChannel} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'r',label:tr('Red', 'Rojo')},{value:'g',label:tr('Green', 'Verde')},{value:'b',label:tr('Blue', 'Azul')}]} disabled={kitsuneStudioEditingLayerParticlesColorMode === 'static'} /></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_target_luma')}><span>{tr('Particles target luma', 'Luma objetivo de particulas')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerParticlesTargetLuma} disabled={kitsuneStudioEditingLayerParticlesColorMode === 'static'} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerParticlesTargetLuma)}</strong></div></label>
                   <div class="settings-field">
-                    <div class="settings-field-header"><span>{tr('Base light color', 'Color luz base')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_effective_color')}><span>{tr('Particles effective color', 'Color efectivo de particulas')}</span></div>
+                    <div class="kitsune-color-field">
+                      <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEffectiveParticlesColor};`}></span>
+                      <input class="kitsune-color-picker" type="color" value={kitsuneStudioEffectiveParticlesColor} disabled />
+                      <input type="text" value={kitsuneStudioEffectiveParticlesColor} disabled />
+                    </div>
+                    <span class="muted">
+                      {#if kitsuneStudioEditingLayerParticlesColorMode === 'static'}
+                        {tr('When source is static, the effective particles color matches the manual particles color.', 'Cuando la fuente es estatica, el color efectivo de particulas coincide con el color manual de particulas.')}
+                      {:else}
+                        {tr('Read-only preview of the particles color currently resolved from the wallpaper for this layer.', 'Vista de solo lectura del color de particulas que ahora mismo se resuelve desde el wallpaper para esta capa.')}
+                      {/if}
+                    </span>
+                  </div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_glow')}><span>{tr('Particles glow', 'Glow de particulas')}</span></div><div class="settings-range-field"><input type="range" min="0" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesGlowStrength} /><input type="number" min="0" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesGlowStrength} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_alpha_mult')}><span>{tr('Particles alpha mult', 'Multiplicador alpha particulas')}</span></div><div class="settings-range-field"><input type="range" min="0" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesAlphaMult} /><input type="number" min="0" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesAlphaMult} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('particles_size_mult')}><span>{tr('Particles size mult', 'Multiplicador tamano particulas')}</span></div><div class="settings-range-field"><input type="range" min="0.1" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesSizeMult} /><input type="number" min="0.1" step="0.05" bind:value={kitsuneStudioEditingLayerParticlesSizeMult} /></div></label>
+                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('neon_glow')}><span>{tr('Neon glow', 'Glow neon')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerNeonEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerNeonEnabled} on:click={() => (kitsuneStudioEditingLayerNeonEnabled = !kitsuneStudioEditingLayerNeonEnabled)}>{kitsuneStudioEditingLayerNeonEnabled ? tr('On', 'Encendido') : tr('Off', 'Apagado')}</button></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('glow_style')}><span>{tr('Glow style', 'Estilo de glow')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerGlowStyle} options={[{value:'neon',label:'neon'},{value:'inner',label:'inner'},{value:'outer',label:'outer'},{value:'soft_bloom',label:'soft_bloom'}]} /></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('neon_strength')}><span>{tr('Neon strength', 'Intensidad neon')}</span></div><div class="settings-range-field"><input type="range" min="0" max="4" step="0.05" bind:value={kitsuneStudioEditingLayerNeonStrength} /><input type="number" min="0" step="0.05" bind:value={kitsuneStudioEditingLayerNeonStrength} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('neon_layers')}><span>{tr('Neon layers', 'Capas neon')}</span></div><div class="settings-range-field"><input type="range" min="1" max="8" step="1" bind:value={kitsuneStudioEditingLayerNeonLayers} /><input type="number" min="1" step="1" bind:value={kitsuneStudioEditingLayerNeonLayers} /></div></label>
+                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('afterglow')}><span>{tr('Afterglow', 'Afterglow')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerAfterglowEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerAfterglowEnabled} on:click={() => (kitsuneStudioEditingLayerAfterglowEnabled = !kitsuneStudioEditingLayerAfterglowEnabled)}>{kitsuneStudioEditingLayerAfterglowEnabled ? tr('On', 'Encendido') : tr('Off', 'Apagado')}</button></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('afterglow_decay')}><span>{tr('Afterglow decay', 'Decaimiento afterglow')}</span></div><div class="settings-range-field"><input type="range" min="0" max="1.5" step="0.01" bind:value={kitsuneStudioEditingLayerAfterglowDecay} /><input type="number" min="0" step="0.01" bind:value={kitsuneStudioEditingLayerAfterglowDecay} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('afterglow_alpha')}><span>{tr('Afterglow alpha', 'Alpha afterglow')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerAfterglowAlpha} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerAfterglowAlpha)}</strong></div></label>
+                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light')}><span>{tr('Base light', 'Luz base')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerBaseLightEnabled ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerBaseLightEnabled} on:click={() => (kitsuneStudioEditingLayerBaseLightEnabled = !kitsuneStudioEditingLayerBaseLightEnabled)}>{kitsuneStudioEditingLayerBaseLightEnabled ? tr('On', 'Encendida') : tr('Off', 'Apagada')}</button></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_height')}><span>{tr('Base light height', 'Altura luz base')}</span></div><div class="settings-range-field"><input type="range" min="0" max="64" step="1" bind:value={kitsuneStudioEditingLayerBaseLightHeight} /><input type="number" min="0" step="1" bind:value={kitsuneStudioEditingLayerBaseLightHeight} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_alpha')}><span>{tr('Base light alpha', 'Alpha luz base')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerBaseLightAlpha} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerBaseLightAlpha)}</strong></div></label>
+                  <div class="settings-field">
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_manual_color')}><span>{tr('Base light manual color', 'Color manual de luz base')}</span></div>
                     <div class="kitsune-color-field">
                       <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEditingLayerBaseLightColor || '#000000'};`}></span>
-                      <input class="kitsune-color-picker" type="color" bind:value={kitsuneStudioEditingLayerBaseLightColor} />
-                      <input type="text" bind:value={kitsuneStudioEditingLayerBaseLightColor} />
+                      <input class="kitsune-color-picker" type="color" bind:value={kitsuneStudioEditingLayerBaseLightColor} disabled={kitsuneStudioEditingLayerBaseLightColorMode !== 'static'} />
+                      <input type="text" bind:value={kitsuneStudioEditingLayerBaseLightColor} disabled={kitsuneStudioEditingLayerBaseLightColorMode !== 'static'} />
                     </div>
+                    {#if kitsuneStudioEditingLayerBaseLightColorMode !== 'static'}
+                      <span class="muted">{tr('Disabled while the base light uses wallpaper-driven dynamic color.', 'Desactivado mientras la luz base usa color dinamico guiado por el wallpaper.')}</span>
+                    {/if}
                   </div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Base light source', 'Fuente luz base')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBaseLightColorMode} options={[{value:'static',label:tr('Static', 'Estatico')},{value:'accent_light',label:tr('Accent Light', 'Accent claro')},{value:'accent_mid',label:tr('Accent Mid', 'Accent medio')},{value:'accent_dark',label:tr('Accent Dark', 'Accent oscuro')}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_source')}><span>{tr('Base light source', 'Fuente luz base')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBaseLightColorMode} options={[{value:'static',label:tr('Manual', 'Manual')},{value:'accent_mid',label:tr('Wallpaper Dynamic', 'Wallpaper dinamico')}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_palette_channel')}><span>{tr('Base light palette channel', 'Canal de paleta de luz base')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBaseLightPaletteChannel} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'r',label:tr('Red', 'Rojo')},{value:'g',label:tr('Green', 'Verde')},{value:'b',label:tr('Blue', 'Azul')}]} disabled={kitsuneStudioEditingLayerBaseLightColorMode === 'static'} /></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_target_luma')}><span>{tr('Base light target luma', 'Luma objetivo de luz base')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerBaseLightTargetLuma} disabled={kitsuneStudioEditingLayerBaseLightColorMode === 'static'} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerBaseLightTargetLuma)}</strong></div></label>
+                  <div class="settings-field">
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('base_light_effective_color')}><span>{tr('Base light effective color', 'Color efectivo de luz base')}</span></div>
+                    <div class="kitsune-color-field">
+                      <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEffectiveBaseLightColor};`}></span>
+                      <input class="kitsune-color-picker" type="color" value={kitsuneStudioEffectiveBaseLightColor} disabled />
+                      <input type="text" value={kitsuneStudioEffectiveBaseLightColor} disabled />
+                    </div>
+                    <span class="muted">
+                      {#if kitsuneStudioEditingLayerBaseLightColorMode === 'static'}
+                        {tr('When source is static, the effective base light color matches the manual base light color.', 'Cuando la fuente es estatica, el color efectivo de la luz base coincide con el color manual de la luz base.')}
+                      {:else}
+                        {tr('Read-only preview of the base light color currently resolved from the wallpaper for this layer.', 'Vista de solo lectura del color de la luz base que ahora mismo se resuelve desde el wallpaper para esta capa.')}
+                      {/if}
+                    </span>
+                  </div>
                 </div>
               {/if}
             </section>
@@ -10219,16 +10616,16 @@
               </button>
               {#if kitsuneLayerEditSection === 'geometry'}
                 <div class="kitsune-global-config-list">
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Bars anchor', 'Anclaje bars')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBarsAnchor} options={[{value:'top',label:tr('Top', 'Arriba')},{value:'bottom',label:tr('Bottom', 'Abajo')},{value:'left',label:tr('Left', 'Izquierda')},{value:'right',label:tr('Right', 'Derecha')}]} /></div>
-                  <div class="settings-field"><div class="settings-field-header"><span>{tr('Bars direction', 'Direccion bars')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBarsDirection} options={[{value:'up',label:tr('Up', 'Hacia arriba')},{value:'down',label:tr('Down', 'Hacia abajo')},{value:'left',label:tr('Left', 'Hacia la izquierda')},{value:'right',label:tr('Right', 'Hacia la derecha')}]} /></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Bar width override', 'Override ancho barra')}</span></div><div class="settings-range-field"><input type="range" min="1" max="24" step="0.1" bind:value={kitsuneStudioEditingLayerBarWidth} /><input type="number" min="1" step="0.1" bind:value={kitsuneStudioEditingLayerBarWidth} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Bar gap override', 'Override gap barra')}</span></div><div class="settings-range-field"><input type="range" min="0" max="24" step="0.1" bind:value={kitsuneStudioEditingLayerBarGap} /><input type="number" min="0" step="0.1" bind:value={kitsuneStudioEditingLayerBarGap} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Bars max height', 'Altura maxima bars')}</span></div><div class="settings-range-display"><input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerLineMaxHeightRatio} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerLineMaxHeightRatio)}</strong></div></label>
-                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header"><span>{tr('Segmented bars', 'Barras segmentadas')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerSegmentedBars ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerSegmentedBars} on:click={() => (kitsuneStudioEditingLayerSegmentedBars = !kitsuneStudioEditingLayerSegmentedBars)}>{kitsuneStudioEditingLayerSegmentedBars ? tr('On', 'Encendidas') : tr('Off', 'Apagadas')}</button></div>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Segment length', 'Longitud segmento')}</span></div><div class="settings-range-field"><input type="range" min="1" max="48" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentLength} /><input type="number" min="1" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentLength} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Segment gap', 'Gap segmento')}</span></div><div class="settings-range-field"><input type="range" min="0" max="24" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentGap} /><input type="number" min="0" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentGap} /></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Ring inner ratio', 'Ratio interior ring')}</span></div><div class="settings-range-display"><input type="range" min="0.05" max="0.75" step="0.01" bind:value={kitsuneStudioEditingLayerRingInnerRatio} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerRingInnerRatio)}</strong></div></label>
-                  <label class="settings-field"><div class="settings-field-header"><span>{tr('Ring length ratio', 'Ratio longitud ring')}</span></div><div class="settings-range-display"><input type="range" min="0.05" max="0.6" step="0.01" bind:value={kitsuneStudioEditingLayerRingLengthRatio} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerRingLengthRatio)}</strong></div></label>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('bars_anchor')}><span>{tr('Bars anchor', 'Anclaje bars')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBarsAnchor} options={[{value:'top',label:tr('Top', 'Arriba')},{value:'bottom',label:tr('Bottom', 'Abajo')},{value:'left',label:tr('Left', 'Izquierda')},{value:'right',label:tr('Right', 'Derecha')}]} /></div>
+                  <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('bars_direction')}><span>{tr('Bars direction', 'Direccion bars')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerBarsDirection} options={[{value:'up',label:tr('Up', 'Hacia arriba')},{value:'down',label:tr('Down', 'Hacia abajo')},{value:'left',label:tr('Left', 'Hacia la izquierda')},{value:'right',label:tr('Right', 'Hacia la derecha')}]} /></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('bar_width_override')}><span>{tr('Bar width override', 'Override ancho barra')}</span></div><div class="settings-range-field"><input type="range" min="1" max="24" step="0.1" bind:value={kitsuneStudioEditingLayerBarWidth} /><input type="number" min="1" step="0.1" bind:value={kitsuneStudioEditingLayerBarWidth} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('bar_gap_override')}><span>{tr('Bar gap override', 'Override gap barra')}</span></div><div class="settings-range-field"><input type="range" min="0" max="24" step="0.1" bind:value={kitsuneStudioEditingLayerBarGap} /><input type="number" min="0" step="0.1" bind:value={kitsuneStudioEditingLayerBarGap} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('bars_max_height')}><span>{tr('Bars max height', 'Altura maxima bars')}</span></div><div class="settings-range-display"><input type="range" min="0.05" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerLineMaxHeightRatio} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerLineMaxHeightRatio)}</strong></div></label>
+                  <div class="settings-field settings-field-inline-toggle"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('segmented_bars')}><span>{tr('Segmented bars', 'Barras segmentadas')}</span></div><button type="button" class={`secondary compact-toggle ${kitsuneStudioEditingLayerSegmentedBars ? 'is-on' : ''}`} aria-pressed={kitsuneStudioEditingLayerSegmentedBars} on:click={() => (kitsuneStudioEditingLayerSegmentedBars = !kitsuneStudioEditingLayerSegmentedBars)}>{kitsuneStudioEditingLayerSegmentedBars ? tr('On', 'Encendidas') : tr('Off', 'Apagadas')}</button></div>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('segment_length')}><span>{tr('Segment length', 'Longitud segmento')}</span></div><div class="settings-range-field"><input type="range" min="1" max="48" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentLength} /><input type="number" min="1" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentLength} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('segment_gap')}><span>{tr('Segment gap', 'Gap segmento')}</span></div><div class="settings-range-field"><input type="range" min="0" max="24" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentGap} /><input type="number" min="0" step="0.1" bind:value={kitsuneStudioEditingLayerSegmentGap} /></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('ring_inner_ratio')}><span>{tr('Ring inner ratio', 'Ratio interior ring')}</span></div><div class="settings-range-display"><input type="range" min="0.05" max="0.75" step="0.01" bind:value={kitsuneStudioEditingLayerRingInnerRatio} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerRingInnerRatio)}</strong></div></label>
+                  <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('ring_length_ratio')}><span>{tr('Ring length ratio', 'Ratio longitud ring')}</span></div><div class="settings-range-display"><input type="range" min="0.05" max="0.6" step="0.01" bind:value={kitsuneStudioEditingLayerRingLengthRatio} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerRingLengthRatio)}</strong></div></label>
                 </div>
               {/if}
             </section>
@@ -10244,7 +10641,7 @@
               {#if kitsuneLayerEditSection === 'advanced'}
                 <div class="kitsune-global-config-list">
                   <label class="settings-field">
-                    <div class="settings-field-header"><span>{tr('Additional parameters', 'Parametros adicionales')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('additional_parameters')}><span>{tr('Additional parameters', 'Parametros adicionales')}</span></div>
                     <textarea class="kitsune-layer-extras-textarea" bind:value={kitsuneStudioEditingLayerExtras} placeholder="zone=bass, rotate=15, polygon_sides=6"></textarea>
                   </label>
                 </div>
@@ -10254,6 +10651,12 @@
           <div class="row">
             <button class="secondary" on:click={closeKitsuneStudioLayerEditModal} disabled={kitsuneBusy}>
               {tr('Close', 'Cerrar')}
+            </button>
+            <button class="secondary" on:click={() => void duplicateKitsuneStudioLayer()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+              {tr('Duplicate Layer', 'Duplicar capa')}
+            </button>
+            <button class="secondary danger-outline" on:click={() => void removeKitsuneStudioLayer()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
+              {tr('Delete Layer', 'Eliminar capa')}
             </button>
             <button class="secondary" on:click={() => void applyKitsuneStudioLayerEdit()} disabled={kitsuneBusy || !kitsuneGroupFile.trim()}>
               {tr('Apply Layer Changes', 'Aplicar cambios de la capa')}
