@@ -1473,6 +1473,38 @@ label {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.kitsune-composite-preview-card {
+  position: relative;
+  min-height: 132px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+
+.kitsune-composite-preview-core {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: saturate(1.1);
+}
+
+.kitsune-composite-preview-bar {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  height: 16px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.kitsune-composite-preview-bar.is-top {
+  top: 18px;
+}
+
+.kitsune-composite-preview-bar.is-bottom {
+  bottom: 18px;
+}
+
 .kitsune-global-config-modal .help-wrap {
   position: relative;
   overflow: visible;

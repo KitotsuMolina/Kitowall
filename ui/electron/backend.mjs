@@ -206,9 +206,6 @@ async function hostUserPath() {
     path.join(home, '.local', 'bin'),
     path.join(home, '.npm-global', 'bin'),
     path.join(home, '.cargo', 'bin'),
-    ...(await collectNvmBinDirs(home)),
-    ...(await collectNpmPrefixBinDirs()),
-    ...(await shellPathEntries()),
     ...(process.env.PATH ? process.env.PATH.split(':') : []),
     '/usr/local/bin',
     '/usr/bin',
@@ -397,18 +394,29 @@ async function resolveKitsuneCmd() {
   }
 
   const home = await hostHomeDir();
-  const hostBin = await resolveHostBinPath('kitsune');
-  if (hostBin) return {base: hostBin, prefixArgs: [], cwd: home};
-
   const userScript = path.join(home, '.local', 'share', 'kitsune', 'scripts', 'kitsune.sh');
   if (await fileExists(userScript)) {
     return {base: userScript, prefixArgs: [], cwd: home};
+  }
+
+  const directBins = [
+    path.join(home, '.local', 'bin', 'kitsune'),
+    path.join(home, '.cargo', 'bin', 'kitsune'),
+    path.join(home, '.local', 'share', 'kitsune', 'bin', 'kitsune')
+  ];
+  for (const candidate of directBins) {
+    if (await fileExists(candidate)) {
+      return {base: candidate, prefixArgs: [], cwd: home};
+    }
   }
 
   const localScript = path.join(ROOT_DIR, 'Kitsune', 'scripts', 'kitsune.sh');
   if (await fileExists(localScript)) {
     return {base: localScript, prefixArgs: [], cwd: ROOT_DIR};
   }
+
+  const hostBin = await resolveHostBinPath('kitsune');
+  if (hostBin) return {base: hostBin, prefixArgs: [], cwd: home};
 
   return {base: 'kitsune', prefixArgs: [], cwd: home};
 }

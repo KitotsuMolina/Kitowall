@@ -3478,6 +3478,84 @@
     };
   }
 
+  function rgbToHex(rgb: {r: number; g: number; b: number} | null, fallback = '#000000'): string {
+    if (!rgb) return fallback;
+    const toHex = (value: number) => Math.round(clampPreview(value, 0, 255)).toString(16).padStart(2, '0');
+    return `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`;
+  }
+
+  function mixHex(a: string, b: string, ratio: number): string {
+    const left = parseHexRgb(a);
+    const right = parseHexRgb(b);
+    if (!left && !right) return '#000000';
+    if (!left) return normalizePreviewHex(b, '#000000');
+    if (!right) return normalizePreviewHex(a, '#000000');
+    const t = clampPreview(ratio, 0, 1);
+    return rgbToHex({
+      r: left.r + (right.r - left.r) * t,
+      g: left.g + (right.g - left.g) * t,
+      b: left.b + (right.b - left.b) * t
+    });
+  }
+
+  function withAlpha(hex: string, alpha: number): string {
+    const rgb = parseHexRgb(hex);
+    if (!rgb) return `rgba(0,0,0,${clampPreview(alpha, 0, 1)})`;
+    return `rgba(${Math.round(rgb.r)}, ${Math.round(rgb.g)}, ${Math.round(rgb.b)}, ${clampPreview(alpha, 0, 1)})`;
+  }
+
+  function kitsuneApproximateCompositeColor(): string {
+    let composite = normalizePreviewHex(kitsuneStudioEffectiveLayerColor, '#7ae8ff');
+    if (kitsuneStudioEditingLayerBaseLightEnabled) {
+      const baseMix = 0.16 + clampPreview(kitsuneStudioEditingLayerBaseLightAlpha, 0, 1) * 0.42;
+      composite = mixHex(composite, kitsuneStudioEffectiveBaseLightColor, baseMix);
+    }
+    if (kitsuneStudioEditingLayerParticlesEnabled) {
+      const particleMix = 0.12 + clampPreview(Number(kitsuneStudioEditingLayerParticlesGlowStrength) / 4, 0, 1) * 0.24;
+      composite = mixHex(composite, kitsuneStudioEffectiveParticlesColor, particleMix);
+    }
+    if (kitsuneStudioEditingLayerBlendMode === 'add' || kitsuneStudioEditingLayerBlendMode === 'screen') {
+      composite = mixHex(composite, '#ffffff', kitsuneStudioEditingLayerBlendMode === 'add' ? 0.14 : 0.09);
+    } else if (kitsuneStudioEditingLayerBlendMode === 'multiply') {
+      composite = mixHex(composite, '#20161f', 0.18);
+    }
+    return composite;
+  }
+
+  function kitsuneApproximateCompositePreviewStyle(): string {
+    const base = normalizePreviewHex(kitsuneStudioEffectiveLayerColor, '#7ae8ff');
+    const particles = normalizePreviewHex(kitsuneStudioEffectiveParticlesColor, base);
+    const baseLight = normalizePreviewHex(kitsuneStudioEffectiveBaseLightColor, base);
+    const composite = kitsuneApproximateCompositeColor();
+    const glowStrength = clampPreview(Number(kitsuneStudioEditingLayerNeonStrength || 1.2) / 2.5, 0.2, 1.4);
+    const glowRadius =
+      kitsuneStudioEditingLayerGlowStyle === 'soft_bloom'
+        ? 34
+        : kitsuneStudioEditingLayerGlowStyle === 'outer'
+          ? 28
+          : kitsuneStudioEditingLayerGlowStyle === 'inner'
+            ? 18
+            : 24;
+    const blendTint =
+      kitsuneStudioEditingLayerBlendMode === 'multiply'
+        ? 'rgba(12, 10, 16, 0.34)'
+        : kitsuneStudioEditingLayerBlendMode === 'add'
+          ? withAlpha('#ffffff', 0.12)
+          : withAlpha(composite, 0.08);
+    return [
+      `background:
+        radial-gradient(circle at 50% 18%, ${withAlpha(baseLight, 0.62)}, transparent 45%),
+        radial-gradient(circle at 18% 78%, ${withAlpha(particles, 0.34)}, transparent 26%),
+        radial-gradient(circle at 82% 76%, ${withAlpha(particles, 0.30)}, transparent 24%),
+        linear-gradient(180deg, ${withAlpha(base, 0.94)}, ${withAlpha(composite, 0.92)})`,
+      `box-shadow:
+        inset 0 0 0 1px ${withAlpha('#ffffff', 0.08)},
+        inset 0 10px 34px ${blendTint},
+        0 0 ${Math.round(glowRadius * glowStrength)}px ${withAlpha(composite, 0.32)},
+        0 0 ${Math.round((glowRadius + 18) * glowStrength)}px ${withAlpha(baseLight, 0.18)}`
+    ].join(';');
+  }
+
   function colorLuma(hex: string): number {
     const rgb = parseHexRgb(hex);
     if (!rgb) return 0;
@@ -10494,7 +10572,7 @@
                   <div class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('palette_channel')}><span>{tr('Palette channel', 'Canal de paleta')}</span></div><GsSelect bind:value={kitsuneStudioEditingLayerPaletteChannel} options={[{value:'auto',label:tr('Auto', 'Auto')},{value:'r',label:tr('Red', 'Rojo')},{value:'g',label:tr('Green', 'Verde')},{value:'b',label:tr('Blue', 'Azul')}]} /></div>
                   <label class="settings-field"><div class="settings-field-header" data-help={kitsuneLayerFieldHelp('target_luma')}><span>{tr('Target luma', 'Luma objetivo')}</span></div><div class="settings-range-display"><input type="range" min="0" max="1" step="0.01" bind:value={kitsuneStudioEditingLayerTargetLuma} /><strong>{formatKitsuneGlobalValue(kitsuneStudioEditingLayerTargetLuma)}</strong></div></label>
                   <div class="settings-field">
-                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('effective_color')}><span>{tr('Effective color', 'Color efectivo')}</span></div>
+                    <div class="settings-field-header" data-help={kitsuneLayerFieldHelp('effective_color')}><span>{tr('Effective base color', 'Color base efectivo')}</span></div>
                     <div class="kitsune-color-field">
                       <span class="kitsune-color-swatch" style={`background:${kitsuneStudioEffectiveLayerColor};`}></span>
                       <input class="kitsune-color-picker" type="color" value={kitsuneStudioEffectiveLayerColor} disabled />
@@ -10502,9 +10580,9 @@
                     </div>
                     <span class="muted">
                       {#if kitsuneStudioEditingLayerColorMode === 'static'}
-                        {tr('When source is static, the effective color matches the manual color.', 'Cuando la fuente es estatica, el color efectivo coincide con el color manual.')}
+                        {tr('When source is static, the base effective color matches the manual color.', 'Cuando la fuente es estatica, el color base efectivo coincide con el color manual.')}
                       {:else}
-                        {tr('Read-only preview of the color currently resolved from the wallpaper for this layer.', 'Vista de solo lectura del color que ahora mismo se resuelve desde el wallpaper para esta capa.')}
+                        {tr('Read-only preview of the base color currently resolved from the wallpaper for this layer.', 'Vista de solo lectura del color base que ahora mismo se resuelve desde el wallpaper para esta capa.')}
                       {/if}
                     </span>
                     {#if kitsuneStudioEffectiveColorsBusy}
@@ -10513,6 +10591,20 @@
                     {#if kitsuneStudioEffectiveColorsError}
                       <span class="muted" style="color:#ffb4b4;">{kitsuneStudioEffectiveColorsError}</span>
                     {/if}
+                  </div>
+                  <div class="settings-field">
+                    <div class="settings-field-header"><span>{tr('Approximate composite preview', 'Vista compuesta aproximada')}</span></div>
+                    <div class="kitsune-composite-preview-card" style={kitsuneApproximateCompositePreviewStyle()}>
+                      <div class="kitsune-composite-preview-bar is-top"></div>
+                      <div class="kitsune-composite-preview-core"></div>
+                      <div class="kitsune-composite-preview-bar is-bottom"></div>
+                    </div>
+                    <span class="muted">
+                      {tr(
+                        'Approximation of the final render after glow, particles, base light and blending. This is closer to what you see on screen than the base color swatch.',
+                        'Aproximacion del render final tras glow, particulas, luz base y mezcla. Esto se acerca mas a lo que ves en pantalla que el swatch del color base.'
+                      )}
+                    </span>
                   </div>
                 </div>
               {/if}
