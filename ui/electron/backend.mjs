@@ -278,6 +278,39 @@ async function hostAwareEnv(extra = {}) {
   };
 }
 
+async function polkitAwareEnv(extra = {}) {
+  const home = await hostHomeDir();
+  const passthroughKeys = [
+    'DISPLAY',
+    'WAYLAND_DISPLAY',
+    'XDG_RUNTIME_DIR',
+    'XAUTHORITY',
+    'DBUS_SESSION_BUS_ADDRESS',
+    'DESKTOP_SESSION',
+    'XDG_SESSION_TYPE',
+    'XDG_CURRENT_DESKTOP',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'LANG',
+    'LC_ALL',
+    'LC_MESSAGES',
+    'TERM'
+  ];
+  const env = {
+    PATH: await hostUserPath(),
+    HOME: home
+  };
+  for (const key of passthroughKeys) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.trim()) env[key] = value;
+  }
+  return {
+    ...env,
+    ...extra
+  };
+}
+
 async function runJsonCommand(base, args = [], extraEnv = {}, cwd) {
   const out = await runProcess(base, args, {env: await hostAwareEnv(extraEnv), cwd});
   try {
@@ -308,8 +341,12 @@ async function runRawCommand(base, args = [], extraEnv = {}, cwd) {
 
 async function runPrivilegedSystemBootstrap() {
   const helper = await resolveBootstrapSystemPath();
+  const env = await polkitAwareEnv();
+  appendKitsuneUiLog(
+    `runPrivilegedSystemBootstrap: helper=${helper} display=${env.DISPLAY || ''} wayland=${env.WAYLAND_DISPLAY || ''} runtime=${env.XDG_RUNTIME_DIR || ''} dbus=${env.DBUS_SESSION_BUS_ADDRESS ? 'set' : 'missing'}`
+  );
   const out = await runProcess('pkexec', [helper], {
-    env: await hostAwareEnv(),
+    env,
     allowNonZero: true
   });
   return {

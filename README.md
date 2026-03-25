@@ -265,6 +265,10 @@ sudo pacman -Syu
 sudo pacman -S --overwrite '*' zstd libarchive
 ```
 
+## Validación del flujo privilegiado
+
+Antes de pulsar “Install Dependencies”, verifica que la sesión expone `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR` y `DBUS_SESSION_BUS_ADDRESS`. El backend ahora registra en `/tmp/kitowall-kitsune-ui.log` una línea como `runPrivilegedSystemBootstrap: … display=… wayland=… dbus=set|missing`. Si `dbus=missing`, cierra y vuelve a iniciar la sesión gráfica para que el agente de polkit arranque o repasa el entorno de Wayland/X11.
+
 ## Estructura relevante
 
 - `src/cli.ts`: CLI principal
@@ -411,6 +415,10 @@ The host should provide:
 - an active `polkit` agent in the session
 
 Without those, system package installation still requires manual intervention.
+
+## Privileged flow validation
+
+Before hitting “Install Dependencies”, verify your session exposes `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR`, and `DBUS_SESSION_BUS_ADDRESS`. The backend now logs an entry like `runPrivilegedSystemBootstrap: … display=… wayland=… dbus=set|missing` to `/tmp/kitowall-kitsune-ui.log`. If `dbus=missing`, restart the graphical session so the policy kit agent starts or revisit your Wayland/X11 environment.
 
 ## Manual Bootstrap
 

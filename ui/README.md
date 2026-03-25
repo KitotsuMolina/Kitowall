@@ -305,3 +305,7 @@ Resources included in the AppImage:
 - notice: `../NOTICE.md`
 - trademarks: `../TRADEMARKS.md`
 - logo license: `src/assets/logo-LICENSE.md`
+
+## Privileged flow validation
+
+Before you trigger “Install Dependencies”, open `/tmp/kitowall-kitsune-ui.log` and look for the line `runPrivilegedSystemBootstrap: … display=… wayland=… dbus=set|missing`. That entry confirms the helper was invoked with the session’s display/dbus environment; if `dbus` reports `missing`, restart your graphical session so the polkit agent starts before retrying the installation.
