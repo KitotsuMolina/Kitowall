@@ -510,7 +510,7 @@ main() {
   echo "[paths] kitowall=$(command -v kitowall || echo '<missing>')"
   echo "[paths] kitsune=$(command -v kitsune || echo '<missing>')"
   echo "[paths] kitsune-rendercore=$(command -v kitsune-rendercore || echo '<missing>')"
-  echo "[next] run: kitowall init --namespace kitowall --apply --force"
+  echo "[info] bootstrap finished; manual init is only needed on a fresh host without config"
 }
 
 main "$@"

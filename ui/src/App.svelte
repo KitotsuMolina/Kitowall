@@ -44,11 +44,27 @@
     paths?: Record<string, string>;
   };
 
+  type UiLogReadResult = {
+    ok: boolean;
+    text: string;
+    nextOffset: number;
+  };
+
   type PreflightDepUiState = 'pending' | 'installing' | 'ok' | 'error';
 
   type PreflightDepUi = PreflightDep & {
     state: PreflightDepUiState;
   };
+
+  const PREFLIGHT_CHECKS: Array<{id: string; bin: string; optional?: boolean;}> = [
+    {id: 'kitowall', bin: 'kitowall'},
+    {id: 'kitsune', bin: 'kitsune'},
+    {id: 'kitsune-rendercore', bin: 'kitsune-rendercore'},
+    {id: 'swww', bin: 'swww'},
+    {id: 'swww-daemon', bin: 'swww-daemon'},
+    {id: 'hyprctl', bin: 'hyprctl'},
+    {id: 'cava', bin: 'cava'}
+  ];
 
   type StatusReport = {
     mode: string;
@@ -433,9 +449,12 @@
   let preflight: PreflightStatus | null = null;
   let preflightDeps: PreflightDepUi[] = [];
   let preflightBusy = false;
+  let preflightStatusLoaded = false;
   let kitsuneUpdateBusy = false;
   let preflightLogs: ActionLogItem[] = [];
   let preflightUpdatedAt: number | null = null;
+  let preflightUiLogOffset = 0;
+  let preflightUiLogPollTimer: ReturnType<typeof setInterval> | null = null;
   let status: StatusReport | null = null;
   let lastError: string | null = null;
   let toasts: ToastItem[] = [];
@@ -1032,6 +1051,26 @@
     preflightLogs = [{ts: Date.now(), message, kind}, ...preflightLogs].slice(0, 300);
   }
 
+  function classifyPreflightLogLine(text: string): 'info' | 'success' | 'error' {
+    if (text.includes('[ok]')) return 'success';
+    if (text.includes('missing') || text.includes('error') || text.includes('failed')) return 'error';
+    return 'info';
+  }
+
+  async function pollPreflightUiLog(): Promise<void> {
+    try {
+      const out = await invoke<UiLogReadResult>('kitowall_ui_log_read', {offset: preflightUiLogOffset});
+      preflightUiLogOffset = Number(out?.nextOffset ?? preflightUiLogOffset) || preflightUiLogOffset;
+      const text = String(out?.text ?? '');
+      if (!text.trim()) return;
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        pushPreflightLog(trimmed, classifyPreflightLogLine(trimmed));
+      }
+    } catch {}
+  }
+
   function preflightBadgeState(dep: PreflightDepUi): 'ok' | 'bad' | 'warn' {
     if (dep.state === 'ok') return 'ok';
     if (dep.state === 'error') return 'bad';
@@ -1063,11 +1102,11 @@
   }
 
   function preflightMissingDeps(): PreflightDepUi[] {
-    return preflightDeps.filter(dep => dep.state !== 'ok' && !dep.optional);
+    return preflightRowsForUi().filter(dep => dep.state !== 'ok' && !dep.optional);
   }
 
   function preflightNeedsInstaller(): boolean {
-    return preflightDeps.length > 0 && preflightMissingDeps().length > 0;
+    return preflightRowsForUi().length > 0 && preflightMissingDeps().length > 0;
   }
 
   function preflightKitsuneUpdatesAvailable(): boolean {
@@ -1087,16 +1126,43 @@
     return preflightNeedsInstaller() || healthNeedsInstaller();
   }
 
+  function shouldBlockForPreflight(): boolean {
+    return preflightStatusLoaded && shouldShowPreflightInstaller();
+  }
+
   function preflightRowsForUi(): PreflightDepUi[] {
-    if (preflightDeps.length > 0) return preflightDeps;
-    if (!health?.deps) return [];
-    return Object.entries(health.deps).map(([name, ok]) => ({
-      id: name,
-      bin: name,
-      installed: ok === true,
-      path: '',
-      state: ok === true ? 'ok' : 'pending'
-    }));
+    const byId = new Map<string, PreflightDepUi>();
+    for (const dep of preflightDeps) {
+      byId.set(dep.id, dep);
+    }
+    if (health?.deps) {
+      for (const check of PREFLIGHT_CHECKS) {
+        if (byId.has(check.id)) continue;
+        const ok = health.deps?.[check.id];
+        if (typeof ok === 'boolean') {
+          byId.set(check.id, {
+            id: check.id,
+            bin: check.bin,
+            optional: check.optional,
+            installed: ok,
+            path: '',
+            state: ok ? 'ok' : 'pending'
+          });
+        }
+      }
+    }
+    return PREFLIGHT_CHECKS.map(check => {
+      const existing = byId.get(check.id);
+      if (existing) return existing;
+      return {
+        id: check.id,
+        bin: check.bin,
+        optional: check.optional,
+        installed: false,
+        path: '',
+        state: 'pending'
+      };
+    });
   }
 
   function syncPreflightDeps(report: PreflightStatus): void {
@@ -1128,6 +1194,17 @@
     } catch (e) {
       lastError = String(e);
       pushPreflightLog(`preflight status failed: ${String(e)}`, 'error');
+    } finally {
+      preflightStatusLoaded = true;
+    }
+  }
+
+  async function bootstrapInitialPreflight(): Promise<void> {
+    await tick();
+    await loadPreflightStatus();
+    if (preflightDeps.length === 0 && !health?.deps) {
+      await sleepMs(250);
+      await loadPreflightStatus();
     }
   }
 
@@ -1148,8 +1225,16 @@
   }
 
   function selectSection(id: SectionId): void {
+    if (shouldBlockForPreflight() && id !== 'control') {
+      activeSection = 'control';
+      mobileMenuOpen = false;
+      return;
+    }
     activeSection = id;
     mobileMenuOpen = false;
+    if (id === 'control') {
+      void loadPreflightStatus();
+    }
     if (id === 'settings') {
       void loadSettings();
       void loadTimerStatus();
@@ -6540,23 +6625,18 @@
     preflightBusy = true;
     busy = true;
     lastError = null;
+    preflightUiLogOffset = 0;
+    if (preflightUiLogPollTimer) clearInterval(preflightUiLogPollTimer);
+    preflightUiLogPollTimer = setInterval(() => {
+      void pollPreflightUiLog();
+    }, 1000);
     pushPreflightLog(tr('Starting dependency installation flow', 'Iniciando flujo de instalacion de dependencias'), 'info');
     markMissingDepsInstalling();
     try {
+      pushPreflightLog('> pkexec bootstrap-system.sh', 'info');
       pushPreflightLog('> bootstrap-host.sh', 'info');
       const bootstrap = await invoke<PreflightInstallResult>('kitowall_preflight_install', {namespace});
-      const rawLogs = String(bootstrap.logs ?? '').trim();
-      if (rawLogs) {
-        for (const line of rawLogs.split('\n')) {
-          const text = line.trim();
-          if (!text) continue;
-          const kind: 'info' | 'success' | 'error' =
-            text.includes('[ok]') ? 'success' :
-            text.includes('missing') || text.includes('error') || text.includes('failed') ? 'error' :
-            'info';
-          pushPreflightLog(text, kind);
-        }
-      }
+      await pollPreflightUiLog();
 
       if (bootstrap.paths) {
         pushPreflightLog(
@@ -6608,6 +6688,11 @@
       pushPreflightLog(msg, 'error');
       pushToast(msg, 'error');
     } finally {
+      if (preflightUiLogPollTimer) {
+        clearInterval(preflightUiLogPollTimer);
+        preflightUiLogPollTimer = null;
+      }
+      await pollPreflightUiLog();
       busy = false;
       preflightBusy = false;
       await loadPreflightStatus();
@@ -6795,17 +6880,23 @@
       if (savedSidebar === '0') sidebarCollapsed = false;
     } catch {}
 
-    runHealth();
-    loadPreflightStatus();
-    runStatus();
-    runListPacks();
-    loadPacksRaw();
-    loadSettings();
-    loadSourceKeys();
-    loadTimerStatus();
-    loadWallpaperLibrary();
-    loadSystemLogs();
-    loadLiveAuthorityStatus();
+    void (async () => {
+      await bootstrapInitialPreflight();
+      if (shouldBlockForPreflight()) {
+        activeSection = 'control';
+      } else {
+        await runHealth();
+      }
+      void runStatus();
+      void runListPacks();
+      void loadPacksRaw();
+      void loadSettings();
+      void loadSourceKeys();
+      void loadTimerStatus();
+      void loadWallpaperLibrary();
+      void loadSystemLogs();
+      void loadLiveAuthorityStatus();
+    })();
 
     statusPollTimer = setInterval(() => {
       void syncStatus();
@@ -6813,10 +6904,12 @@
 
     const onFocus = () => {
       void syncStatus();
+      void loadPreflightStatus();
       void loadLiveAuthorityStatus();
     };
     const onVisibility = () => {
       if (!document.hidden) void syncStatus();
+      if (!document.hidden) void loadPreflightStatus();
       if (!document.hidden) void runListPacks();
     };
     const onWindowClick = (event: MouseEvent) => {
@@ -6861,8 +6954,13 @@
   onDestroy(() => {
     if (statusPollTimer) clearInterval(statusPollTimer);
     if (liveJobPollTimer) clearInterval(liveJobPollTimer);
+    if (preflightUiLogPollTimer) clearInterval(preflightUiLogPollTimer);
     void stopLiveV2NativePreview();
   });
+
+  $: if (shouldBlockForPreflight() && activeSection !== 'control') {
+    activeSection = 'control';
+  }
 </script>
 
 <div class={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -6954,6 +7052,53 @@
         {#each toasts as t (t.id)}
           <div class={`toast ${t.kind}`}>{t.text}</div>
         {/each}
+      </div>
+    {/if}
+
+    {#if shouldBlockForPreflight()}
+      <div class="modal-backdrop preflight-blocker-backdrop" role="presentation">
+        <div class="modal-card preflight-blocker-modal" role="dialog" aria-modal="true" aria-label={tr('Dependency Installer', 'Instalador de Dependencias')}>
+          <h2>{tr('Dependency Installer', 'Instalador de Dependencias')}</h2>
+          <p class="muted">
+            {tr(
+              'Required host dependencies are missing. Installation must complete before the rest of the UI is available.',
+              'Faltan dependencias requeridas del host. La instalacion debe completarse antes de habilitar el resto de la interfaz.'
+            )}
+          </p>
+          <div class="preflight-deps-grid">
+            {#each preflightRowsForUi() as dep (dep.id)}
+              <div class="preflight-dep-row">
+                <div class="preflight-dep-main">
+                  <span class="preflight-dep-name">{dep.bin}</span>
+                  <span class="preflight-dep-path">{preflightPathLabel(dep)}</span>
+                  {#if preflightVersionLabel(dep)}
+                    <span class="preflight-dep-path">{preflightVersionLabel(dep)}</span>
+                  {/if}
+                </div>
+                <span class={`badge status ${preflightBadgeState(dep)}`}>{preflightStatusLabel(dep)}</span>
+              </div>
+            {/each}
+          </div>
+          <div class="row actions-buttons-row">
+            <button on:click={runPreflightInstall} disabled={preflightBusy || isLiveServicesLocked()}>
+              {preflightBusy ? tr('Installing...', 'Instalando...') : tr('Install Dependencies', 'Instalar Dependencias')}
+            </button>
+            <button class="secondary" on:click={loadPreflightStatus} disabled={preflightBusy}>{tr('Refresh', 'Actualizar')}</button>
+            <span class={`badge status ${preflightMissingDeps().length === 0 ? 'ok' : 'warn'}`}>
+              {tr('missing', 'faltantes')}: {preflightMissingDeps().length}
+            </span>
+          </div>
+          {#if preflightLogs.length > 0}
+            <div class="log-list preflight-log-list preflight-blocker-log-list">
+              {#each preflightLogs as log, i (`preflight-block-${log.ts}-${i}`)}
+                <div class={`log-item ${log.kind}`}>
+                  <span>{formatTimestamp(log.ts)}</span>
+                  <span>{log.message}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
 

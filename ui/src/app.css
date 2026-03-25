@@ -1209,6 +1209,20 @@ label {
   animation: modalIn 160ms ease-out;
 }
 
+.preflight-blocker-backdrop {
+  z-index: 120;
+}
+
+.preflight-blocker-modal {
+  width: min(980px, 100%);
+  max-height: min(86vh, 980px);
+  overflow: auto;
+}
+
+.preflight-blocker-log-list {
+  max-height: 260px;
+}
+
 .kitsune-global-config-modal {
   width: min(900px, 100%);
   max-height: min(82vh, 920px);

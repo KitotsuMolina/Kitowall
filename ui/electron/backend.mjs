@@ -58,6 +58,45 @@ async function runProcess(base, args = [], options = {}) {
   });
 }
 
+async function runLoggedProcess(base, args = [], options = {}) {
+  const {
+    env = process.env,
+    cwd,
+    allowNonZero = false
+  } = options;
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn(base, args, {env, cwd, stdio: ['ignore', 'pipe', 'pipe']});
+    let stdout = '';
+    let stderr = '';
+
+    const appendChunk = chunk => {
+      const text = chunk.toString();
+      fs.appendFile(UI_LOG_PATH, text).catch(() => {});
+      return text;
+    };
+
+    child.stdout.on('data', chunk => {
+      stdout += appendChunk(chunk);
+    });
+    child.stderr.on('data', chunk => {
+      stderr += appendChunk(chunk);
+    });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0 && !allowNonZero) {
+        const err = new Error(stderr.trim() || stdout.trim() || `${base} exited with code ${code}`);
+        err.code = code;
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+        return;
+      }
+      resolve({code: code ?? 0, stdout, stderr});
+    });
+  });
+}
+
 async function hostHomeDir() {
   return process.env.HOME || os.homedir();
 }
@@ -345,7 +384,7 @@ async function runPrivilegedSystemBootstrap() {
   appendKitsuneUiLog(
     `runPrivilegedSystemBootstrap: helper=${helper} display=${env.DISPLAY || ''} wayland=${env.WAYLAND_DISPLAY || ''} runtime=${env.XDG_RUNTIME_DIR || ''} dbus=${env.DBUS_SESSION_BUS_ADDRESS ? 'set' : 'missing'}`
   );
-  const out = await runProcess('pkexec', [helper], {
+  const out = await runLoggedProcess('pkexec', ['bash', helper], {
     env,
     allowNonZero: true
   });
@@ -674,6 +713,30 @@ async function systemctlShow(unit, props) {
   return data;
 }
 
+async function maybeSystemctlShow(unit, props) {
+  try {
+    return await systemctlShow(unit, props);
+  } catch {
+    return null;
+  }
+}
+
+async function shouldRunKitowallInit() {
+  const home = await hostHomeDir();
+  const configPath = path.join(home, '.config', 'kitowall', 'config.json');
+  return !(await fileExists(configPath));
+}
+
+async function shouldInstallKitowallTimer() {
+  const timer = await maybeSystemctlShow('kitowall-next.timer', ['LoadState', 'UnitFileState']);
+  if (!timer) return true;
+  const loadState = String(timer.LoadState ?? '').trim().toLowerCase();
+  const unitFileState = String(timer.UnitFileState ?? '').trim().toLowerCase();
+  if (!loadState || loadState === 'not-found') return true;
+  if (!unitFileState || unitFileState === 'disabled' || unitFileState === 'masked') return true;
+  return false;
+}
+
 async function ensureUiAutostartEntry() {
   if (process.platform !== 'linux') return;
   const home = await hostHomeDir();
@@ -763,10 +826,24 @@ export async function createBackend(win) {
           }
           return {ok: true, deps};
         }
+        case 'kitowall_ui_log_read': {
+          const offset = Math.max(0, Number(args.offset ?? 0) || 0);
+          try {
+            const text = await fs.readFile(UI_LOG_PATH, 'utf8');
+            return {
+              ok: true,
+              text: text.slice(offset),
+              nextOffset: text.length
+            };
+          } catch {
+            return {ok: true, text: '', nextOffset: offset};
+          }
+        }
         case 'kitowall_preflight_install': {
           const namespace = args.namespace || 'kitowall';
           const bootstrapPath = await resolveBootstrapPath();
           const home = await hostHomeDir();
+          await fs.writeFile(UI_LOG_PATH, '', 'utf8').catch(() => {});
           const privileged = await runPrivilegedSystemBootstrap();
           const privilegedLogs = String(privileged.logs ?? '').trim();
           if (!privileged.ok) {
@@ -786,7 +863,7 @@ export async function createBackend(win) {
               }
             };
           }
-          const out = await runProcess('bash', [bootstrapPath], {
+          const out = await runLoggedProcess('bash', [bootstrapPath], {
             env: await hostAwareEnv({HOME: home, KITOWALL_SKIP_SYSTEM_DEPS: '1'}),
             allowNonZero: true
           });
@@ -809,13 +886,29 @@ export async function createBackend(win) {
               }
             };
           }
-          await runKitowall(['init', '--namespace', namespace, '--apply', '--force', '--json']).catch(() => {});
-          await runKitowallRaw(['install-systemd', '--every', '600s']).catch(() => {});
+          const postLogs = [];
+          if (await shouldRunKitowallInit()) {
+            postLogs.push('[info] running automatic kitowall init --apply because config.json is missing');
+            await runKitowall(['init', '--namespace', namespace, '--apply', '--force', '--json']).catch(error => {
+              postLogs.push(`[warn] automatic init skipped after failure: ${error?.message ?? error}`);
+            });
+          } else {
+            postLogs.push('[info] automatic init skipped; host config already exists');
+          }
+          if (await shouldInstallKitowallTimer()) {
+            postLogs.push('[info] running automatic install-systemd because kitowall-next.timer is missing or not installed');
+            await runKitowallRaw(['install-systemd', '--every', '600s']).catch(error => {
+              postLogs.push(`[warn] automatic install-systemd skipped after failure: ${error?.message ?? error}`);
+            });
+          } else {
+            postLogs.push('[info] automatic install-systemd skipped; user timer already exists');
+          }
+
           return {
             ok: true,
             step: 'bootstrap-host',
             namespace,
-            logs,
+            logs: `${logs}${logs ? '\n' : ''}${postLogs.join('\n')}\n`,
             deps: await this.invoke('kitowall_preflight_status'),
             paths: {
               home,
