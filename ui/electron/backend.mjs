@@ -29,13 +29,30 @@ async function runProcess(base, args = [], options = {}) {
   const {
     env = process.env,
     cwd,
-    allowNonZero = false
+    allowNonZero = false,
+    timeoutMs = 0
   } = options;
 
   return await new Promise((resolve, reject) => {
     const child = spawn(base, args, {env, cwd, stdio: ['ignore', 'pipe', 'pipe']});
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    let timeoutId = null;
+
+    const finalizeReject = err => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      reject(err);
+    };
+
+    const finalizeResolve = value => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      resolve(value);
+    };
 
     child.stdout.on('data', chunk => {
       stdout += chunk.toString();
@@ -43,17 +60,32 @@ async function runProcess(base, args = [], options = {}) {
     child.stderr.on('data', chunk => {
       stderr += chunk.toString();
     });
-    child.on('error', reject);
+    if (timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        child.kill('SIGTERM');
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 1000).unref?.();
+        const err = new Error(`${base} timed out after ${timeoutMs}ms`);
+        err.code = 'ETIMEDOUT';
+        err.stdout = stdout;
+        err.stderr = stderr;
+        finalizeReject(err);
+      }, timeoutMs);
+      timeoutId.unref?.();
+    }
+    child.on('error', finalizeReject);
     child.on('close', code => {
+      if (settled) return;
       if (code !== 0 && !allowNonZero) {
         const err = new Error(stderr.trim() || stdout.trim() || `${base} exited with code ${code}`);
         err.code = code;
         err.stdout = stdout;
         err.stderr = stderr;
-        reject(err);
+        finalizeReject(err);
         return;
       }
-      resolve({code: code ?? 0, stdout, stderr});
+      finalizeResolve({code: code ?? 0, stdout, stderr});
     });
   });
 }
@@ -360,7 +392,10 @@ async function runJsonCommand(base, args = [], extraEnv = {}, cwd) {
 }
 
 async function runJsonCommandAllowNonZero(base, args = [], extraEnv = {}, cwd) {
-  const out = await runProcess(base, args, {env: await hostAwareEnv(extraEnv), cwd, allowNonZero: true});
+  const timeoutMs = Number(extraEnv.__timeoutMs ?? 0) || 0;
+  const env = {...extraEnv};
+  delete env.__timeoutMs;
+  const out = await runProcess(base, args, {env: await hostAwareEnv(env), cwd, allowNonZero: true, timeoutMs});
   try {
     return JSON.parse(out.stdout);
   } catch {
@@ -961,7 +996,12 @@ export async function createBackend(win) {
         case 'kitowall_check':
           {
             const {base, prefixArgs, cwd} = await resolveKitowallCmd();
-            return await runJsonCommandAllowNonZero(base, [...prefixArgs, 'check', '--namespace', args.namespace || 'kitowall', '--json'], {}, cwd);
+            return await runJsonCommandAllowNonZero(
+              base,
+              [...prefixArgs, 'check', '--namespace', args.namespace || 'kitowall', '--json'],
+              {__timeoutMs: 8000},
+              cwd
+            );
           }
         case 'kitowall_status':
           return await runKitowall(['status']);

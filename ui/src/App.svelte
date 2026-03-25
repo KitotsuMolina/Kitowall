@@ -1123,7 +1123,8 @@
   }
 
   function shouldShowPreflightInstaller(): boolean {
-    return preflightNeedsInstaller() || healthNeedsInstaller();
+    if (preflightStatusLoaded) return preflightNeedsInstaller();
+    return healthNeedsInstaller();
   }
 
   function shouldBlockForPreflight(): boolean {
@@ -1234,6 +1235,9 @@
     mobileMenuOpen = false;
     if (id === 'control') {
       void loadPreflightStatus();
+      if (!shouldBlockForPreflight() && !health) {
+        void runHealth();
+      }
     }
     if (id === 'settings') {
       void loadSettings();
@@ -5594,7 +5598,20 @@
       health = await invoke<HealthReport>('kitowall_check', {namespace});
       await loadPreflightStatus();
     } catch (e) {
-      lastError = String(e);
+      const message = String(e);
+      lastError = message;
+      health = {
+        ok: false,
+        code: 'HEALTH_ERROR',
+        namespace,
+        deps: {},
+        units: {},
+        swww: {
+          namespaceQueryOk: false,
+          error: message
+        },
+        hints: [message]
+      };
     } finally {
       busy = false;
     }
@@ -6637,6 +6654,11 @@
       pushPreflightLog('> bootstrap-host.sh', 'info');
       const bootstrap = await invoke<PreflightInstallResult>('kitowall_preflight_install', {namespace});
       await pollPreflightUiLog();
+      if (bootstrap.deps?.ok) {
+        preflight = bootstrap.deps;
+        preflightUpdatedAt = Date.now();
+        syncPreflightDeps(bootstrap.deps);
+      }
 
       if (bootstrap.paths) {
         pushPreflightLog(
@@ -6960,6 +6982,10 @@
 
   $: if (shouldBlockForPreflight() && activeSection !== 'control') {
     activeSection = 'control';
+  }
+
+  $: if (activeSection === 'control' && !shouldBlockForPreflight() && !health && !busy) {
+    void runHealth();
   }
 </script>
 
