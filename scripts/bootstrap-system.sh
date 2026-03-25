@@ -68,6 +68,41 @@ install_arch_deps() {
   pacman -S --needed --noconfirm "${repo_pkgs[@]}"
 }
 
+arch_packages_for_ids() {
+  local id
+  local pkgs=()
+  for id in "$@"; do
+    case "$id" in
+      nodejs) pkgs+=(nodejs) ;;
+      npm) pkgs+=(npm) ;;
+      hyprctl) pkgs+=(hyprland) ;;
+      swww|swww-daemon) pkgs+=(swww) ;;
+      cava) pkgs+=(cava) ;;
+      pkgconf) pkgs+=(pkgconf) ;;
+      gtk4) pkgs+=(gtk4) ;;
+      gtk4-layer-shell) pkgs+=(gtk4-layer-shell) ;;
+      jq) pkgs+=(jq) ;;
+      git) pkgs+=(git) ;;
+      base-devel) pkgs+=(base-devel) ;;
+      rustup|cargo|rustc) pkgs+=(rustup) ;;
+    esac
+  done
+  printf '%s\n' "${pkgs[@]}" | awk 'NF && !seen[$0]++'
+}
+
+install_arch_selected() {
+  local requested=("$@")
+  local repo_pkgs=()
+  mapfile -t repo_pkgs < <(arch_packages_for_ids "${requested[@]}")
+  if ((${#repo_pkgs[@]} == 0)); then
+    echo "[bootstrap-system] no supported Arch packages mapped from: ${requested[*]}" >&2
+    return 1
+  fi
+  echo "[bootstrap-system] installing selected Arch packages: ${repo_pkgs[*]}"
+  wait_pacman_lock
+  pacman -S --needed --noconfirm "${repo_pkgs[@]}"
+}
+
 install_ubuntu_deps() {
   local pkgs=(
     nodejs npm
@@ -82,8 +117,56 @@ install_ubuntu_deps() {
   apt-get install -y "${pkgs[@]}"
 }
 
+ubuntu_packages_for_ids() {
+  local id
+  local pkgs=()
+  for id in "$@"; do
+    case "$id" in
+      nodejs) pkgs+=(nodejs) ;;
+      npm) pkgs+=(npm) ;;
+      cava) pkgs+=(cava) ;;
+      jq) pkgs+=(jq) ;;
+      git) pkgs+=(git) ;;
+      rustup|cargo|rustc) pkgs+=(rustc cargo) ;;
+      pkgconf) pkgs+=(pkg-config) ;;
+      gtk4) pkgs+=(libgtk-4-dev) ;;
+    esac
+  done
+  printf '%s\n' "${pkgs[@]}" | awk 'NF && !seen[$0]++'
+}
+
+install_ubuntu_selected() {
+  local requested=("$@")
+  local pkgs=()
+  mapfile -t pkgs < <(ubuntu_packages_for_ids "${requested[@]}")
+  if ((${#pkgs[@]} == 0)); then
+    echo "[bootstrap-system] no supported Debian/Ubuntu packages mapped from: ${requested[*]}" >&2
+    return 1
+  fi
+  echo "[bootstrap-system] installing selected Debian/Ubuntu packages: ${pkgs[*]}"
+  apt-get update
+  apt-get install -y "${pkgs[@]}"
+}
+
 main() {
   require_root
+
+  if (($# > 0)); then
+    if need_cmd pacman; then
+      install_arch_selected "$@"
+      echo "[ok] selected system dependencies installed"
+      exit 0
+    fi
+
+    if need_cmd apt-get; then
+      install_ubuntu_selected "$@"
+      echo "[ok] selected system dependencies installed"
+      exit 0
+    fi
+
+    echo "[bootstrap-system] unsupported distro package manager for selected install: $*" >&2
+    exit 1
+  fi
 
   if need_cmd pacman; then
     install_arch_deps

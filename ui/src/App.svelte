@@ -56,6 +56,54 @@
     state: PreflightDepUiState;
   };
 
+  type SetupItem = {
+    id: string;
+    label: string;
+    installed: boolean;
+    state: 'ok' | 'missing';
+    path?: string;
+    detail?: string;
+    update?: VersionUpdateInfo;
+  };
+
+  type SetupStatus = {
+    ok: boolean;
+    dependencies: SetupItem[];
+    services: SetupItem[];
+    counts: {
+      dependencies_missing: number;
+      services_missing: number;
+    };
+  };
+
+  type SetupActionResult = {
+    ok: boolean;
+    code?: number;
+    logs?: string;
+    status?: SetupStatus;
+  };
+
+  type SetupVersionsResult = {
+    ok: boolean;
+    items: Record<string, VersionUpdateInfo>;
+  };
+
+  const SETUP_DEPENDENCY_CATALOG: Array<{id: string; label: string; pathLabel?: string}> = [
+    {id: 'kitowall', label: 'Kitowall CLI', pathLabel: 'kitowall'},
+    {id: 'kitsune', label: 'Kitsune', pathLabel: 'kitsune'},
+    {id: 'kitsune-rendercore', label: 'Kitsune RenderCore', pathLabel: 'kitsune-rendercore'},
+    {id: 'swww', label: 'swww', pathLabel: 'swww'},
+    {id: 'swww-daemon', label: 'swww-daemon', pathLabel: 'swww-daemon'},
+    {id: 'hyprctl', label: 'hyprctl', pathLabel: 'hyprctl'},
+    {id: 'cava', label: 'cava', pathLabel: 'cava'}
+  ];
+
+  const SETUP_SERVICE_CATALOG: Array<{id: string; label: string}> = [
+    {id: 'kitowall-config', label: 'Kitowall config'},
+    {id: 'kitowall-next.timer', label: 'kitowall-next.timer'},
+    {id: 'kitsune-rendercore.service', label: 'kitsune-rendercore.service'}
+  ];
+
   const PREFLIGHT_CHECKS: Array<{id: string; bin: string; optional?: boolean;}> = [
     {id: 'kitowall', bin: 'kitowall'},
     {id: 'kitsune', bin: 'kitsune'},
@@ -435,7 +483,7 @@
     strokeWidth: number;
   };
 
-  type SectionId = 'control' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
+  type SectionId = 'control' | 'setup' | 'settings' | 'history' | 'library' | 'packs' | 'logs' | 'kitsune' | 'kitsune-live';
   type UiLanguage = 'en' | 'es';
   type KitsuneTabId =
     | 'control'
@@ -446,6 +494,13 @@
 
   let namespace = 'kitowall';
   let health: HealthReport | null = null;
+  let setupStatus: SetupStatus | null = null;
+  let setupDeps: SetupItem[] = [];
+  let setupServices: SetupItem[] = [];
+  let setupBusy = false;
+  let setupBusyItemId = '';
+  let setupStatusLoaded = false;
+  let setupUpdatedAt: number | null = null;
   let preflight: PreflightStatus | null = null;
   let preflightDeps: PreflightDepUi[] = [];
   let preflightBusy = false;
@@ -1101,6 +1156,25 @@
     return '';
   }
 
+  function setupVersionLabel(item: SetupItem): string {
+    const update = item.update;
+    if (!update) return '';
+    const local = update.local_version?.trim() || '?';
+    const latest = update.latest_version?.trim();
+    if (latest && latest !== local) return `v${local} -> v${latest}`;
+    if (update.local_version) return `v${local}`;
+    if (latest) return `${tr('latest', 'ultima')}: v${latest}`;
+    return '';
+  }
+
+  function setupShowsVersion(item: SetupItem): boolean {
+    return item.id === 'kitowall' || item.id === 'kitsune' || item.id === 'kitsune-rendercore';
+  }
+
+  function setupHasUpdate(item: SetupItem): boolean {
+    return item.update?.update_available === true;
+  }
+
   function preflightMissingDeps(): PreflightDepUi[] {
     return preflightRowsForUi().filter(dep => dep.state !== 'ok' && !dep.optional);
   }
@@ -1186,6 +1260,96 @@
     });
   }
 
+  function setupDepsForUi(): SetupItem[] {
+    const byId = new Map(setupDeps.map(item => [item.id, item]));
+    return SETUP_DEPENDENCY_CATALOG.map(entry => {
+      const existing = byId.get(entry.id);
+      if (existing) return existing;
+      return {
+        id: entry.id,
+        label: entry.label,
+        installed: false,
+        state: 'missing',
+        path: '',
+        detail: entry.pathLabel
+      };
+    });
+  }
+
+  function setupServicesForUi(): SetupItem[] {
+    const byId = new Map(setupServices.map(item => [item.id, item]));
+    return SETUP_SERVICE_CATALOG.map(entry => {
+      const existing = byId.get(entry.id);
+      if (existing) return existing;
+      return {
+        id: entry.id,
+        label: entry.label,
+        installed: false,
+        state: 'missing',
+        detail: '-'
+      };
+    });
+  }
+
+  function setupMissingDeps(): SetupItem[] {
+    return setupDepsForUi().filter(item => !item.installed);
+  }
+
+  function setupMissingServices(): SetupItem[] {
+    return setupServicesForUi().filter(item => !item.installed);
+  }
+
+  function setupMissingCount(): number {
+    return setupMissingDeps().length + setupMissingServices().length;
+  }
+
+  function setupStatusBadge(item: SetupItem): 'ok' | 'warn' {
+    return item.installed ? 'ok' : 'warn';
+  }
+
+  function setupStatusLabel(item: SetupItem): string {
+    if (!setupStatusLoaded) return tr('checking...', 'revisando...');
+    return item.installed ? tr('installed', 'instalado') : tr('missing', 'faltante');
+  }
+
+  async function loadSetupStatus(): Promise<void> {
+    try {
+      const report = await Promise.race([
+        invoke<SetupStatus>('kitowall_setup_status', {namespace}),
+        sleepMs(4000).then(() => {
+          throw new Error('setup status timed out');
+        })
+      ]);
+      setupStatus = report;
+      setupDeps = Array.isArray(report.dependencies) ? report.dependencies : [];
+      setupServices = Array.isArray(report.services) ? report.services : [];
+      setupUpdatedAt = Date.now();
+    } catch (e) {
+      lastError = String(e);
+      pushPreflightLog(`setup status failed: ${String(e)}`, 'error');
+    } finally {
+      setupStatusLoaded = true;
+    }
+  }
+
+  async function loadSetupVersions(): Promise<void> {
+    try {
+      const report = await Promise.race([
+        invoke<SetupVersionsResult>('kitowall_setup_versions'),
+        sleepMs(5000).then(() => {
+          throw new Error('setup versions timed out');
+        })
+      ]);
+      const items = report?.items ?? {};
+      setupDeps = setupDeps.map(dep => ({
+        ...dep,
+        update: items[dep.id] ?? dep.update
+      }));
+    } catch {
+      // non-blocking
+    }
+  }
+
   async function loadPreflightStatus(): Promise<void> {
     try {
       const report = await invoke<PreflightStatus>('kitowall_preflight_status');
@@ -1226,18 +1390,16 @@
   }
 
   function selectSection(id: SectionId): void {
-    if (shouldBlockForPreflight() && id !== 'control') {
-      activeSection = 'control';
-      mobileMenuOpen = false;
-      return;
-    }
     activeSection = id;
     mobileMenuOpen = false;
     if (id === 'control') {
-      void loadPreflightStatus();
-      if (!shouldBlockForPreflight() && !health) {
+      if (!health) {
         void runHealth();
       }
+    }
+    if (id === 'setup') {
+      void loadSetupStatus();
+      void loadSetupVersions();
     }
     if (id === 'settings') {
       void loadSettings();
@@ -5596,7 +5758,6 @@
     lastError = null;
     try {
       health = await invoke<HealthReport>('kitowall_check', {namespace});
-      await loadPreflightStatus();
     } catch (e) {
       const message = String(e);
       lastError = message;
@@ -6637,6 +6798,76 @@
     }
   }
 
+  async function runSetupInstallItem(id: string): Promise<void> {
+    if (!id || setupBusy) return;
+    setupBusy = true;
+    setupBusyItemId = id;
+    lastError = null;
+    preflightUiLogOffset = 0;
+    if (preflightUiLogPollTimer) clearInterval(preflightUiLogPollTimer);
+    preflightUiLogPollTimer = setInterval(() => {
+      void pollPreflightUiLog();
+    }, 1000);
+    try {
+      preflightLogs = [];
+      pushPreflightLog(`> ${id}`, 'info');
+      const result = await invoke<SetupActionResult>('kitowall_setup_install_item', {id, namespace});
+      await pollPreflightUiLog();
+      const actionLogs = String(result.logs ?? '').trim();
+      if (actionLogs) {
+        for (const line of actionLogs.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          pushPreflightLog(trimmed, classifyPreflightLogLine(trimmed));
+        }
+      }
+      if (!result.ok) {
+        throw new Error(
+          `setup item failed (code=${result.code ?? 1}): ${id}. ` +
+          tr('Check installer logs in the right panel.', 'Revisa los logs del instalador en el panel derecho.')
+        );
+      }
+      if (result.status) {
+        setupStatus = result.status;
+        setupDeps = Array.isArray(result.status.dependencies) ? result.status.dependencies : [];
+        setupServices = Array.isArray(result.status.services) ? result.status.services : [];
+        setupUpdatedAt = Date.now();
+      } else {
+        await loadSetupStatus();
+      }
+      await runHealth();
+      pushToast(tr('Action completed', 'Accion completada'), 'success');
+    } catch (e) {
+      const msg = String(e);
+      lastError = msg;
+      pushPreflightLog(msg, 'error');
+      pushToast(msg, 'error');
+    } finally {
+      if (preflightUiLogPollTimer) {
+        clearInterval(preflightUiLogPollTimer);
+        preflightUiLogPollTimer = null;
+      }
+      await pollPreflightUiLog();
+      setupBusy = false;
+      setupBusyItemId = '';
+      await loadSetupStatus();
+    }
+  }
+
+  async function runSetupInstallAll(): Promise<void> {
+    if (setupBusy) return;
+    const pending = [...setupMissingDeps(), ...setupMissingServices()];
+    if (pending.length === 0) {
+      pushToast(tr('Everything is already installed', 'Todo ya esta instalado'), 'info');
+      return;
+    }
+    preflightLogs = [];
+    for (const item of pending) {
+      await runSetupInstallItem(item.id);
+      if (lastError) break;
+    }
+  }
+
   async function runPreflightInstall() {
     if (preflightBusy) return;
     preflightBusy = true;
@@ -6903,12 +7134,9 @@
     } catch {}
 
     void (async () => {
-      await bootstrapInitialPreflight();
-      if (shouldBlockForPreflight()) {
-        activeSection = 'control';
-      } else {
-        await runHealth();
-      }
+      await loadSetupStatus();
+      void loadSetupVersions();
+      await runHealth();
       void runStatus();
       void runListPacks();
       void loadPacksRaw();
@@ -6926,12 +7154,12 @@
 
     const onFocus = () => {
       void syncStatus();
-      void loadPreflightStatus();
+      void loadSetupStatus();
       void loadLiveAuthorityStatus();
     };
     const onVisibility = () => {
       if (!document.hidden) void syncStatus();
-      if (!document.hidden) void loadPreflightStatus();
+      if (!document.hidden) void loadSetupStatus();
       if (!document.hidden) void runListPacks();
     };
     const onWindowClick = (event: MouseEvent) => {
@@ -6980,11 +7208,7 @@
     void stopLiveV2NativePreview();
   });
 
-  $: if (shouldBlockForPreflight() && activeSection !== 'control') {
-    activeSection = 'control';
-  }
-
-  $: if (activeSection === 'control' && !shouldBlockForPreflight() && !health && !busy) {
+  $: if (activeSection === 'control' && !health && !busy) {
     void runHealth();
   }
 </script>
@@ -7018,6 +7242,12 @@
     <div class="menu-items">
     <button class={`menu-item ${activeSection === 'control' ? 'active' : ''}`} on:click={() => selectSection('control')}>
       {tr('Control Center', 'Centro de Control')}
+    </button>
+    <button class={`menu-item ${activeSection === 'setup' ? 'active' : ''}`} on:click={() => selectSection('setup')}>
+      {tr('Host Setup', 'Host Setup')}
+      {#if setupMissingCount() > 0}
+        <span class="menu-pill">{setupMissingCount()}</span>
+      {/if}
     </button>
     <button class={`menu-item ${activeSection === 'settings' ? 'active' : ''}`} on:click={() => selectSection('settings')}>
       {tr('General Settings', 'Configuracion General')}
@@ -7081,127 +7311,7 @@
       </div>
     {/if}
 
-    {#if shouldBlockForPreflight()}
-      <div class="modal-backdrop preflight-blocker-backdrop" role="presentation">
-        <div class="modal-card preflight-blocker-modal" role="dialog" aria-modal="true" aria-label={tr('Dependency Installer', 'Instalador de Dependencias')}>
-          <h2>{tr('Dependency Installer', 'Instalador de Dependencias')}</h2>
-          <p class="muted">
-            {tr(
-              'Required host dependencies are missing. Installation must complete before the rest of the UI is available.',
-              'Faltan dependencias requeridas del host. La instalacion debe completarse antes de habilitar el resto de la interfaz.'
-            )}
-          </p>
-          <div class="preflight-deps-grid">
-            {#each preflightRowsForUi() as dep (dep.id)}
-              <div class="preflight-dep-row">
-                <div class="preflight-dep-main">
-                  <span class="preflight-dep-name">{dep.bin}</span>
-                  <span class="preflight-dep-path">{preflightPathLabel(dep)}</span>
-                  {#if preflightVersionLabel(dep)}
-                    <span class="preflight-dep-path">{preflightVersionLabel(dep)}</span>
-                  {/if}
-                </div>
-                <span class={`badge status ${preflightBadgeState(dep)}`}>{preflightStatusLabel(dep)}</span>
-              </div>
-            {/each}
-          </div>
-          <div class="row actions-buttons-row">
-            <button on:click={runPreflightInstall} disabled={preflightBusy || isLiveServicesLocked()}>
-              {preflightBusy ? tr('Installing...', 'Instalando...') : tr('Install Dependencies', 'Instalar Dependencias')}
-            </button>
-            <button class="secondary" on:click={loadPreflightStatus} disabled={preflightBusy}>{tr('Refresh', 'Actualizar')}</button>
-            <span class={`badge status ${preflightMissingDeps().length === 0 ? 'ok' : 'warn'}`}>
-              {tr('missing', 'faltantes')}: {preflightMissingDeps().length}
-            </span>
-          </div>
-          {#if preflightLogs.length > 0}
-            <div class="log-list preflight-log-list preflight-blocker-log-list">
-              {#each preflightLogs as log, i (`preflight-block-${log.ts}-${i}`)}
-                <div class={`log-item ${log.kind}`}>
-                  <span>{formatTimestamp(log.ts)}</span>
-                  <span>{log.message}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
-
     {#if activeSection === 'control'}
-        {#if shouldShowPreflightInstaller()}
-        <h2>{tr('Dependency Installer', 'Instalador de Dependencias')}</h2>
-        <div class="preflight-layout">
-          <div class="card preflight-main">
-            <div class="row actions-input-row">
-              <label for="namespace-input">{tr('Namespace', 'Namespace')}</label>
-              <input id="namespace-input" bind:value={namespace} placeholder="kitowall" />
-              <button class="secondary" on:click={loadPreflightStatus} disabled={preflightBusy}>{tr('Refresh', 'Actualizar')}</button>
-            </div>
-            <div class="banner warn">
-              {tr(
-                'Control Center is paused because required dependencies are missing.',
-                'El Centro de Control esta pausado porque faltan dependencias requeridas.'
-              )}
-            </div>
-            <div class="preflight-deps-grid">
-              {#each preflightRowsForUi() as dep (dep.id)}
-                <div class="preflight-dep-row">
-                  <div class="preflight-dep-main">
-                    <span class="preflight-dep-name">{dep.bin}</span>
-                    <span class="preflight-dep-path">{preflightPathLabel(dep)}</span>
-                    {#if preflightVersionLabel(dep)}
-                      <span class="preflight-dep-path">{preflightVersionLabel(dep)}</span>
-                    {/if}
-                  </div>
-                  <span class={`badge status ${preflightBadgeState(dep)}`}>{preflightStatusLabel(dep)}</span>
-                </div>
-              {/each}
-            </div>
-            <div class="row actions-buttons-row">
-              <button on:click={runPreflightInstall} disabled={preflightBusy || isLiveServicesLocked()}>
-                {preflightBusy ? tr('Installing...', 'Instalando...') : tr('Install Dependencies', 'Instalar Dependencias')}
-              </button>
-              {#if preflightKitsuneUpdatesAvailable()}
-                <button class="secondary" on:click={runKitsuneUpdate} disabled={preflightBusy || kitsuneUpdateBusy}>
-                  {kitsuneUpdateBusy ? tr('Updating...', 'Actualizando...') : tr('Update Kitsune', 'Actualizar Kitsune')}
-                </button>
-              {/if}
-              <button class="secondary" on:click={runHealth} disabled={preflightBusy}>{tr('Recheck Health', 'Revisar Health')}</button>
-              {#if preflightUpdatedAt}
-                <span class="badge">{tr('last check', 'ultima revision')}: {formatTimestamp(preflightUpdatedAt)}</span>
-              {/if}
-              <span class={`badge status ${preflightMissingDeps().length === 0 ? 'ok' : 'warn'}`}>
-                {tr('missing', 'faltantes')}: {preflightMissingDeps().length}
-              </span>
-            </div>
-            {#if preflightKitsuneUpdatesAvailable()}
-              <p class="muted">
-                {tr(
-                  'A newer release of Kitsune or RenderCore is available on GitHub.',
-                  'Hay una release mas nueva de Kitsune o RenderCore disponible en GitHub.'
-                )}
-              </p>
-            {/if}
-          </div>
-          <div class="card preflight-logs">
-            <h3>{tr('Installation Logs', 'Logs de Instalacion')}</h3>
-            {#if preflightLogs.length === 0}
-              <p class="muted">{tr('No logs yet.', 'Aun no hay logs.')}</p>
-            {:else}
-              <div class="log-list preflight-log-list">
-                {#each preflightLogs as log, i (`${log.ts}-${i}`)}
-                  <div class="log-item">
-                    <span class={`badge status ${log.kind === 'error' ? 'bad' : log.kind === 'success' ? 'ok' : 'warn'}`}>{log.kind}</span>
-                    <span class="log-time">{new Date(log.ts).toLocaleTimeString()}</span>
-                    <span class="log-msg">{log.message}</span>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </div>
-      {:else}
       <div class="card">
         <div class="row actions-input-row">
           <label for="namespace-input">{tr('Namespace', 'Namespace')}</label>
@@ -7412,7 +7522,97 @@
           </div>
         {/if}
       </div>
-      {/if}
+    {:else if activeSection === 'setup'}
+      <h2>{tr('Host Setup', 'Host Setup')}</h2>
+      <div class="card">
+        <div class="row actions-input-row">
+          <label for="namespace-setup-input">{tr('Namespace', 'Namespace')}</label>
+          <input id="namespace-setup-input" bind:value={namespace} placeholder="kitowall" />
+          <button class="secondary" on:click={loadSetupStatus} disabled={setupBusy}>{tr('Refresh', 'Actualizar')}</button>
+          <button on:click={runSetupInstallAll} disabled={setupBusy || isLiveServicesLocked()}>
+            {setupBusy ? tr('Working...', 'Trabajando...') : tr('Install / Repair All', 'Instalar / Reparar Todo')}
+          </button>
+          {#if setupUpdatedAt}
+            <span class="badge">{tr('last check', 'ultima revision')}: {formatTimestamp(setupUpdatedAt)}</span>
+          {/if}
+          <span class={`badge status ${setupMissingCount() === 0 ? 'ok' : 'warn'}`}>
+            {tr('missing', 'faltantes')}: {setupMissingCount()}
+          </span>
+        </div>
+      </div>
+
+      <div class="preflight-layout">
+        <div class="card preflight-main">
+          <h3>{tr('Dependencies', 'Dependencias')}</h3>
+          <div class="preflight-deps-grid">
+            {#each setupDepsForUi() as dep (dep.id)}
+              <div class="preflight-dep-row">
+                <div class="preflight-dep-main">
+                  <span class="preflight-dep-name">{dep.label}</span>
+                  <span class="preflight-dep-path">{dep.path || tr('not found on host', 'no encontrado en host')}</span>
+                  {#if setupShowsVersion(dep) && setupVersionLabel(dep)}
+                    <span class="preflight-dep-path">{setupVersionLabel(dep)}</span>
+                  {/if}
+                </div>
+                <div class="row actions-buttons-row">
+                  <span class={`badge status ${setupStatusBadge(dep)}`}>{setupStatusLabel(dep)}</span>
+                  {#if setupHasUpdate(dep)}
+                    <span class="badge status warn">{tr('update available', 'actualizacion disponible')}</span>
+                  {/if}
+                  <button
+                    class="secondary"
+                    on:click={() => runSetupInstallItem(dep.id)}
+                    disabled={setupBusy || isLiveServicesLocked()}
+                  >
+                    {setupBusy && setupBusyItemId === dep.id ? tr('Working...', 'Trabajando...') : dep.installed ? tr('Reinstall', 'Reinstalar') : tr('Install', 'Instalar')}
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="card preflight-main">
+          <h3>{tr('Services and host state', 'Servicios y estado del host')}</h3>
+          <div class="preflight-deps-grid">
+            {#each setupServicesForUi() as svc (svc.id)}
+              <div class="preflight-dep-row">
+                <div class="preflight-dep-main">
+                  <span class="preflight-dep-name">{svc.label}</span>
+                  <span class="preflight-dep-path">{svc.detail || svc.path || '-'}</span>
+                </div>
+                <div class="row actions-buttons-row">
+                  <span class={`badge status ${setupStatusBadge(svc)}`}>{!setupStatusLoaded ? tr('checking...', 'revisando...') : svc.installed ? tr('ready', 'listo') : tr('missing', 'faltante')}</span>
+                  <button
+                    class="secondary"
+                    on:click={() => runSetupInstallItem(svc.id)}
+                    disabled={setupBusy || isLiveServicesLocked()}
+                  >
+                    {setupBusy && setupBusyItemId === svc.id ? tr('Working...', 'Trabajando...') : svc.installed ? tr('Repair', 'Reparar') : tr('Install', 'Instalar')}
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="card preflight-logs">
+          <h3>{tr('Setup Logs', 'Logs de Setup')}</h3>
+          {#if preflightLogs.length === 0}
+            <p class="muted">{tr('No logs yet.', 'Aun no hay logs.')}</p>
+          {:else}
+            <div class="log-list preflight-log-list">
+              {#each preflightLogs as log, i (`setup-${log.ts}-${i}`)}
+                <div class="log-item">
+                  <span class={`badge status ${log.kind === 'error' ? 'bad' : log.kind === 'success' ? 'ok' : 'warn'}`}>{log.kind}</span>
+                  <span class="log-time">{new Date(log.ts).toLocaleTimeString()}</span>
+                  <span class="log-msg">{log.message}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
     {:else if activeSection === 'settings'}
       <h2>{tr('General Settings', 'Configuracion General')}</h2>
       <div class="card">

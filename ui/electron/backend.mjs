@@ -8,6 +8,20 @@ import {spawn} from 'node:child_process';
 const RELEASE_CACHE = new Map();
 const NATIVE_PREVIEW = {child: null};
 const UI_LOG_PATH = '/tmp/kitowall-kitsune-ui.log';
+const HOST_DEPENDENCY_DEFS = [
+  {id: 'kitowall', bin: 'kitowall', label: 'Kitowall CLI', installer: 'kitowall-only'},
+  {id: 'kitsune', bin: 'kitsune', label: 'Kitsune', installer: 'kitsune-only'},
+  {id: 'kitsune-rendercore', bin: 'kitsune-rendercore', label: 'Kitsune RenderCore', installer: 'kitsune-only'},
+  {id: 'swww', bin: 'swww', label: 'swww', installer: 'swww', system: true},
+  {id: 'swww-daemon', bin: 'swww-daemon', label: 'swww-daemon', installer: 'swww-daemon', system: true},
+  {id: 'hyprctl', bin: 'hyprctl', label: 'hyprctl', installer: 'hyprctl', system: true},
+  {id: 'cava', bin: 'cava', label: 'cava', installer: 'cava', system: true}
+];
+const HOST_SERVICE_DEFS = [
+  {id: 'kitowall-config', label: 'Kitowall config', installer: 'kitowall-config'},
+  {id: 'kitowall-next.timer', label: 'kitowall-next.timer', installer: 'kitowall-next.timer'},
+  {id: 'kitsune-rendercore.service', label: 'kitsune-rendercore.service', installer: 'kitsune-rendercore.service'}
+];
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const PACKAGED_CLI_DIR = path.join(process.resourcesPath, 'kitowall-cli');
@@ -430,6 +444,37 @@ async function runPrivilegedSystemBootstrap() {
   };
 }
 
+async function runPrivilegedSystemItems(ids = []) {
+  const helper = await resolveBootstrapSystemPath();
+  const env = await polkitAwareEnv();
+  appendKitsuneUiLog(
+    `runPrivilegedSystemItems: helper=${helper} ids=${ids.join(',') || '(full)'} display=${env.DISPLAY || ''} wayland=${env.WAYLAND_DISPLAY || ''} runtime=${env.XDG_RUNTIME_DIR || ''} dbus=${env.DBUS_SESSION_BUS_ADDRESS ? 'set' : 'missing'}`
+  );
+  const out = await runLoggedProcess('pkexec', ['bash', helper, ...ids], {
+    env,
+    allowNonZero: true
+  });
+  return {
+    ok: out.code === 0,
+    code: out.code,
+    logs: `${out.stdout}${out.stderr}`
+  };
+}
+
+async function runBootstrapHostMode(mode, extraEnv = {}) {
+  const bootstrapPath = await resolveBootstrapPath();
+  const home = await hostHomeDir();
+  return await runLoggedProcess('bash', [bootstrapPath], {
+    env: await hostAwareEnv({
+      HOME: home,
+      KITOWALL_SKIP_SYSTEM_DEPS: '1',
+      KITOWALL_BOOTSTRAP_MODE: mode,
+      ...extraEnv
+    }),
+    allowNonZero: true
+  });
+}
+
 async function readKitsunePalette(palettePath = '/tmp/kitsune-accent.palette') {
   try {
     const raw = await fs.readFile(palettePath, 'utf8');
@@ -739,7 +784,14 @@ async function listWallpaperItems() {
 async function systemctlShow(unit, props) {
   const args = ['--user', 'show', unit, '--no-pager'];
   for (const prop of props) args.push('-p', prop);
-  const out = await runProcess('systemctl', args, {env: await hostAwareEnv()});
+  const out = await runProcess('systemctl', args, {
+    env: await hostAwareEnv(),
+    timeoutMs: 2500,
+    allowNonZero: true
+  });
+  if ((out.code ?? 0) !== 0) {
+    throw new Error(out.stderr.trim() || out.stdout.trim() || `systemctl show failed for ${unit}`);
+  }
   const data = {};
   for (const line of out.stdout.split('\n')) {
     const idx = line.indexOf('=');
@@ -770,6 +822,130 @@ async function shouldInstallKitowallTimer() {
   if (!loadState || loadState === 'not-found') return true;
   if (!unitFileState || unitFileState === 'disabled' || unitFileState === 'masked') return true;
   return false;
+}
+
+async function buildDependencyStatus() {
+  const deps = [];
+  for (const def of HOST_DEPENDENCY_DEFS) {
+    let binPath = '';
+    let update = {local_version: null, latest_version: null, update_available: false};
+    try {
+      binPath = await resolveHostBinPath(def.bin);
+    } catch {}
+    try {
+      update.local_version = await readBootstrapVersion(def.id);
+    } catch {}
+    deps.push({
+      id: def.id,
+      bin: def.bin,
+      label: def.label,
+      installed: !!binPath,
+      path: binPath,
+      state: binPath ? 'ok' : 'missing',
+      update
+    });
+  }
+  return deps;
+}
+
+async function buildSetupVersionStatus() {
+  const items = {};
+  for (const id of ['kitowall', 'kitsune', 'kitsune-rendercore']) {
+    try {
+      items[id] = await componentUpdateInfo(id);
+    } catch {
+      items[id] = {local_version: null, latest_version: null, update_available: false};
+    }
+  }
+  return {ok: true, items};
+}
+
+async function buildServiceStatus(namespace = 'kitowall') {
+  const home = await hostHomeDir();
+  const configPath = path.join(home, '.config', 'kitowall', 'config.json');
+  const hasConfig = await fileExists(configPath);
+  const timer = await maybeSystemctlShow('kitowall-next.timer', ['LoadState', 'ActiveState', 'UnitFileState', 'SubState']);
+  const rendercore = await maybeSystemctlShow('kitsune-rendercore.service', ['LoadState', 'ActiveState', 'UnitFileState', 'SubState']);
+
+  const timerInstalled = !!timer && String(timer.LoadState ?? '').trim().toLowerCase() !== 'not-found' && !!String(timer.UnitFileState ?? '').trim();
+  const rendercoreInstalled = !!rendercore && String(rendercore.LoadState ?? '').trim().toLowerCase() !== 'not-found' && !!String(rendercore.UnitFileState ?? '').trim();
+
+  return [
+    {
+      id: 'kitowall-config',
+      label: 'Kitowall config',
+      installed: hasConfig,
+      path: configPath,
+      state: hasConfig ? 'ok' : 'missing',
+      detail: hasConfig ? `namespace=${namespace}` : 'config.json missing'
+    },
+    {
+      id: 'kitowall-next.timer',
+      label: 'kitowall-next.timer',
+      installed: timerInstalled,
+      state: timerInstalled ? 'ok' : 'missing',
+      detail: timer
+        ? `load=${String(timer.LoadState ?? 'n/a')} active=${String(timer.ActiveState ?? 'n/a')} unit=${String(timer.UnitFileState ?? 'n/a')}`
+        : 'timer not installed'
+    },
+    {
+      id: 'kitsune-rendercore.service',
+      label: 'kitsune-rendercore.service',
+      installed: rendercoreInstalled,
+      state: rendercoreInstalled ? 'ok' : 'missing',
+      detail: rendercore
+        ? `load=${String(rendercore.LoadState ?? 'n/a')} active=${String(rendercore.ActiveState ?? 'n/a')} unit=${String(rendercore.UnitFileState ?? 'n/a')}`
+        : 'service not installed'
+    }
+  ];
+}
+
+async function buildSetupStatus(namespace = 'kitowall') {
+  const dependencies = await buildDependencyStatus().catch(() => []);
+  const services = await buildServiceStatus(namespace).catch(() => []);
+  return {
+    ok: dependencies.every(item => item.installed) && services.every(item => item.installed),
+    dependencies,
+    services,
+    counts: {
+      dependencies_missing: dependencies.filter(item => !item.installed).length,
+      services_missing: services.filter(item => !item.installed).length
+    }
+  };
+}
+
+async function installSetupItem(id, namespace = 'kitowall') {
+  appendKitsuneUiLog(`setup install item: ${id}`);
+  if (HOST_DEPENDENCY_DEFS.some(item => item.id === id && item.system)) {
+    return await runPrivilegedSystemItems([id]);
+  }
+
+  if (id === 'kitowall') {
+    const out = await runBootstrapHostMode('kitowall-only');
+    return {ok: out.code === 0, code: out.code, logs: `${out.stdout}${out.stderr}`};
+  }
+
+  if (id === 'kitsune' || id === 'kitsune-rendercore') {
+    const out = await runBootstrapHostMode('kitsune-only');
+    return {ok: out.code === 0, code: out.code, logs: `${out.stdout}${out.stderr}`};
+  }
+
+  if (id === 'kitowall-config') {
+    const out = await runKitowall(['init', '--namespace', namespace, '--apply', '--force', '--json']);
+    return {ok: true, code: 0, logs: JSON.stringify(out, null, 2)};
+  }
+
+  if (id === 'kitowall-next.timer') {
+    const out = await runKitowallRaw(['install-systemd', '--every', '600s']);
+    return {ok: true, code: 0, logs: String(out ?? '')};
+  }
+
+  if (id === 'kitsune-rendercore.service') {
+    const out = await runBootstrapHostMode('kitsune-only');
+    return {ok: out.code === 0, code: out.code, logs: `${out.stdout}${out.stderr}`};
+  }
+
+  throw new Error(`unsupported setup item: ${id}`);
 }
 
 async function ensureUiAutostartEntry() {
@@ -837,6 +1013,22 @@ export async function createBackend(win) {
     convertFileSrc,
     async invoke(command, args = {}) {
       switch (command) {
+        case 'kitowall_setup_status':
+          return await buildSetupStatus(args.namespace || 'kitowall');
+        case 'kitowall_setup_versions':
+          return await buildSetupVersionStatus();
+        case 'kitowall_setup_install_item': {
+          const namespace = args.namespace || 'kitowall';
+          const id = String(args.id || '').trim();
+          await fs.writeFile(UI_LOG_PATH, '', 'utf8').catch(() => {});
+          const out = await installSetupItem(id, namespace);
+          return {
+            ok: !!out.ok,
+            code: out.code,
+            logs: String(out.logs ?? ''),
+            status: await buildSetupStatus(namespace)
+          };
+        }
         case 'kitowall_preflight_status': {
           const checks = [
             ['kitowall', 'kitowall', false],

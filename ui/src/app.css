@@ -113,6 +113,19 @@ main {
   background: rgba(165, 14, 219, 0.18);
 }
 
+.menu-pill {
+  float: right;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 181, 72, 0.16);
+  border: 1px solid rgba(255, 181, 72, 0.28);
+  color: #ffd489;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .sidebar-footer {
   margin-top: auto;
   border-top: 1px solid var(--border-soft);

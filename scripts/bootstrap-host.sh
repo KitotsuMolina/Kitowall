@@ -422,6 +422,8 @@ verify_bins() {
   local required_bins=()
   if [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-only" || "$KITOWALL_BOOTSTRAP_MODE" == "kitsune-repair" ]]; then
     required_bins=(kitsune kitsune-rendercore)
+  elif [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitowall-only" ]]; then
+    required_bins=(kitowall)
   else
     required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
   fi
@@ -493,6 +495,18 @@ main() {
     repair_kitsune_host_layout
     verify_bins
     echo "[ok] kitsune host repair complete"
+    exit 0
+  fi
+  if [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitowall-only" ]]; then
+    if [[ "$KITOWALL_SKIP_SYSTEM_DEPS" != "1" ]]; then
+      install_system_deps
+    fi
+    install_kitowall_cli
+    verify_bins
+    echo "[ok] kitowall bootstrap complete"
+    echo "[paths] HOME=$HOME"
+    echo "[paths] kitowall=$(command -v kitowall || echo '<missing>')"
+    echo "[info] bootstrap finished; manual init is only needed on a fresh host without config"
     exit 0
   fi
   if [[ "$KITOWALL_BOOTSTRAP_MODE" != "kitsune-only" && "$KITOWALL_SKIP_SYSTEM_DEPS" != "1" ]]; then
