@@ -40,6 +40,10 @@
         "to": "bootstrap-host.sh"
       },
       {
+        "from": "../scripts/bootstrap-system.sh",
+        "to": "bootstrap-system.sh"
+      },
+      {
         "from": "../dist",
         "to": "kitowall-cli",
         "filter": [

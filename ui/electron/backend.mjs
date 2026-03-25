@@ -12,7 +12,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const PACKAGED_CLI_DIR = path.join(process.resourcesPath, 'kitowall-cli');
 const PACKAGED_BOOTSTRAP = path.join(process.resourcesPath, 'bootstrap-host.sh');
+const PACKAGED_BOOTSTRAP_SYSTEM = path.join(process.resourcesPath, 'bootstrap-system.sh');
 const DEV_BOOTSTRAP = path.join(ROOT_DIR, 'scripts', 'bootstrap-host.sh');
+const DEV_BOOTSTRAP_SYSTEM = path.join(ROOT_DIR, 'scripts', 'bootstrap-system.sh');
 
 function appendKitsuneUiLog(message) {
   const ts = Math.floor(Date.now() / 1000);
@@ -72,6 +74,11 @@ async function fileExists(targetPath) {
 async function resolveBootstrapPath() {
   if (await fileExists(DEV_BOOTSTRAP)) return DEV_BOOTSTRAP;
   return PACKAGED_BOOTSTRAP;
+}
+
+async function resolveBootstrapSystemPath() {
+  if (await fileExists(DEV_BOOTSTRAP_SYSTEM)) return DEV_BOOTSTRAP_SYSTEM;
+  return PACKAGED_BOOTSTRAP_SYSTEM;
 }
 
 function normalizeGroupFileNameValue(value) {
@@ -297,6 +304,19 @@ async function runJsonCommandAllowNonZero(base, args = [], extraEnv = {}, cwd) {
 async function runRawCommand(base, args = [], extraEnv = {}, cwd) {
   const out = await runProcess(base, args, {env: await hostAwareEnv(extraEnv), cwd});
   return out.stdout;
+}
+
+async function runPrivilegedSystemBootstrap() {
+  const helper = await resolveBootstrapSystemPath();
+  const out = await runProcess('pkexec', [helper], {
+    env: await hostAwareEnv(),
+    allowNonZero: true
+  });
+  return {
+    ok: out.code === 0,
+    code: out.code,
+    logs: `${out.stdout}${out.stderr}`
+  };
 }
 
 async function readKitsunePalette(palettePath = '/tmp/kitsune-accent.palette') {
@@ -710,11 +730,30 @@ export async function createBackend(win) {
           const namespace = args.namespace || 'kitowall';
           const bootstrapPath = await resolveBootstrapPath();
           const home = await hostHomeDir();
+          const privileged = await runPrivilegedSystemBootstrap();
+          const privilegedLogs = String(privileged.logs ?? '').trim();
+          if (!privileged.ok) {
+            return {
+              ok: false,
+              step: 'bootstrap-system',
+              code: privileged.code,
+              namespace,
+              logs: privilegedLogs,
+              deps: await this.invoke('kitowall_preflight_status'),
+              paths: {
+                home,
+                local_bin: path.join(home, '.local', 'bin'),
+                cargo_bin: path.join(home, '.cargo', 'bin'),
+                kitowall_config: path.join(home, '.config', 'kitowall'),
+                rendercore_env: path.join(home, '.config', 'kitsune-rendercore', 'env')
+              }
+            };
+          }
           const out = await runProcess('bash', [bootstrapPath], {
-            env: await hostAwareEnv({HOME: home}),
+            env: await hostAwareEnv({HOME: home, KITOWALL_SKIP_SYSTEM_DEPS: '1'}),
             allowNonZero: true
           });
-          const logs = `${out.stdout}${out.stderr}`;
+          const logs = `${privilegedLogs ? `${privilegedLogs}\n` : ''}${out.stdout}${out.stderr}`;
           const deps = await this.invoke('kitowall_preflight_status');
           if (out.code !== 0) {
             return {
@@ -1301,6 +1340,33 @@ export async function createBackend(win) {
           const cmdArgs = Array.isArray(args.args) ? args.args.map(String) : [];
           if (cmdArgs.length === 0) throw new Error('kitsune args are required');
           appendKitsuneUiLog(`kitowall_kitsune_run: begin args=${JSON.stringify(cmdArgs)}`);
+          if (cmdArgs[0] === 'install' && cmdArgs.includes('--install-packages')) {
+            appendKitsuneUiLog('kitowall_kitsune_run: invoking privileged bootstrap-system before install --install-packages');
+            const privileged = await runPrivilegedSystemBootstrap();
+            if (!privileged.ok) {
+              return {
+                ok: false,
+                exitCode: privileged.code,
+                stdout: '',
+                stderr: privileged.logs || 'privileged bootstrap failed',
+                args: cmdArgs
+              };
+            }
+            const filteredArgs = cmdArgs.filter(arg => arg !== '--install-packages');
+            const {base, prefixArgs, cwd} = await resolveKitsuneCmd();
+            const out = await runProcess(base, [...prefixArgs, ...filteredArgs], {
+              env: await hostAwareEnv(),
+              cwd,
+              allowNonZero: true
+            });
+            return {
+              ok: out.code === 0,
+              exitCode: out.code,
+              stdout: `${privileged.logs}${out.stdout}`,
+              stderr: out.stderr,
+              args: filteredArgs
+            };
+          }
           const {base, prefixArgs, cwd} = await resolveKitsuneCmd();
           const out = await runProcess(base, [...prefixArgs, ...cmdArgs], {
             env: await hostAwareEnv(),

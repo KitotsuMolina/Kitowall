@@ -9,6 +9,7 @@ KITSUNE_RENDERCORE_REPO="${KITSUNE_RENDERCORE_REPO:-https://github.com/KitotsuMo
 KITSUNE_TAG="${KITSUNE_TAG:-}"
 KITSUNE_RENDERCORE_TAG="${KITSUNE_RENDERCORE_TAG:-}"
 KITOWALL_BOOTSTRAP_MODE="${KITOWALL_BOOTSTRAP_MODE:-full}"
+KITOWALL_SKIP_SYSTEM_DEPS="${KITOWALL_SKIP_SYSTEM_DEPS:-0}"
 
 BOOTSTRAP_KITSUNE_VERSION=""
 BOOTSTRAP_RENDERCORE_VERSION=""
@@ -494,8 +495,10 @@ main() {
     echo "[ok] kitsune host repair complete"
     exit 0
   fi
-  if [[ "$KITOWALL_BOOTSTRAP_MODE" != "kitsune-only" ]]; then
+  if [[ "$KITOWALL_BOOTSTRAP_MODE" != "kitsune-only" && "$KITOWALL_SKIP_SYSTEM_DEPS" != "1" ]]; then
     install_system_deps
+    install_kitowall_cli
+  elif [[ "$KITOWALL_BOOTSTRAP_MODE" != "kitsune-only" ]]; then
     install_kitowall_cli
   fi
   install_kitsune_bins
