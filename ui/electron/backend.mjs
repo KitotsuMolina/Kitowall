@@ -311,11 +311,19 @@ async function shellOutput(cmdline) {
   return await runProcess('bash', ['-lc', cmdline], {env, allowNonZero: true});
 }
 
-async function resolveHostBinPath(bin) {
-  const out = await shellOutput(`command -v ${bin} || true`);
-  const byPath = out.stdout.trim();
-  if (byPath) return byPath;
+async function resolveBinFromPathEntries(bin) {
+  const entries = (await hostUserPath()).split(':').map(x => x.trim()).filter(Boolean);
+  for (const dir of entries) {
+    const candidate = path.join(dir, bin);
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {}
+  }
+  return '';
+}
 
+async function resolveHostBinPath(bin) {
   const home = await hostHomeDir();
   const fallback = {
     kitowall: [
@@ -340,6 +348,9 @@ async function resolveHostBinPath(bin) {
       return candidate;
     } catch {}
   }
+
+  const byPathEntries = await resolveBinFromPathEntries(bin);
+  if (byPathEntries) return byPathEntries;
 
   if (bin === 'kitowall') {
     for (const dir of await collectNpmPrefixBinDirs()) {
@@ -538,19 +549,36 @@ async function resolveKitowallCmd() {
   }
 
   const localCli = path.join(ROOT_DIR, 'dist', 'cli.js');
-  if (await fileExists(localCli)) {
-    return {base: 'node', prefixArgs: [localCli], cwd: ROOT_DIR};
-  }
-
   const hostCli = await resolveHostBinPath('kitowall');
-  if (hostCli) return {base: hostCli, prefixArgs: [], cwd: await hostHomeDir()};
-
   const packagedCli = path.join(PACKAGED_CLI_DIR, 'cli.js');
-  if (await fileExists(packagedCli)) {
-    return {base: 'node', prefixArgs: [packagedCli], cwd: await hostHomeDir()};
+
+  const mode = String(process.env.KITOWALL_CMD_MODE || 'auto').trim().toLowerCase();
+  const localAvailable = await fileExists(localCli);
+  const packagedAvailable = await fileExists(packagedCli);
+  const home = await hostHomeDir();
+
+  if (mode === 'local') {
+    if (localAvailable) return {base: 'node', prefixArgs: [localCli], cwd: ROOT_DIR};
+    throw new Error(`KITOWALL_CMD_MODE=local but local CLI was not found at ${localCli}`);
   }
 
-  return {base: 'kitowall', prefixArgs: [], cwd: await hostHomeDir()};
+  if (mode === 'host') {
+    if (hostCli) return {base: hostCli, prefixArgs: [], cwd: home};
+    if (packagedAvailable) return {base: 'node', prefixArgs: [packagedCli], cwd: home};
+    throw new Error('KITOWALL_CMD_MODE=host but no host-installed kitowall CLI was found');
+  }
+
+  if (app.isPackaged) {
+    if (hostCli) return {base: hostCli, prefixArgs: [], cwd: home};
+    if (packagedAvailable) return {base: 'node', prefixArgs: [packagedCli], cwd: home};
+    if (localAvailable) return {base: 'node', prefixArgs: [localCli], cwd: ROOT_DIR};
+  } else {
+    if (localAvailable) return {base: 'node', prefixArgs: [localCli], cwd: ROOT_DIR};
+    if (hostCli) return {base: hostCli, prefixArgs: [], cwd: home};
+    if (packagedAvailable) return {base: 'node', prefixArgs: [packagedCli], cwd: home};
+  }
+
+  return {base: 'kitowall', prefixArgs: [], cwd: home};
 }
 
 async function runKitowall(args = []) {
@@ -561,6 +589,15 @@ async function runKitowall(args = []) {
 async function runKitowallRaw(args = []) {
   const {base, prefixArgs, cwd} = await resolveKitowallCmd();
   return await runRawCommand(base, [...prefixArgs, ...args], {}, cwd);
+}
+
+async function runLoggedKitowallRaw(args = []) {
+  const {base, prefixArgs, cwd} = await resolveKitowallCmd();
+  return await runLoggedProcess(base, [...prefixArgs, ...args], {
+    env: await hostAwareEnv(),
+    cwd,
+    allowNonZero: true
+  });
 }
 
 async function resolveKitsuneCmd() {
@@ -825,8 +862,7 @@ async function shouldInstallKitowallTimer() {
 }
 
 async function buildDependencyStatus() {
-  const deps = [];
-  for (const def of HOST_DEPENDENCY_DEFS) {
+  return await Promise.all(HOST_DEPENDENCY_DEFS.map(async def => {
     let binPath = '';
     let update = {local_version: null, latest_version: null, update_available: false};
     try {
@@ -835,7 +871,7 @@ async function buildDependencyStatus() {
     try {
       update.local_version = await readBootstrapVersion(def.id);
     } catch {}
-    deps.push({
+    return {
       id: def.id,
       bin: def.bin,
       label: def.label,
@@ -843,9 +879,42 @@ async function buildDependencyStatus() {
       path: binPath,
       state: binPath ? 'ok' : 'missing',
       update
-    });
+    };
+  }));
+}
+
+async function buildDependencyItem(id) {
+  const def = HOST_DEPENDENCY_DEFS.find(item => item.id === id);
+  if (!def) throw new Error(`unknown dependency id: ${id}`);
+
+  let binPath = '';
+  let error = '';
+  let update = {local_version: null, latest_version: null, update_available: false};
+  try {
+    binPath = await resolveHostBinPath(def.bin);
+  } catch (err) {
+    error = String(err?.message ?? err ?? '');
   }
-  return deps;
+  try {
+    if (def.id === 'kitowall' || def.id === 'kitsune' || def.id === 'kitsune-rendercore') {
+      update = await componentUpdateInfo(def.id);
+    } else {
+      update.local_version = await readBootstrapVersion(def.id);
+    }
+  } catch (err) {
+    if (!error) error = String(err?.message ?? err ?? '');
+  }
+  return {
+    id: def.id,
+    bin: def.bin,
+    label: def.label,
+    installed: !!binPath,
+    path: binPath,
+    state: binPath ? 'ok' : 'missing',
+    detail: binPath ? `path=${binPath}` : 'binary not found',
+    error,
+    update
+  };
 }
 
 async function buildSetupVersionStatus() {
@@ -863,12 +932,18 @@ async function buildSetupVersionStatus() {
 async function buildServiceStatus(namespace = 'kitowall') {
   const home = await hostHomeDir();
   const configPath = path.join(home, '.config', 'kitowall', 'config.json');
+  const timerUnitPath = path.join(home, '.config', 'systemd', 'user', 'kitowall-next.timer');
+  const rendercoreUnitPath = path.join(home, '.config', 'systemd', 'user', 'kitsune-rendercore.service');
   const hasConfig = await fileExists(configPath);
-  const timer = await maybeSystemctlShow('kitowall-next.timer', ['LoadState', 'ActiveState', 'UnitFileState', 'SubState']);
-  const rendercore = await maybeSystemctlShow('kitsune-rendercore.service', ['LoadState', 'ActiveState', 'UnitFileState', 'SubState']);
+  const [timerUnitExists, rendercoreUnitExists, timer, rendercore] = await Promise.all([
+    fileExists(timerUnitPath),
+    fileExists(rendercoreUnitPath),
+    maybeSystemctlShow('kitowall-next.timer', ['LoadState', 'ActiveState', 'UnitFileState', 'SubState']),
+    maybeSystemctlShow('kitsune-rendercore.service', ['LoadState', 'ActiveState', 'UnitFileState', 'SubState'])
+  ]);
 
-  const timerInstalled = !!timer && String(timer.LoadState ?? '').trim().toLowerCase() !== 'not-found' && !!String(timer.UnitFileState ?? '').trim();
-  const rendercoreInstalled = !!rendercore && String(rendercore.LoadState ?? '').trim().toLowerCase() !== 'not-found' && !!String(rendercore.UnitFileState ?? '').trim();
+  const timerInstalled = timerUnitExists;
+  const rendercoreInstalled = rendercoreUnitExists;
 
   return [
     {
@@ -884,20 +959,31 @@ async function buildServiceStatus(namespace = 'kitowall') {
       label: 'kitowall-next.timer',
       installed: timerInstalled,
       state: timerInstalled ? 'ok' : 'missing',
-      detail: timer
-        ? `load=${String(timer.LoadState ?? 'n/a')} active=${String(timer.ActiveState ?? 'n/a')} unit=${String(timer.UnitFileState ?? 'n/a')}`
-        : 'timer not installed'
+      detail: timerInstalled
+        ? (timer
+            ? `file=${timerUnitPath} active=${String(timer.ActiveState ?? 'n/a')} unit=${String(timer.UnitFileState ?? 'n/a')}`
+            : `file=${timerUnitPath} status=unavailable`)
+        : 'timer unit file missing'
     },
     {
       id: 'kitsune-rendercore.service',
       label: 'kitsune-rendercore.service',
       installed: rendercoreInstalled,
       state: rendercoreInstalled ? 'ok' : 'missing',
-      detail: rendercore
-        ? `load=${String(rendercore.LoadState ?? 'n/a')} active=${String(rendercore.ActiveState ?? 'n/a')} unit=${String(rendercore.UnitFileState ?? 'n/a')}`
-        : 'service not installed'
+      detail: rendercoreInstalled
+        ? (rendercore
+            ? `file=${rendercoreUnitPath} active=${String(rendercore.ActiveState ?? 'n/a')} unit=${String(rendercore.UnitFileState ?? 'n/a')}`
+            : `file=${rendercoreUnitPath} status=unavailable`)
+        : 'service unit file missing'
     }
   ];
+}
+
+async function buildServiceItem(id, namespace = 'kitowall') {
+  const services = await buildServiceStatus(namespace);
+  const item = services.find(entry => entry.id === id);
+  if (!item) throw new Error(`unknown service id: ${id}`);
+  return {...item, error: ''};
 }
 
 async function buildSetupStatus(namespace = 'kitowall') {
@@ -1014,19 +1100,22 @@ export async function createBackend(win) {
     async invoke(command, args = {}) {
       switch (command) {
         case 'kitowall_setup_status':
-          return await buildSetupStatus(args.namespace || 'kitowall');
+          return await runKitowall(['host-setup', 'list', '--namespace', args.namespace || 'kitowall', '--json']);
+        case 'kitowall_setup_check_dependency':
+          return await runKitowall(['host-setup', 'check', 'dependency', String(args.id || '').trim(), '--json']);
+        case 'kitowall_setup_check_service':
+          return await runKitowall(['host-setup', 'check', 'service', String(args.id || '').trim(), '--namespace', args.namespace || 'kitowall', '--json']);
         case 'kitowall_setup_versions':
-          return await buildSetupVersionStatus();
+          return await runKitowall(['host-setup', 'versions', '--json']);
         case 'kitowall_setup_install_item': {
           const namespace = args.namespace || 'kitowall';
           const id = String(args.id || '').trim();
           await fs.writeFile(UI_LOG_PATH, '', 'utf8').catch(() => {});
-          const out = await installSetupItem(id, namespace);
+          const out = await runLoggedKitowallRaw(['host-setup', 'install', id, '--namespace', namespace]);
           return {
-            ok: !!out.ok,
+            ok: (out.code ?? 1) === 0,
             code: out.code,
-            logs: String(out.logs ?? ''),
-            status: await buildSetupStatus(namespace)
+            logs: `${out.stdout ?? ''}${out.stderr ?? ''}`
           };
         }
         case 'kitowall_preflight_status': {

@@ -136,24 +136,46 @@ install_github_release_bin() {
   local asset_name="$2"   # exact asset name
   local out_bin="$3"      # absolute output path
 
-  if ! need_cmd curl || ! need_cmd jq; then
-    echo "[bootstrap] missing curl/jq for GitHub release install" >&2
+  if ! need_cmd curl; then
+    echo "[bootstrap] missing curl for GitHub release install" >&2
     return 1
   fi
 
-  local api_url="https://api.github.com/repos/${repo}/releases/latest"
-  local asset_url
-  asset_url="$(
-    curl -fsSL "$api_url" | jq -r --arg n "$asset_name" '.assets[] | select(.name == $n) | .browser_download_url' | head -n1
-  )"
-  if [[ -z "${asset_url:-}" || "$asset_url" == "null" ]]; then
-    echo "[bootstrap] release asset not found: ${repo} -> ${asset_name}" >&2
-    return 1
-  fi
+  local asset_url="https://github.com/${repo}/releases/latest/download/${asset_name}"
+  local release_tag=""
+  local out_dir tmp_bin
+  out_dir="$(dirname "$out_bin")"
+  mkdir -p "$out_dir"
+  tmp_bin="$(mktemp "${out_dir}/.${asset_name}.XXXXXX.tmp")"
 
   echo "[bootstrap] downloading ${repo} asset: ${asset_name}"
-  curl -fL --retry 3 --retry-delay 2 "$asset_url" -o "$out_bin"
-  chmod 755 "$out_bin"
+  if ! curl -fL \
+      --retry 3 \
+      --retry-delay 2 \
+      -H "User-Agent: Kitowall-Bootstrap" \
+      -H "Accept: application/octet-stream" \
+      "$asset_url" -o "$tmp_bin"; then
+    rm -f "$tmp_bin"
+    release_tag="$(latest_release_tag "$repo" || true)"
+    if [[ -n "${release_tag:-}" ]]; then
+      asset_url="https://github.com/${repo}/releases/download/${release_tag}/${asset_name}"
+      echo "[bootstrap] retrying ${repo} asset with explicit tag: ${release_tag}"
+      tmp_bin="$(mktemp "${out_dir}/.${asset_name}.XXXXXX.tmp")"
+      if ! curl -fL \
+          --retry 3 \
+          --retry-delay 2 \
+          -H "User-Agent: Kitowall-Bootstrap" \
+          -H "Accept: application/octet-stream" \
+          "$asset_url" -o "$tmp_bin"; then
+        rm -f "$tmp_bin"
+        return 1
+      fi
+    else
+      return 1
+    fi
+  fi
+  chmod 755 "$tmp_bin"
+  mv -f "$tmp_bin" "$out_bin"
 }
 
 latest_release_tag() {

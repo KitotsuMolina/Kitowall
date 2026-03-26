@@ -18,6 +18,13 @@ import {installSystemd, uninstallSystemd, systemdStatus} from './core/systemd';
 import {initKitowall} from './core/init';
 import {watchMonitors} from './core/watch';
 import {getHealth, printDoctor} from './core/doctor';
+import {
+  checkSetupDependency,
+  checkSetupService,
+  installSetupItem,
+  listSetupStatus,
+  listSetupVersions
+} from './core/setup';
 import {CacheManager} from './core/cache';
 import {addFavorite, removeFavorite, listFavorites} from './core/favorites';
 import {loadHistory, clearHistory} from './core/history';
@@ -191,6 +198,11 @@ Commands:
   watch [--debounce <ms>]                  Watch Hyprland monitor hotplug events and apply wallpapers
   doctor [--namespace <ns>]
   health [--namespace <ns>]
+  host-setup check dependency <id> [--json]
+  host-setup check service <id> [--namespace <ns>] [--json]
+  host-setup list [--namespace <ns>] [--json]
+  host-setup versions [--json]
+  host-setup install <id> [--namespace <ns>]
 
   install-systemd [--every <dur>]          Install + enable systemd user timer (timer only)
   uninstall-systemd                        Disable systemd timer
@@ -378,6 +390,44 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.ok ? 0 : 2;
     return;
+  }
+
+  if (cmd === 'host-setup') {
+    const action = cleanOpt(args[1] ?? null);
+    const target = cleanOpt(args[2] ?? null);
+    const id = cleanOpt(args[3] ?? null);
+    const namespace = cleanOpt(getOptionValue(args, '--namespace')) ?? 'kitowall';
+
+    if (action === 'check' && target === 'dependency' && id) {
+      console.log(JSON.stringify(await checkSetupDependency(id), null, 2));
+      return;
+    }
+
+    if (action === 'check' && target === 'service' && id) {
+      console.log(JSON.stringify(await checkSetupService(id, namespace), null, 2));
+      return;
+    }
+
+    if (action === 'list') {
+      console.log(JSON.stringify(await listSetupStatus(namespace), null, 2));
+      return;
+    }
+
+    if (action === 'versions') {
+      console.log(JSON.stringify(await listSetupVersions(), null, 2));
+      return;
+    }
+
+    if (action === 'install' && target) {
+      const result = await installSetupItem(target, namespace);
+      if (result.logs.trim()) process.stdout.write(result.logs);
+      process.exitCode = result.ok ? 0 : (result.code || 1);
+      return;
+    }
+
+    throw new Error(
+      'Usage: host-setup <check dependency <id>|check service <id>|list|versions|install <id>> [--namespace <ns>] [--json]'
+    );
   }
 
   if (cmd === 'we') {

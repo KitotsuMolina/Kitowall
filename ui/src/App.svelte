@@ -60,9 +60,10 @@
     id: string;
     label: string;
     installed: boolean;
-    state: 'ok' | 'missing';
+    state: 'ok' | 'missing' | 'checking' | 'error';
     path?: string;
     detail?: string;
+    error?: string;
     update?: VersionUpdateInfo;
   };
 
@@ -73,6 +74,7 @@
     counts: {
       dependencies_missing: number;
       services_missing: number;
+      updates_available: number;
     };
   };
 
@@ -500,7 +502,13 @@
   let setupBusy = false;
   let setupBusyItemId = '';
   let setupStatusLoaded = false;
+  let setupLoadPromise: Promise<void> | null = null;
   let setupUpdatedAt: number | null = null;
+  let setupDebugSummary = '';
+  let setupDepsView: SetupItem[] = [];
+  let setupServicesView: SetupItem[] = [];
+  let setupMissingBadgeCount = 0;
+  let setupUpdateBadgeCount = 0;
   let preflight: PreflightStatus | null = null;
   let preflightDeps: PreflightDepUi[] = [];
   let preflightBusy = false;
@@ -1260,95 +1268,222 @@
     });
   }
 
-  function setupDepsForUi(): SetupItem[] {
-    const byId = new Map(setupDeps.map(item => [item.id, item]));
-    return SETUP_DEPENDENCY_CATALOG.map(entry => {
-      const existing = byId.get(entry.id);
-      if (existing) return existing;
-      return {
-        id: entry.id,
-        label: entry.label,
-        installed: false,
-        state: 'missing',
-        path: '',
-        detail: entry.pathLabel
-      };
-    });
-  }
-
-  function setupServicesForUi(): SetupItem[] {
-    const byId = new Map(setupServices.map(item => [item.id, item]));
-    return SETUP_SERVICE_CATALOG.map(entry => {
-      const existing = byId.get(entry.id);
-      if (existing) return existing;
-      return {
-        id: entry.id,
-        label: entry.label,
-        installed: false,
-        state: 'missing',
-        detail: '-'
-      };
-    });
-  }
-
   function setupMissingDeps(): SetupItem[] {
-    return setupDepsForUi().filter(item => !item.installed);
+    return setupDepsView.filter(item => !item.installed && item.state !== 'checking');
   }
 
   function setupMissingServices(): SetupItem[] {
-    return setupServicesForUi().filter(item => !item.installed);
+    return setupServicesView.filter(item => !item.installed && item.state !== 'checking');
   }
 
   function setupMissingCount(): number {
     return setupMissingDeps().length + setupMissingServices().length;
   }
 
-  function setupStatusBadge(item: SetupItem): 'ok' | 'warn' {
+  function setupUpdateCount(): number {
+    return setupDepsView.filter(item => item.update?.update_available === true).length;
+  }
+
+  function setupItemResolved(item: SetupItem): boolean {
+    return item.installed || item.state === 'missing' || item.state === 'error' || !!item.error;
+  }
+
+  function setupStatusBadge(item: SetupItem): 'ok' | 'warn' | 'bad' {
+    if (item.state === 'error') return 'bad';
+    if (item.error) return 'bad';
     return item.installed ? 'ok' : 'warn';
   }
 
   function setupStatusLabel(item: SetupItem): string {
-    if (!setupStatusLoaded) return tr('checking...', 'revisando...');
+    if (item.error || item.state === 'error') return tr('error', 'error');
+    if (!setupItemResolved(item)) return tr('checking...', 'revisando...');
     return item.installed ? tr('installed', 'instalado') : tr('missing', 'faltante');
   }
 
-  async function loadSetupStatus(): Promise<void> {
+  function upsertSetupDependency(next: SetupItem): void {
+    const current = setupDepsForUi();
+    const map = new Map(current.map(item => [item.id, item]));
+    map.set(next.id, next);
+    setupDeps = SETUP_DEPENDENCY_CATALOG.map(entry => map.get(entry.id)!).filter(Boolean);
+  }
+
+  function upsertSetupService(next: SetupItem): void {
+    const current = setupServicesForUi();
+    const map = new Map(current.map(item => [item.id, item]));
+    map.set(next.id, next);
+    setupServices = SETUP_SERVICE_CATALOG.map(entry => map.get(entry.id)!).filter(Boolean);
+  }
+
+  function normalizeSetupItem(item: SetupItem): SetupItem {
+    if (item.error) return {...item, state: 'error'};
+    return {...item, state: item.installed ? 'ok' : 'missing'};
+  }
+
+  async function loadSetupDependencyItem(id: string): Promise<void> {
     try {
-      const report = await Promise.race([
-        invoke<SetupStatus>('kitowall_setup_status', {namespace}),
+      const item = normalizeSetupItem(await Promise.race([
+        invoke<SetupItem>('kitowall_setup_check_dependency', {id}),
         sleepMs(4000).then(() => {
+          throw new Error(`dependency check timed out: ${id}`);
+        })
+      ]));
+      upsertSetupDependency(item);
+      pushPreflightLog(
+        `dependency check (${id}): ${item.installed ? 'installed' : 'missing'}${item.path ? ` path=${item.path}` : ''}`,
+        item.installed ? 'success' : 'info'
+      );
+    } catch (e) {
+      upsertSetupDependency({
+        id,
+        label: SETUP_DEPENDENCY_CATALOG.find(item => item.id === id)?.label || id,
+        installed: false,
+        state: 'error',
+        path: '',
+        detail: tr('Check failed', 'Fallo la revision'),
+        error: String(e),
+        update: {local_version: null, latest_version: null, update_available: false}
+      });
+      pushPreflightLog(`dependency check failed (${id}): ${String(e)}`, 'error');
+    }
+  }
+
+  async function loadSetupServiceItem(id: string): Promise<void> {
+    try {
+      const item = normalizeSetupItem(await Promise.race([
+        invoke<SetupItem>('kitowall_setup_check_service', {id, namespace}),
+        sleepMs(4000).then(() => {
+          throw new Error(`service check timed out: ${id}`);
+        })
+      ]));
+      upsertSetupService(item);
+      pushPreflightLog(
+        `service check (${id}): ${item.installed ? 'ready' : 'missing'}${item.detail ? ` ${item.detail}` : ''}`,
+        item.installed ? 'success' : 'info'
+      );
+    } catch (e) {
+      upsertSetupService({
+        id,
+        label: SETUP_SERVICE_CATALOG.find(item => item.id === id)?.label || id,
+        installed: false,
+        state: 'error',
+        detail: tr('Check failed', 'Fallo la revision'),
+        error: String(e)
+      });
+      pushPreflightLog(`service check failed (${id}): ${String(e)}`, 'error');
+    }
+  }
+
+  async function loadSetupStatus(options?: {preserveLogs?: boolean; logChecks?: boolean}): Promise<void> {
+    if (setupLoadPromise) return await setupLoadPromise;
+    setupStatusLoaded = false;
+    if (!options?.preserveLogs) {
+      preflightLogs = [];
+    }
+    setupDebugSummary = 'loading...';
+    setupDeps = SETUP_DEPENDENCY_CATALOG.map(entry => ({
+      id: entry.id,
+      label: entry.label,
+      installed: false,
+      state: 'checking',
+      path: '',
+      detail: entry.pathLabel || '',
+      error: '',
+      update: {local_version: null, latest_version: null, update_available: false}
+    }));
+    setupServices = SETUP_SERVICE_CATALOG.map(entry => ({
+      id: entry.id,
+      label: entry.label,
+      installed: false,
+      state: 'checking',
+      detail: '-',
+      error: ''
+    }));
+    setupLoadPromise = (async () => {
+      const status = await Promise.race([
+        invoke<SetupStatus>('kitowall_setup_status', {namespace}),
+        sleepMs(5000).then(() => {
           throw new Error('setup status timed out');
         })
       ]);
-      setupStatus = report;
-      setupDeps = Array.isArray(report.dependencies) ? report.dependencies : [];
-      setupServices = Array.isArray(report.services) ? report.services : [];
+      setupStatus = status;
+      setupDeps = Array.isArray(status.dependencies)
+        ? status.dependencies.map(item => normalizeSetupItem(item))
+        : [];
+      setupServices = Array.isArray(status.services)
+        ? status.services.map(item => normalizeSetupItem(item))
+        : [];
+      const firstDep = setupDeps[0];
+      const firstSvc = setupServices[0];
+      setupDebugSummary = [
+        `deps=${setupDeps.length}`,
+        `services=${setupServices.length}`,
+        firstDep ? `firstDep=${firstDep.id}:${firstDep.state}:${firstDep.installed ? '1' : '0'}` : 'firstDep=-',
+        firstSvc ? `firstSvc=${firstSvc.id}:${firstSvc.state}:${firstSvc.installed ? '1' : '0'}` : 'firstSvc=-'
+      ].join(' | ');
+      if (options?.logChecks !== false) {
+        for (const item of setupDeps) {
+          pushPreflightLog(
+            `dependency check (${item.id}): ${item.installed ? 'installed' : 'missing'}${item.path ? ` path=${item.path}` : ''}`,
+            item.installed ? 'success' : 'info'
+          );
+        }
+        for (const item of setupServices) {
+          pushPreflightLog(
+            `service check (${item.id}): ${item.installed ? 'ready' : 'missing'}${item.detail ? ` ${item.detail}` : ''}`,
+            item.installed ? 'success' : 'info'
+          );
+        }
+        pushPreflightLog('setup status complete', 'success');
+      }
       setupUpdatedAt = Date.now();
-    } catch (e) {
-      lastError = String(e);
-      pushPreflightLog(`setup status failed: ${String(e)}`, 'error');
+      setupStatusLoaded = true;
+    })().catch(error => {
+      const msg = String(error);
+      setupDebugSummary = `error=${msg}`;
+      pushPreflightLog(`setup status failed: ${msg}`, 'error');
+      throw error;
+    });
+    try {
+      await setupLoadPromise;
     } finally {
+      setupLoadPromise = null;
+    }
+  }
+
+  $: {
+    const setupItems = [...setupDeps, ...setupServices];
+    if (setupItems.length > 0 && setupItems.every(item => item.state !== 'checking')) {
       setupStatusLoaded = true;
     }
   }
 
-  async function loadSetupVersions(): Promise<void> {
-    try {
-      const report = await Promise.race([
-        invoke<SetupVersionsResult>('kitowall_setup_versions'),
-        sleepMs(5000).then(() => {
-          throw new Error('setup versions timed out');
-        })
-      ]);
-      const items = report?.items ?? {};
-      setupDeps = setupDeps.map(dep => ({
-        ...dep,
-        update: items[dep.id] ?? dep.update
+  $: setupDepsView = setupDeps.length > 0
+    ? setupDeps
+    : SETUP_DEPENDENCY_CATALOG.map(entry => ({
+        id: entry.id,
+        label: entry.label,
+        installed: false,
+        state: 'checking',
+        path: '',
+        detail: entry.pathLabel,
+        error: ''
       }));
-    } catch {
-      // non-blocking
-    }
-  }
+
+  $: setupServicesView = setupServices.length > 0
+    ? setupServices
+    : SETUP_SERVICE_CATALOG.map(entry => ({
+        id: entry.id,
+        label: entry.label,
+        installed: false,
+        state: 'checking',
+        detail: '-',
+        error: ''
+      }));
+
+  $: setupMissingBadgeCount =
+    setupDepsView.filter(item => !item.installed && item.state !== 'checking').length
+      + setupServicesView.filter(item => !item.installed && item.state !== 'checking').length;
+  $: setupUpdateBadgeCount = setupDepsView.filter(item => item.update?.update_available === true).length;
 
   async function loadPreflightStatus(): Promise<void> {
     try {
@@ -1398,8 +1533,9 @@
       }
     }
     if (id === 'setup') {
-      void loadSetupStatus();
-      void loadSetupVersions();
+      if (!setupStatusLoaded) {
+        void loadSetupStatus();
+      }
     }
     if (id === 'settings') {
       void loadSettings();
@@ -6813,14 +6949,6 @@
       pushPreflightLog(`> ${id}`, 'info');
       const result = await invoke<SetupActionResult>('kitowall_setup_install_item', {id, namespace});
       await pollPreflightUiLog();
-      const actionLogs = String(result.logs ?? '').trim();
-      if (actionLogs) {
-        for (const line of actionLogs.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          pushPreflightLog(trimmed, classifyPreflightLogLine(trimmed));
-        }
-      }
       if (!result.ok) {
         throw new Error(
           `setup item failed (code=${result.code ?? 1}): ${id}. ` +
@@ -6833,9 +6961,9 @@
         setupServices = Array.isArray(result.status.services) ? result.status.services : [];
         setupUpdatedAt = Date.now();
       } else {
-        await loadSetupStatus();
+        await loadSetupStatus({preserveLogs: true, logChecks: false});
       }
-      await runHealth();
+      void runHealth();
       pushToast(tr('Action completed', 'Accion completada'), 'success');
     } catch (e) {
       const msg = String(e);
@@ -6850,7 +6978,7 @@
       await pollPreflightUiLog();
       setupBusy = false;
       setupBusyItemId = '';
-      await loadSetupStatus();
+      await loadSetupStatus({preserveLogs: true, logChecks: false});
     }
   }
 
@@ -7135,7 +7263,6 @@
 
     void (async () => {
       await loadSetupStatus();
-      void loadSetupVersions();
       await runHealth();
       void runStatus();
       void runListPacks();
@@ -7154,12 +7281,10 @@
 
     const onFocus = () => {
       void syncStatus();
-      void loadSetupStatus();
       void loadLiveAuthorityStatus();
     };
     const onVisibility = () => {
       if (!document.hidden) void syncStatus();
-      if (!document.hidden) void loadSetupStatus();
       if (!document.hidden) void runListPacks();
     };
     const onWindowClick = (event: MouseEvent) => {
@@ -7243,11 +7368,21 @@
     <button class={`menu-item ${activeSection === 'control' ? 'active' : ''}`} on:click={() => selectSection('control')}>
       {tr('Control Center', 'Centro de Control')}
     </button>
-    <button class={`menu-item ${activeSection === 'setup' ? 'active' : ''}`} on:click={() => selectSection('setup')}>
-      {tr('Host Setup', 'Host Setup')}
-      {#if setupMissingCount() > 0}
-        <span class="menu-pill">{setupMissingCount()}</span>
-      {/if}
+    <button class={`menu-item menu-item-with-pill ${activeSection === 'setup' ? 'active' : ''}`} on:click={() => selectSection('setup')}>
+      <span>
+        {tr('Host Setup', 'Host Setup')}
+        {#if setupMissingBadgeCount > 0}
+          {` (${setupMissingBadgeCount})`}
+        {/if}
+      </span>
+      <span class="menu-pill-wrap">
+        {#if setupUpdateBadgeCount > 0}
+          <span class="menu-pill menu-pill-update">↑{setupUpdateBadgeCount}</span>
+        {/if}
+        {#if setupMissingBadgeCount > 0}
+          <span class="menu-pill">{setupMissingBadgeCount}</span>
+        {/if}
+      </span>
     </button>
     <button class={`menu-item ${activeSection === 'settings' ? 'active' : ''}`} on:click={() => selectSection('settings')}>
       {tr('General Settings', 'Configuracion General')}
@@ -7529,7 +7664,7 @@
           <label for="namespace-setup-input">{tr('Namespace', 'Namespace')}</label>
           <input id="namespace-setup-input" bind:value={namespace} placeholder="kitowall" />
           <button class="secondary" on:click={loadSetupStatus} disabled={setupBusy}>{tr('Refresh', 'Actualizar')}</button>
-          <button on:click={runSetupInstallAll} disabled={setupBusy || isLiveServicesLocked()}>
+          <button on:click={runSetupInstallAll} disabled={setupBusy}>
             {setupBusy ? tr('Working...', 'Trabajando...') : tr('Install / Repair All', 'Instalar / Reparar Todo')}
           </button>
           {#if setupUpdatedAt}
@@ -7538,6 +7673,10 @@
           <span class={`badge status ${setupMissingCount() === 0 ? 'ok' : 'warn'}`}>
             {tr('missing', 'faltantes')}: {setupMissingCount()}
           </span>
+          <span class={`badge status ${setupUpdateCount() === 0 ? 'ok' : 'warn'}`}>
+            {tr('updates', 'actualizaciones')}: {setupUpdateCount()}
+          </span>
+          <span class="badge">{setupDebugSummary || 'debug=-'}</span>
         </div>
       </div>
 
@@ -7545,7 +7684,7 @@
         <div class="card preflight-main">
           <h3>{tr('Dependencies', 'Dependencias')}</h3>
           <div class="preflight-deps-grid">
-            {#each setupDepsForUi() as dep (dep.id)}
+            {#each setupDepsView as dep (dep.id)}
               <div class="preflight-dep-row">
                 <div class="preflight-dep-main">
                   <span class="preflight-dep-name">{dep.label}</span>
@@ -7553,16 +7692,28 @@
                   {#if setupShowsVersion(dep) && setupVersionLabel(dep)}
                     <span class="preflight-dep-path">{setupVersionLabel(dep)}</span>
                   {/if}
+                  {#if dep.error}
+                    <span class="preflight-dep-path">{dep.error}</span>
+                  {/if}
                 </div>
                 <div class="row actions-buttons-row">
-                  <span class={`badge status ${setupStatusBadge(dep)}`}>{setupStatusLabel(dep)}</span>
+                  <span class={`badge status ${dep.error || dep.state === 'error' ? 'bad' : dep.installed ? 'ok' : dep.state === 'checking' ? 'warn' : 'warn'}`}>
+                    {dep.error || dep.state === 'error'
+                      ? tr('error', 'error')
+                      : dep.state === 'checking'
+                        ? tr('checking...', 'revisando...')
+                        : dep.installed
+                          ? tr('installed', 'instalado')
+                          : tr('missing', 'faltante')}
+                  </span>
+                  <span class="badge">{`${dep.state}/${dep.installed ? '1' : '0'}`}</span>
                   {#if setupHasUpdate(dep)}
                     <span class="badge status warn">{tr('update available', 'actualizacion disponible')}</span>
                   {/if}
                   <button
                     class="secondary"
                     on:click={() => runSetupInstallItem(dep.id)}
-                    disabled={setupBusy || isLiveServicesLocked()}
+                    disabled={setupBusy}
                   >
                     {setupBusy && setupBusyItemId === dep.id ? tr('Working...', 'Trabajando...') : dep.installed ? tr('Reinstall', 'Reinstalar') : tr('Install', 'Instalar')}
                   </button>
@@ -7575,18 +7726,30 @@
         <div class="card preflight-main">
           <h3>{tr('Services and host state', 'Servicios y estado del host')}</h3>
           <div class="preflight-deps-grid">
-            {#each setupServicesForUi() as svc (svc.id)}
+            {#each setupServicesView as svc (svc.id)}
               <div class="preflight-dep-row">
                 <div class="preflight-dep-main">
                   <span class="preflight-dep-name">{svc.label}</span>
                   <span class="preflight-dep-path">{svc.detail || svc.path || '-'}</span>
+                  {#if svc.error}
+                    <span class="preflight-dep-path">{svc.error}</span>
+                  {/if}
                 </div>
                 <div class="row actions-buttons-row">
-                  <span class={`badge status ${setupStatusBadge(svc)}`}>{!setupStatusLoaded ? tr('checking...', 'revisando...') : svc.installed ? tr('ready', 'listo') : tr('missing', 'faltante')}</span>
+                  <span class={`badge status ${svc.error || svc.state === 'error' ? 'bad' : svc.installed ? 'ok' : svc.state === 'checking' ? 'warn' : 'warn'}`}>
+                    {svc.error || svc.state === 'error'
+                      ? tr('error', 'error')
+                      : svc.state === 'checking'
+                        ? tr('checking...', 'revisando...')
+                        : svc.installed
+                          ? tr('installed', 'instalado')
+                          : tr('missing', 'faltante')}
+                  </span>
+                  <span class="badge">{`${svc.state}/${svc.installed ? '1' : '0'}`}</span>
                   <button
                     class="secondary"
                     on:click={() => runSetupInstallItem(svc.id)}
-                    disabled={setupBusy || isLiveServicesLocked()}
+                    disabled={setupBusy}
                   >
                     {setupBusy && setupBusyItemId === svc.id ? tr('Working...', 'Trabajando...') : svc.installed ? tr('Repair', 'Reparar') : tr('Install', 'Instalar')}
                   </button>
