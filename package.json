@@ -10,6 +10,8 @@
   "type": "commonjs",
   "files": [
     "dist",
+    "scripts/bootstrap-host.sh",
+    "scripts/bootstrap-system.sh",
     "README.md",
     "LICENSE.md",
     "NOTICE.md",

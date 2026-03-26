@@ -189,6 +189,13 @@ function bootstrapSystemPath(): string {
   return join(ROOT_DIR, 'scripts', 'bootstrap-system.sh');
 }
 
+async function assertBootstrapScriptExists(targetPath: string, label: string): Promise<void> {
+  if (await fileExists(targetPath)) return;
+  throw new Error(
+    `${label} not found at ${targetPath}. Reinstala el CLI con: npm i -g --prefix ~/.local kitowall@latest`
+  );
+}
+
 async function bootstrapVersionsPath(): Promise<string> {
   return join(homeDir(), '.local', 'share', 'kitowall', 'bootstrap-versions.json');
 }
@@ -426,7 +433,9 @@ export async function listSetupVersions(): Promise<{ok: true; items: Record<stri
 }
 
 async function runBootstrapHostMode(mode: string): Promise<SetupActionResult> {
-  const out = await run('bash', [bootstrapHostPath()], {
+  const scriptPath = bootstrapHostPath();
+  await assertBootstrapScriptExists(scriptPath, 'bootstrap-host.sh');
+  const out = await run('bash', [scriptPath], {
     env: {
       ...process.env,
       HOME: homeDir(),
@@ -439,7 +448,9 @@ async function runBootstrapHostMode(mode: string): Promise<SetupActionResult> {
 }
 
 async function runBootstrapSystemItems(ids: string[]): Promise<SetupActionResult> {
-  const out = await run('pkexec', ['bash', bootstrapSystemPath(), ...ids], {
+  const scriptPath = bootstrapSystemPath();
+  await assertBootstrapScriptExists(scriptPath, 'bootstrap-system.sh');
+  const out = await run('pkexec', ['bash', scriptPath, ...ids], {
     env: {
       ...process.env,
       HOME: homeDir(),
