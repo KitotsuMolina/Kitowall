@@ -76,6 +76,25 @@ Dependencias del stack principal, según la función usada:
 
 La distribución recomendada de la UI es la `AppImage`.
 
+### Paso previo obligatorio
+Antes de abrir `Kitowall`, el host debe tener:
+- `nodejs`
+- `npm`
+- `kitowall` CLI instalado para el usuario actual
+
+Comando recomendado:
+```bash
+npm i -g --prefix ~/.local kitowall@latest
+```
+
+Verificación rápida:
+```bash
+command -v node
+command -v npm
+command -v kitowall
+kitowall --version
+```
+
 ### Importante
 No ejecutes la AppImage con `sudo`.
 
@@ -96,9 +115,10 @@ Razón:
 
 ### Flujo recomendado
 1. Descarga la última `AppImage` desde GitHub Releases.
-2. Dale permisos de ejecución.
-3. Ábrela como usuario normal.
-4. Usa el instalador de dependencias desde la UI.
+2. Asegúrate de tener `nodejs`, `npm` y `kitowall` CLI instalados.
+3. Dale permisos de ejecución.
+4. Ábrela como usuario normal.
+5. Usa el instalador de dependencias desde la UI.
 
 ## Instalación de dependencias del host
 
@@ -147,6 +167,13 @@ Eso ejecuta:
 
 ### Nota
 El script puede necesitar privilegios para instalar paquetes del sistema. La forma recomendada para usuarios finales sigue siendo la UI con `pkexec`.
+
+### Si el CLI del host está desactualizado
+Si la UI indica que el `kitowall` del host no soporta un comando nuevo, actualízalo con:
+
+```bash
+npm i -g --prefix ~/.local kitowall@latest
+```
 
 ## Inicialización
 
@@ -361,6 +388,25 @@ Common dependencies depending on enabled features:
 
 The recommended desktop distribution for the UI is the `AppImage`.
 
+### Required First Step
+Before opening `Kitowall`, the host must already have:
+- `nodejs`
+- `npm`
+- the `kitowall` CLI installed for the current user
+
+Recommended command:
+```bash
+npm i -g --prefix ~/.local kitowall@latest
+```
+
+Quick verification:
+```bash
+command -v node
+command -v npm
+command -v kitowall
+kitowall --version
+```
+
 ### Important
 Do not run the AppImage with `sudo`.
 
@@ -381,9 +427,10 @@ Reason:
 
 ### Recommended Flow
 1. Download the latest `AppImage` from GitHub Releases.
-2. Make it executable.
-3. Launch it as a normal user.
-4. Use the dependency installer from the UI.
+2. Make sure `nodejs`, `npm`, and the `kitowall` CLI are installed.
+3. Make it executable.
+4. Launch it as a normal user.
+5. Use the dependency installer from the UI.
 
 ## Host Dependency Installation
 
@@ -436,6 +483,13 @@ That handles:
 
 ### Note
 The script may need privileges for system package installation. For end users, the recommended path remains the UI flow using `pkexec`.
+
+### If the host CLI is outdated
+If the UI reports that the host `kitowall` does not support a newer command, update it with:
+
+```bash
+npm i -g --prefix ~/.local kitowall@latest
+```
 
 ## Initialization
 

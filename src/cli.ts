@@ -99,6 +99,9 @@ function printUsage(): void {
   console.log(`kitowall <command> [options]
 
 Commands:
+  version | --version | -v                  Show CLI version
+
+Core:
   outputs                                  List outputs (Wayland monitors)
   next [--pack <name>] [--namespace <ns>]     Apply next wallpapers (respects mode unless --force)
   status                                   Show current state in JSON
@@ -145,6 +148,8 @@ Commands:
   logs [--limit <n>] [--source <name>] [--pack <name>] [--level <info|warn|error>] [--q <text>]
                                          Show system logs (requests/downloads/errors)
   logs clear                             Clear system logs
+
+Wallpaper Engine:
   we config set-api-key <key>            Save Steam Web API key (~/.config/kitowall/we.json)
   we config get-steam-roots              Show configured manual Steam roots
   we config set-steam-roots <a,b,c>      Save manual Steam roots (steam root or workshop/content/431960)
@@ -167,6 +172,8 @@ Commands:
                                          Apply wallpapers in batch by monitor map
   we stop [--monitor <name> | --all]     Stop livewallpaper instances and restore previous services
   we coexist enter|exit|status           Temporarily stop/restore wallpaper rotation services
+
+Live Wallpapers:
   live init                              Initialize LiveWallpapers storage/index
   live list [--favorites] [--json]       List downloaded LiveWallpapers from local index
   live browse [--page <n>] [--quality 4k|all] [--provider moewalls|motionbgs|all]
@@ -191,24 +198,32 @@ Commands:
   live config runner [--bin-name <name>]
   live config apply-defaults [--video-fps <n>] [--video-speed <n>] [--hwaccel auto|nvdec|vaapi|none]
                              [--quality low|medium|high|ultra] [--pause-on-steam-game true|false] [--steam-poll-ms <n>]
+  live view                               Show consolidated livewallpaper runtime/config data
   live doctor [--fix]
-  check [--namespace <ns>] [--json]        Quick system check (no changes)
 
+System / Host:
+  check [--namespace <ns>] [--json]        Quick system check (no changes)
   init [--namespace <ns>] [--apply] [--force]       Setup kitowall (install daemon + watcher + next.service), validate deps
   watch [--debounce <ms>]                  Watch Hyprland monitor hotplug events and apply wallpapers
   doctor [--namespace <ns>]
   health [--namespace <ns>]
-  host-setup check dependency <id> [--json]
-  host-setup check service <id> [--namespace <ns>] [--json]
-  host-setup list [--namespace <ns>] [--json]
-  host-setup versions [--json]
-  host-setup install <id> [--namespace <ns>]
-
   install-systemd [--every <dur>]          Install + enable systemd user timer (timer only)
   uninstall-systemd                        Disable systemd timer
   systemd-status                           Show systemd timer status
   rotate-now [--pack <name>]               Apply next wallpapers ignoring manual mode (for timers)
   mode <manual|rotate>                     Set mode persistently in state.json
+
+Host Setup:
+  host-setup check dependency <id> [--json]
+                                          Check one host dependency
+  host-setup check service <id> [--namespace <ns>] [--json]
+                                          Check one host service/config item
+  host-setup list [--namespace <ns>] [--json]
+                                          List all host dependencies and services with status
+  host-setup versions [--json]
+                                          Show local/latest versions for kitowall, kitsune, and rendercore
+  host-setup install <id> [--namespace <ns>]
+                                          Install, reinstall, or repair one host item
 Examples:
   kitowall init --namespace kitowall --apply
   kitowall install-systemd --every 5m
@@ -618,7 +633,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'live') {
     const action = cleanOpt(args[1] ?? null);
-    if (!action) throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|service-autostart|config|doctor> ...');
+    if (!action) throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|service-autostart|config|view|doctor> ...');
 
     if (action === 'init') {
       console.log(JSON.stringify(liveInit(), null, 2));
@@ -820,7 +835,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|service-autostart|config|doctor> ...');
+    throw new Error('Usage: live <init|list|browse|search|resolve|preview|preview-clear|fetch|apply|auto-apply|favorite|remove|thumb|open|service-autostart|config|view|doctor> ...');
   }
 
   // Regular commands (need config/state)

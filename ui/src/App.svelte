@@ -1294,6 +1294,18 @@
     return item.installed ? 'ok' : 'warn';
   }
 
+  function kitowallCliUpgradeHint(error: unknown): string | null {
+    const text = String(error ?? '');
+    if (!text) return null;
+    if (text.includes('Unsupported command: host-setup')) {
+      return 'El kitowall CLI del host esta desactualizado. Ejecuta en una terminal: npm i -g --prefix ~/.local kitowall@latest';
+    }
+    if (text.includes('kitowall <command> [options]') && !text.includes('host-setup')) {
+      return 'El kitowall CLI del host no incluye host-setup. Ejecuta en una terminal: npm i -g --prefix ~/.local kitowall@latest';
+    }
+    return null;
+  }
+
   function setupStatusLabel(item: SetupItem): string {
     if (item.error || item.state === 'error') return tr('error', 'error');
     if (!setupItemResolved(item)) return tr('checking...', 'revisando...');
@@ -1441,6 +1453,8 @@
       const msg = String(error);
       setupDebugSummary = `error=${msg}`;
       pushPreflightLog(`setup status failed: ${msg}`, 'error');
+      const hint = kitowallCliUpgradeHint(error);
+      if (hint) pushPreflightLog(hint, 'error');
       throw error;
     });
     try {
@@ -6969,6 +6983,8 @@
       const msg = String(e);
       lastError = msg;
       pushPreflightLog(msg, 'error');
+      const hint = kitowallCliUpgradeHint(e);
+      if (hint) pushPreflightLog(hint, 'error');
       pushToast(msg, 'error');
     } finally {
       if (preflightUiLogPollTimer) {
