@@ -370,7 +370,11 @@ async function hostAwareEnv(extra = {}) {
     ...process.env,
     ...extra,
     PATH: await hostUserPath(),
-    HOME: await hostHomeDir()
+    HOME: await hostHomeDir(),
+    GSK_RENDERER: process.env.GSK_RENDERER || 'ngl',
+    GDK_BACKEND: process.env.GDK_BACKEND || 'wayland',
+    KITSUNE_GSK_RENDERER: process.env.KITSUNE_GSK_RENDERER || process.env.GSK_RENDERER || 'ngl',
+    KITSUNE_GDK_BACKEND: process.env.KITSUNE_GDK_BACKEND || process.env.GDK_BACKEND || 'wayland'
   };
 }
 
@@ -607,11 +611,6 @@ async function resolveKitsuneCmd() {
   }
 
   const home = await hostHomeDir();
-  const userScript = path.join(home, '.local', 'share', 'kitsune', 'scripts', 'kitsune.sh');
-  if (await fileExists(userScript)) {
-    return {base: userScript, prefixArgs: [], cwd: home};
-  }
-
   const directBins = [
     path.join(home, '.local', 'bin', 'kitsune'),
     path.join(home, '.cargo', 'bin', 'kitsune'),
@@ -621,6 +620,11 @@ async function resolveKitsuneCmd() {
     if (await fileExists(candidate)) {
       return {base: candidate, prefixArgs: [], cwd: home};
     }
+  }
+
+  const userScript = path.join(home, '.local', 'share', 'kitsune', 'scripts', 'kitsune.sh');
+  if (await fileExists(userScript)) {
+    return {base: userScript, prefixArgs: [], cwd: home};
   }
 
   const localScript = path.join(ROOT_DIR, 'Kitsune', 'scripts', 'kitsune.sh');
