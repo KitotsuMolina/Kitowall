@@ -32,9 +32,14 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "src/assets/logo.png"
+      "src/assets/logo.png",
+      "src/assets/kitowall-icon.png"
     ],
     "extraResources": [
+      {
+        "from": "src/assets/kitowall-icon.png",
+        "to": "kitowall-icon.png"
+      },
       {
         "from": "../scripts/bootstrap-host.sh",
         "to": "bootstrap-host.sh"

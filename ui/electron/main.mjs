@@ -11,9 +11,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function resolveAppIconPath() {
   const candidates = app.isPackaged
     ? [
-        path.join(process.resourcesPath, 'app.asar', 'src', 'assets', 'kitowall-icon.png'),
+        path.join(process.resourcesPath, 'kitowall-icon.png'),
         path.join(process.resourcesPath, 'src', 'assets', 'kitowall-icon.png'),
-        path.join(process.resourcesPath, 'kitowall-icon.png')
+        path.join(process.resourcesPath, 'app.asar', 'src', 'assets', 'kitowall-icon.png')
       ]
     : [
         path.join(__dirname, '..', 'src', 'assets', 'kitowall-icon.png')
