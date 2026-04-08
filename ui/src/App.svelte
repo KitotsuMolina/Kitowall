@@ -7493,8 +7493,8 @@
     {#if liveAuthority?.active}
       <div class="banner warn">
         {tr(
-          'LiveWallpapers active: swww / rotation / spectra are temporarily disabled.',
-          'LiveWallpapers activo: swww / rotacion / espectros estan deshabilitados temporalmente.'
+          'LiveWallpapers active: awww / rotation / spectra are temporarily disabled.',
+          'LiveWallpapers activo: awww / rotacion / espectros estan deshabilitados temporalmente.'
         )}
         <div class="row actions-buttons-row">
           <button class="secondary" on:click={stopLiveAuthority} disabled={liveBusy}>{tr('Stop LiveWallpapers', 'Detener LiveWallpapers')}</button>
@@ -11572,7 +11572,7 @@
             {tr('This removes kitowall, kitsune, rendercore, services, configs, state, groups, profiles, and local data installed by the host flow.', 'Esto elimina kitowall, kitsune, rendercore, servicios, configuraciones, estado, groups, perfiles y datos locales instalados por el flujo del host.')}
           </p>
           <p class="muted">
-            {tr('System packages like nodejs, npm, cava, swww, hyprctl, or gtk packages are not removed.', 'Los paquetes del sistema como nodejs, npm, cava, swww, hyprctl o paquetes gtk no se eliminan.')}
+            {tr('System packages like nodejs, npm, cava, awww, hyprctl, or gtk packages are not removed.', 'Los paquetes del sistema como nodejs, npm, cava, awww, hyprctl o paquetes gtk no se eliminan.')}
           </p>
           <div class="row">
             <button class="secondary" on:click={closeSetupPurgeConfirm} disabled={setupBusy}>{tr('Cancel', 'Cancelar')}</button>

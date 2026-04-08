@@ -14,7 +14,7 @@ Versión actual del paquete CLI: `6.11.0`.
 
 ## Qué es Kitowall
 
-`Kitowall` organiza wallpapers por packs y fuentes remotas, aplica fondos por monitor usando `swww` y ofrece una UI que también integra:
+`Kitowall` organiza wallpapers por packs y fuentes remotas, aplica fondos por monitor usando `awww` y ofrece una UI que también integra:
 - gestión de `Kitsune`
 - live wallpapers
 - bootstrap del host
@@ -49,7 +49,7 @@ Entorno objetivo:
 - Linux
 - `Wayland`
 - `Hyprland`
-- `swww`
+- `awww`
 
 Dependencias del stack principal, según la función usada:
 - `nodejs`, `npm`
@@ -62,7 +62,7 @@ Dependencias del stack principal, según la función usada:
 - `git`
 - `cava`
 - `hyprland`
-- `swww`
+- `awww`
 
 ## Rutas por defecto
 
@@ -361,7 +361,7 @@ Target environment:
 - Linux
 - `Wayland`
 - `Hyprland`
-- `swww`
+- `awww`
 
 Common dependencies depending on enabled features:
 - `nodejs`, `npm`
@@ -374,7 +374,7 @@ Common dependencies depending on enabled features:
 - `git`
 - `cava`
 - `hyprland`
-- `swww`
+- `awww`
 
 ## Default Paths
 
