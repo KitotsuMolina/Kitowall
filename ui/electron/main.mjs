@@ -17,10 +17,12 @@ function registerLocalAssetProtocol() {
 }
 
 async function createWindow() {
+  const appIconPath = path.join(__dirname, '..', 'src', 'assets', 'kitowall-icon.png');
   mainWindow = new BrowserWindow({
     width: 980,
     height: 720,
     show: false,
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -54,7 +56,7 @@ async function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '..', 'src', 'assets', 'logo.png');
+  const iconPath = path.join(__dirname, '..', 'src', 'assets', 'kitowall-icon.png');
   tray = new Tray(nativeImage.createFromPath(iconPath));
   const menu = Menu.buildFromTemplate([
     {label: 'Open Kitowall', click: () => { mainWindow.show(); }},

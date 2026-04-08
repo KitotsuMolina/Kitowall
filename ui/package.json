@@ -56,7 +56,7 @@
         "AppImage"
       ],
       "category": "Utility",
-      "icon": "src/assets/logo.png"
+      "icon": "src/assets/kitowall-icon.png"
     }
   }
 }
