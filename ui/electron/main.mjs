@@ -8,6 +8,25 @@ let tray;
 let backend;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function resolveAppIconPath() {
+  const candidates = app.isPackaged
+    ? [
+        path.join(process.resourcesPath, 'app.asar', 'src', 'assets', 'kitowall-icon.png'),
+        path.join(process.resourcesPath, 'src', 'assets', 'kitowall-icon.png'),
+        path.join(process.resourcesPath, 'kitowall-icon.png')
+      ]
+    : [
+        path.join(__dirname, '..', 'src', 'assets', 'kitowall-icon.png')
+      ];
+
+  for (const candidate of candidates) {
+    const image = nativeImage.createFromPath(candidate);
+    if (!image.isEmpty()) return {path: candidate, image};
+  }
+
+  return {path: candidates[0], image: nativeImage.createEmpty()};
+}
+
 function registerLocalAssetProtocol() {
   protocol.handle('kitowall-file', request => {
     const url = new URL(request.url);
@@ -17,7 +36,7 @@ function registerLocalAssetProtocol() {
 }
 
 async function createWindow() {
-  const appIconPath = path.join(__dirname, '..', 'src', 'assets', 'kitowall-icon.png');
+  const {path: appIconPath} = resolveAppIconPath();
   mainWindow = new BrowserWindow({
     width: 980,
     height: 720,
@@ -56,8 +75,12 @@ async function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '..', 'src', 'assets', 'kitowall-icon.png');
-  tray = new Tray(nativeImage.createFromPath(iconPath));
+  const {path: iconPath, image} = resolveAppIconPath();
+  if (image.isEmpty()) {
+    console.error(`[kitowall-ui] tray icon not found: ${iconPath}`);
+    return;
+  }
+  tray = new Tray(image);
   const menu = Menu.buildFromTemplate([
     {label: 'Open Kitowall', click: () => { mainWindow.show(); }},
     {type: 'separator'},
