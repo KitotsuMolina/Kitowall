@@ -226,7 +226,7 @@ function getSteamWebApiKey(): string | undefined {
 function getCoexistServices(): string[] {
   const cfg = readWeConfig();
   const defaults = [
-    'swww-daemon@kitowall.service',
+    'awww-daemon@kitowall.service',
     'kitowall-login-apply.service',
     'kitowall-watch.service',
     'kitowall-next.service',

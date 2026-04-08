@@ -54,6 +54,37 @@ async function outputsFromSwwwQuery(): Promise<OutputInfo[]> {
   return outputs;
 }
 
+function outputNamesFromUnknown(value: unknown): OutputInfo[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(item => {
+      if (typeof item === 'string' && item.trim()) return [{name: item.trim()}];
+      if (item && typeof item === 'object') {
+        const candidate = (item as {name?: unknown; output?: unknown; output_name?: unknown});
+        const name = [candidate.name, candidate.output, candidate.output_name]
+          .find(entry => typeof entry === 'string' && String(entry).trim().length > 0);
+        if (typeof name === 'string') return [{name: name.trim()}];
+      }
+      return [];
+    });
+  }
+
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (Array.isArray(obj.outputs)) return outputNamesFromUnknown(obj.outputs);
+    return Object.keys(obj)
+      .filter(key => key.trim().length > 0)
+      .map(name => ({name}));
+  }
+
+  return [];
+}
+
+async function outputsFromAwwwQuery(): Promise<OutputInfo[]> {
+  const result = await run('awww', ['query', '--json']);
+  const parsed = JSON.parse(result.stdout) as unknown;
+  return outputNamesFromUnknown(parsed);
+}
+
 export async function detectOutputs(): Promise<OutputInfo[]> {
   try {
     const outputs = await outputsFromHyprctl();
@@ -69,6 +100,14 @@ export async function detectOutputs(): Promise<OutputInfo[]> {
       return outputs;
   } catch {
     // ignore and fallback
+  }
+
+  try {
+    const outputs = await outputsFromAwwwQuery();
+    if (outputs.length > 0)
+      return outputs;
+  } catch {
+    // ignore
   }
 
   try {

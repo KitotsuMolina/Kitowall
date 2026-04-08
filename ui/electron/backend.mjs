@@ -12,8 +12,8 @@ const HOST_DEPENDENCY_DEFS = [
   {id: 'kitowall', bin: 'kitowall', label: 'Kitowall CLI', installer: 'kitowall-only'},
   {id: 'kitsune', bin: 'kitsune', label: 'Kitsune', installer: 'kitsune-only'},
   {id: 'kitsune-rendercore', bin: 'kitsune-rendercore', label: 'Kitsune RenderCore', installer: 'kitsune-only'},
-  {id: 'swww', bin: 'swww', label: 'swww', installer: 'swww', system: true},
-  {id: 'swww-daemon', bin: 'swww-daemon', label: 'swww-daemon', installer: 'swww-daemon', system: true},
+  {id: 'awww', bin: 'awww', label: 'awww', installer: 'awww', system: true},
+  {id: 'awww-daemon', bin: 'awww-daemon', label: 'awww-daemon', installer: 'awww-daemon', system: true},
   {id: 'hyprctl', bin: 'hyprctl', label: 'hyprctl', installer: 'hyprctl', system: true},
   {id: 'cava', bin: 'cava', label: 'cava', installer: 'cava', system: true}
 ];
@@ -1137,8 +1137,8 @@ export async function createBackend(win) {
             ['kitowall', 'kitowall', false],
             ['kitsune', 'kitsune', false],
             ['kitsune-rendercore', 'kitsune-rendercore', false],
-            ['swww', 'swww', false],
-            ['swww-daemon', 'swww-daemon', false],
+            ['awww', 'awww', false],
+            ['awww-daemon', 'awww-daemon', false],
             ['hyprctl', 'hyprctl', false],
             ['cava', 'cava', false]
           ];

@@ -1,5 +1,7 @@
 // src/core/doctor.ts
 import {run} from '../utils/exec';
+import {loadConfig} from './config';
+import {resolveWallpaperBackend, wallpaperBackendInfo} from './wallpaperBackend';
 
 const ENABLED_STATES = new Set(['enabled', 'enabled-runtime', 'static', 'generated']);
 const ACTIVE_STATES = new Set(['active', 'activating']);
@@ -18,6 +20,7 @@ export type HealthReport = {
     ok: boolean;
     code?: string;
     namespace: string;
+    backend: 'awww' | 'swww';
     deps: {
         swww: boolean;
         swwwDaemon: boolean;
@@ -56,7 +59,7 @@ async function which(cmd: string): Promise<boolean> {
 
 async function systemctlExists(unit: string): Promise<boolean> {
     try {
-        await run('systemctl', ['--user', 'cat', unit]);
+        await run('systemctl', ['--user', 'cat', unit], {timeoutMs: 1500});
         return true;
     } catch {
         return false;
@@ -65,7 +68,7 @@ async function systemctlExists(unit: string): Promise<boolean> {
 
 async function systemctlIsEnabled(unit: string): Promise<{enabled: boolean; raw?: string}> {
     try {
-        const out = await run('systemctl', ['--user', 'is-enabled', unit]);
+        const out = await run('systemctl', ['--user', 'is-enabled', unit], {timeoutMs: 1500});
         const raw = toText(out).trim();
         return {enabled: ENABLED_STATES.has(raw), raw};
     } catch (e: any) {
@@ -77,7 +80,7 @@ async function systemctlIsEnabled(unit: string): Promise<{enabled: boolean; raw?
 
 async function systemctlIsActive(unit: string): Promise<{active: boolean; raw?: string}> {
     try {
-        const out = await run('systemctl', ['--user', 'is-active', unit]);
+        const out = await run('systemctl', ['--user', 'is-active', unit], {timeoutMs: 1500});
         const raw = toText(out).trim();
         return {active: ACTIVE_STATES.has(raw), raw};
     } catch (e: any) {
@@ -134,8 +137,10 @@ async function unitStatus(unit: string): Promise<UnitStatus> {
 }
 
 async function swwwNamespaceQuery(namespace: string): Promise<{ok: boolean; error?: string}> {
+    const backend = await resolveWallpaperBackend(loadConfig());
+    const info = wallpaperBackendInfo(backend);
     try {
-        await run('swww', ['query', '--namespace', namespace]);
+        await run(info.bin, [...info.queryArgs, '--namespace', namespace]);
         return {ok: true};
     } catch (e) {
         return {ok: false, error: e instanceof Error ? e.message : String(e)};
@@ -144,21 +149,23 @@ async function swwwNamespaceQuery(namespace: string): Promise<{ok: boolean; erro
 
 export async function getHealth(namespace: string): Promise<HealthReport> {
     const hints: string[] = [];
+    const backend = await resolveWallpaperBackend(loadConfig());
+    const backendInfo = wallpaperBackendInfo(backend);
 
     const deps = {
-        swww: await which('swww'),
-        swwwDaemon: await which('swww-daemon'),
+        swww: await which(backendInfo.bin),
+        swwwDaemon: await which(backendInfo.daemonBin),
         hyprctl: await which('hyprctl'),
         systemctlUser: await which('systemctl'),
     };
 
-    if (!deps.swww) hints.push('Missing dependency: swww');
-    if (!deps.swwwDaemon) hints.push('Missing dependency: swww-daemon');
+    if (!deps.swww) hints.push(`Missing dependency: ${backendInfo.bin}`);
+    if (!deps.swwwDaemon) hints.push(`Missing dependency: ${backendInfo.daemonBin}`);
     if (!deps.hyprctl) hints.push('Missing dependency: hyprctl');
     if (!deps.systemctlUser) hints.push('Missing dependency: systemctl');
 
     const units = {
-        swwwDaemonNs: await unitStatus(`swww-daemon@${namespace}.service`),
+        swwwDaemonNs: await unitStatus(`${backendInfo.daemonUnitBase}@${namespace}.service`),
         watch: await unitStatus('kitowall-watch.service'),
         nextService: await unitStatus('kitowall-next.service'),
         nextTimer: await unitStatus('kitowall-next.timer'),
@@ -182,7 +189,7 @@ export async function getHealth(namespace: string): Promise<HealthReport> {
     //   solo nos importa que exista
 
     const swww = await swwwNamespaceQuery(namespace);
-    if (!swww.ok) hints.push(`swww query failed for namespace "${namespace}"`);
+    if (!swww.ok) hints.push(`${backendInfo.bin} query failed for namespace "${namespace}"`);
 
     const depsOk = deps.swww && deps.swwwDaemon && deps.hyprctl && deps.systemctlUser;
 
@@ -211,7 +218,7 @@ export async function getHealth(namespace: string): Promise<HealthReport> {
         units.nextTimer.active === true &&
         swww.ok;
 
-    return {ok, code, namespace, deps, units, swww: {namespaceQueryOk: swww.ok, error: swww.error}, hints};
+    return {ok, code, namespace, backend, deps, units, swww: {namespaceQueryOk: swww.ok, error: swww.error}, hints};
 }
 
 export async function printDoctor(namespace: string): Promise<void> {
@@ -221,11 +228,12 @@ export async function printDoctor(namespace: string): Promise<void> {
     const badge = (b: boolean) => (b ? '✅' : '❌');
 
     line(`kitowall doctor (namespace="${namespace}")`);
+    line(`wallpaper backend: ${r.backend}`);
     line('');
 
     line('Dependencies:');
-    line(`  ${badge(r.deps.swww)} swww`);
-    line(`  ${badge(r.deps.swwwDaemon)} swww-daemon`);
+    line(`  ${badge(r.deps.swww)} ${r.backend}`);
+    line(`  ${badge(r.deps.swwwDaemon)} ${r.backend}-daemon`);
     line(`  ${badge(r.deps.hyprctl)} hyprctl`);
     line(`  ${badge(r.deps.systemctlUser)} systemctl (--user)`);
     line('');
@@ -247,8 +255,8 @@ export async function printDoctor(namespace: string): Promise<void> {
     }
     line('');
 
-    line('swww namespace:');
-    line(`  ${badge(r.swww.namespaceQueryOk)} swww query --namespace ${namespace}`);
+    line(`${r.backend} namespace:`);
+    line(`  ${badge(r.swww.namespaceQueryOk)} ${r.backend} query --namespace ${namespace}`);
     if (!r.swww.namespaceQueryOk && r.swww.error) line(`  error: ${r.swww.error}`);
 
     line('');

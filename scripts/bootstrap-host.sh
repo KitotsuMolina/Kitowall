@@ -70,7 +70,7 @@ install_arch_deps() {
   local repo_pkgs=(
     nodejs npm
     hyprland
-    swww
+    awww
     cava
     pkgconf
     gtk4
@@ -116,7 +116,7 @@ install_system_deps() {
     install_ubuntu_deps
     return
   fi
-  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo pkg-config gtk4 gtk4-layer-shell swww hyprland cava" >&2
+  echo "[bootstrap] unsupported distro package manager. Install manually: nodejs npm rust cargo pkg-config gtk4 gtk4-layer-shell awww hyprland cava" >&2
   exit 1
 }
 
@@ -447,7 +447,7 @@ verify_bins() {
   elif [[ "$KITOWALL_BOOTSTRAP_MODE" == "kitowall-only" ]]; then
     required_bins=(kitowall)
   else
-    required_bins=(kitowall kitsune kitsune-rendercore swww swww-daemon cava)
+    required_bins=(kitowall kitsune kitsune-rendercore awww awww-daemon cava)
   fi
   local missing=()
   for b in "${required_bins[@]}"; do

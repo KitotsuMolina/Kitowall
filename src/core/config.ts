@@ -191,6 +191,7 @@ function normalizeStringArray(input: string | string[] | undefined): string[] | 
 export interface Config {
   schemaVersion: number;
   mode: 'manual' | 'rotate';
+  wallpaper_backend?: 'auto' | 'swww' | 'awww';
   rotation_interval_seconds: number;
   transition: TransitionConfig;
   selection: SelectionConfig;
@@ -212,6 +213,7 @@ export function defaultConfig(): Config {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     mode: 'manual',
+    wallpaper_backend: 'auto',
     rotation_interval_seconds: 1800,
     transition: {type: 'center', fps: 60, duration: 0.7},
     selection: {
@@ -261,6 +263,13 @@ export function loadConfig(): Config {
   }
 
   if (!config.transition) config.transition = fallback.transition;
+  if (
+    config.wallpaper_backend !== 'auto' &&
+    config.wallpaper_backend !== 'swww' &&
+    config.wallpaper_backend !== 'awww'
+  ) {
+    config.wallpaper_backend = fallback.wallpaper_backend;
+  }
 
   if (!config.packs) config.packs = {};
 

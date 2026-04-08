@@ -60,8 +60,8 @@ export const HOST_DEPENDENCY_DEFS: DependencyDef[] = [
   {id: 'kitowall', bin: 'kitowall', label: 'Kitowall CLI', installer: 'kitowall-only'},
   {id: 'kitsune', bin: 'kitsune', label: 'Kitsune', installer: 'kitsune-only'},
   {id: 'kitsune-rendercore', bin: 'kitsune-rendercore', label: 'Kitsune RenderCore', installer: 'kitsune-only'},
-  {id: 'swww', bin: 'swww', label: 'swww', installer: 'swww', system: true},
-  {id: 'swww-daemon', bin: 'swww-daemon', label: 'swww-daemon', installer: 'swww-daemon', system: true},
+  {id: 'awww', bin: 'awww', label: 'awww', installer: 'awww', system: true},
+  {id: 'awww-daemon', bin: 'awww-daemon', label: 'awww-daemon', installer: 'awww-daemon', system: true},
   {id: 'hyprctl', bin: 'hyprctl', label: 'hyprctl', installer: 'hyprctl', system: true},
   {id: 'cava', bin: 'cava', label: 'cava', installer: 'cava', system: true}
 ];
@@ -74,6 +74,12 @@ export const HOST_SERVICE_DEFS: ServiceDef[] = [
 
 function homeDir(): string {
   return process.env.HOME || homedir();
+}
+
+function normalizeSetupDependencyId(id: string): string {
+  if (id === 'swww') return 'awww';
+  if (id === 'swww-daemon') return 'awww-daemon';
+  return id;
 }
 
 async function fileExists(targetPath: string): Promise<boolean> {
@@ -312,7 +318,7 @@ async function maybeSystemctlShow(unit: string, props: string[]): Promise<Record
 }
 
 export async function checkSetupDependency(id: string): Promise<SetupItem> {
-  const def = HOST_DEPENDENCY_DEFS.find(item => item.id === id);
+  const def = HOST_DEPENDENCY_DEFS.find(item => item.id === normalizeSetupDependencyId(id));
   if (!def) throw new Error(`Unknown dependency id: ${id}`);
 
   let binPath = '';
@@ -461,17 +467,18 @@ async function runBootstrapSystemItems(ids: string[]): Promise<SetupActionResult
 }
 
 export async function installSetupItem(id: string, namespace = 'kitowall'): Promise<SetupActionResult> {
-  const dep = HOST_DEPENDENCY_DEFS.find(item => item.id === id);
-  if (dep?.system) return await runBootstrapSystemItems([id]);
-  if (id === 'kitowall') return await runBootstrapHostMode('kitowall-only');
-  if (id === 'kitsune' || id === 'kitsune-rendercore' || id === 'kitsune-rendercore.service') {
+  const normalizedId = normalizeSetupDependencyId(id);
+  const dep = HOST_DEPENDENCY_DEFS.find(item => item.id === normalizedId);
+  if (dep?.system) return await runBootstrapSystemItems([normalizedId]);
+  if (normalizedId === 'kitowall') return await runBootstrapHostMode('kitowall-only');
+  if (normalizedId === 'kitsune' || normalizedId === 'kitsune-rendercore' || normalizedId === 'kitsune-rendercore.service') {
     return await runBootstrapHostMode('kitsune-only');
   }
-  if (id === 'kitowall-config') {
+  if (normalizedId === 'kitowall-config') {
     await initKitowall({namespace, apply: true, force: true});
     return {ok: true, code: 0, logs: JSON.stringify({ok: true, init: true, namespace}, null, 2)};
   }
-  if (id === 'kitowall-next.timer') {
+  if (normalizedId === 'kitowall-next.timer') {
     await installSystemd({every: '600s'});
     return {ok: true, code: 0, logs: JSON.stringify({ok: true, installed: true, every: '600s'}, null, 2)};
   }
@@ -528,17 +535,21 @@ export async function purgeSetup(namespace = 'kitowall'): Promise<SetupActionRes
     join(home, '.config', 'systemd', 'user', 'kitowall-next.timer'),
     join(home, '.config', 'systemd', 'user', 'kitowall-watch.service'),
     join(home, '.config', 'systemd', 'user', 'kitowall-login-apply.service'),
-    join(home, '.config', 'systemd', 'user', 'kitsune-rendercore.service')
+    join(home, '.config', 'systemd', 'user', 'kitsune-rendercore.service'),
+    join(home, '.config', 'systemd', 'user', 'awww-daemon@.service'),
+    join(home, '.config', 'systemd', 'user', 'swww-daemon@.service')
   ];
 
   logs.push(`[purge] namespace=${namespace}`);
+  await runSystemctlUserBestEffort(['disable', '--now', `awww-daemon@${namespace}.service`], logs);
+  await runSystemctlUserBestEffort(['disable', '--now', `swww-daemon@${namespace}.service`], logs);
   await runSystemctlUserBestEffort(['disable', '--now', 'kitowall-next.timer'], logs);
   await runSystemctlUserBestEffort(['stop', 'kitowall-next.service'], logs);
   await runSystemctlUserBestEffort(['disable', '--now', 'kitowall-watch.service'], logs);
   await runSystemctlUserBestEffort(['disable', '--now', 'kitowall-login-apply.service'], logs);
   await runSystemctlUserBestEffort(['disable', '--now', 'kitsune-rendercore.service'], logs);
   await runSystemctlUserBestEffort(['daemon-reload'], logs);
-  await runSystemctlUserBestEffort(['reset-failed', 'kitowall-next.service', 'kitowall-next.timer', 'kitowall-watch.service', 'kitowall-login-apply.service', 'kitsune-rendercore.service'], logs);
+  await runSystemctlUserBestEffort(['reset-failed', `awww-daemon@${namespace}.service`, `swww-daemon@${namespace}.service`, 'kitowall-next.service', 'kitowall-next.timer', 'kitowall-watch.service', 'kitowall-login-apply.service', 'kitsune-rendercore.service'], logs);
 
   for (const targetPath of removeFiles) {
     await rmIfExists(targetPath, logs);

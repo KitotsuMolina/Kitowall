@@ -14,7 +14,7 @@ import {State, saveState, cleanupDisconnectedOutputs, commitSelection} from './s
 import {appendHistory} from './history';
 import {detectOutputs} from './outputs';
 import {LocalFolderAdapter} from '../adapters/localFolder';
-import {applySwww, OutputImageMap} from '../managers/swww';
+import {OutputImageMap} from '../managers/types';
 import {pickImagesForOutputs} from '../adapters/selector';
 import {CacheManager} from './cache';
 import fs from 'fs';
@@ -25,6 +25,7 @@ import {RedditAdapter} from '../adapters/reddit';
 import {WallhavenAdapter} from '../adapters/wallhaven';
 import {UnsplashAdapter} from '../adapters/unsplash';
 import {StaticUrlAdapter} from '../adapters/staticUrl';
+import {applyWallpaperBackend} from './wallpaperBackend';
 
 export class Controller {
   private config: Config;
@@ -375,7 +376,7 @@ export class Controller {
       }
     }
 
-    await applySwww(outputImages, this.config.transition, namespace);
+    await applyWallpaperBackend(this.config, outputImages, namespace);
 
     const now = Date.now();
 

@@ -2,11 +2,7 @@
 import {run} from '../utils/exec';
 import {TransitionConfig} from '../core/config';
 import {spawn} from 'node:child_process';
-
-export interface OutputImageMap {
-  output: string;
-  path: string;
-}
+import {OutputImageMap} from './types';
 function startSwwwDaemon(namespace?: string) {
   const args = [];
   if (namespace) args.push('--namespace', namespace);
@@ -44,7 +40,7 @@ async function ensureSwwwRunning(namespace?: string): Promise<void> {
 
 export async function applySwww(
     images: OutputImageMap[],
-    transition: { type: string; fps: number; duration: number; angle?: number; pos?: string },
+    transition: TransitionConfig,
     namespace: string = 'kitowall'
 ) : Promise<void> {
   await ensureSwwwRunning(namespace);

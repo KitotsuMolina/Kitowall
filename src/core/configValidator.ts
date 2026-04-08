@@ -123,6 +123,14 @@ export function validateConfig(config: Config): {ok: boolean; errors: string[]} 
   if (config.mode !== 'manual' && config.mode !== 'rotate') {
     errors.push('mode must be manual|rotate');
   }
+  if (
+    config.wallpaper_backend !== undefined &&
+    config.wallpaper_backend !== 'auto' &&
+    config.wallpaper_backend !== 'swww' &&
+    config.wallpaper_backend !== 'awww'
+  ) {
+    errors.push('wallpaper_backend must be auto|swww|awww');
+  }
   if (!positiveNumber(config.rotation_interval_seconds)) {
     errors.push('rotation_interval_seconds must be > 0');
   }

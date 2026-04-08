@@ -45,7 +45,7 @@ install_arch_deps() {
   local repo_pkgs=(
     nodejs npm
     hyprland
-    swww
+    awww
     cava
     pkgconf
     gtk4
@@ -76,7 +76,7 @@ arch_packages_for_ids() {
       nodejs) pkgs+=(nodejs) ;;
       npm) pkgs+=(npm) ;;
       hyprctl) pkgs+=(hyprland) ;;
-      swww|swww-daemon) pkgs+=(swww) ;;
+      awww|awww-daemon|swww|swww-daemon) pkgs+=(awww) ;;
       cava) pkgs+=(cava) ;;
       pkgconf) pkgs+=(pkgconf) ;;
       gtk4) pkgs+=(gtk4) ;;
@@ -180,7 +180,7 @@ main() {
     exit 0
   fi
 
-  echo "[bootstrap-system] unsupported distro package manager. Install manually: nodejs npm rust cargo pkg-config gtk4 gtk4-layer-shell swww hyprland cava" >&2
+  echo "[bootstrap-system] unsupported distro package manager. Install manually: nodejs npm rust cargo pkg-config gtk4 gtk4-layer-shell awww hyprland cava" >&2
   exit 1
 }
 

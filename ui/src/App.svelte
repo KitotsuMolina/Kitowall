@@ -94,8 +94,8 @@
     {id: 'kitowall', label: 'Kitowall CLI', pathLabel: 'kitowall'},
     {id: 'kitsune', label: 'Kitsune', pathLabel: 'kitsune'},
     {id: 'kitsune-rendercore', label: 'Kitsune RenderCore', pathLabel: 'kitsune-rendercore'},
-    {id: 'swww', label: 'swww', pathLabel: 'swww'},
-    {id: 'swww-daemon', label: 'swww-daemon', pathLabel: 'swww-daemon'},
+    {id: 'awww', label: 'awww', pathLabel: 'awww'},
+    {id: 'awww-daemon', label: 'awww-daemon', pathLabel: 'awww-daemon'},
     {id: 'hyprctl', label: 'hyprctl', pathLabel: 'hyprctl'},
     {id: 'cava', label: 'cava', pathLabel: 'cava'}
   ];
@@ -110,8 +110,8 @@
     {id: 'kitowall', bin: 'kitowall'},
     {id: 'kitsune', bin: 'kitsune'},
     {id: 'kitsune-rendercore', bin: 'kitsune-rendercore'},
-    {id: 'swww', bin: 'swww'},
-    {id: 'swww-daemon', bin: 'swww-daemon'},
+    {id: 'awww', bin: 'awww'},
+    {id: 'awww-daemon', bin: 'awww-daemon'},
     {id: 'hyprctl', bin: 'hyprctl'},
     {id: 'cava', bin: 'cava'}
   ];
