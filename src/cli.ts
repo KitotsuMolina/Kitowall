@@ -23,7 +23,8 @@ import {
   checkSetupService,
   installSetupItem,
   listSetupStatus,
-  listSetupVersions
+  listSetupVersions,
+  purgeSetup
 } from './core/setup';
 import {CacheManager} from './core/cache';
 import {addFavorite, removeFavorite, listFavorites} from './core/favorites';
@@ -224,6 +225,8 @@ Host Setup:
                                           Show local/latest versions for kitowall, kitsune, and rendercore
   host-setup install <id> [--namespace <ns>]
                                           Install, reinstall, or repair one host item
+  host-setup purge [--namespace <ns>] --yes
+                                          Remove kitowall, kitsune, rendercore, configs, services, state, and profiles
 Examples:
   kitowall init --namespace kitowall --apply
   kitowall install-systemd --every 5m
@@ -440,8 +443,18 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (action === 'purge') {
+      if (!args.includes('--yes')) {
+        throw new Error('Usage: host-setup purge [--namespace <ns>] --yes');
+      }
+      const result = await purgeSetup(namespace);
+      if (result.logs.trim()) process.stdout.write(result.logs);
+      process.exitCode = result.ok ? 0 : (result.code || 1);
+      return;
+    }
+
     throw new Error(
-      'Usage: host-setup <check dependency <id>|check service <id>|list|versions|install <id>> [--namespace <ns>] [--json]'
+      'Usage: host-setup <check dependency <id>|check service <id>|list|versions|install <id>|purge --yes> [--namespace <ns>] [--json]'
     );
   }
 

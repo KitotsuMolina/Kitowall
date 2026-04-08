@@ -537,6 +537,7 @@
   let visiblePacks: SelectPackItem[] = [];
   let hydrateCount = 10;
   let showCleanConfirm = false;
+  let showSetupPurgeConfirm = false;
   let showHistoryClearConfirm = false;
   let showLogsClearConfirm = false;
   let mobileMenuOpen = false;
@@ -7012,6 +7013,58 @@
     }
   }
 
+  function openSetupPurgeConfirm(): void {
+    showSetupPurgeConfirm = true;
+  }
+
+  function closeSetupPurgeConfirm(): void {
+    showSetupPurgeConfirm = false;
+  }
+
+  async function confirmSetupPurge(): Promise<void> {
+    if (setupBusy) return;
+    setupBusy = true;
+    setupBusyItemId = 'purge';
+    lastError = null;
+    preflightUiLogOffset = 0;
+    if (preflightUiLogPollTimer) clearInterval(preflightUiLogPollTimer);
+    preflightUiLogPollTimer = setInterval(() => {
+      void pollPreflightUiLog();
+    }, 1000);
+    try {
+      preflightLogs = [];
+      pushPreflightLog('> host-setup purge --yes', 'info');
+      const result = await invoke<SetupActionResult>('kitowall_setup_purge', {namespace});
+      await pollPreflightUiLog();
+      if (!result.ok) {
+        throw new Error(
+          `setup purge failed (code=${result.code ?? 1}). ` +
+          tr('Check installer logs in the right panel.', 'Revisa los logs del instalador en el panel derecho.')
+        );
+      }
+      await loadSetupStatus({preserveLogs: true, logChecks: false});
+      setupStatus = null;
+      setupDeps = [];
+      setupServices = [];
+      setupUpdatedAt = Date.now();
+      pushToast(tr('Host data removed', 'Datos del host eliminados'), 'success');
+      closeSetupPurgeConfirm();
+    } catch (e) {
+      const msg = String(e);
+      lastError = msg;
+      pushPreflightLog(msg, 'error');
+      pushToast(msg, 'error');
+    } finally {
+      if (preflightUiLogPollTimer) {
+        clearInterval(preflightUiLogPollTimer);
+        preflightUiLogPollTimer = null;
+      }
+      await pollPreflightUiLog();
+      setupBusy = false;
+      setupBusyItemId = '';
+    }
+  }
+
   async function runPreflightInstall() {
     if (preflightBusy) return;
     preflightBusy = true;
@@ -7682,6 +7735,9 @@
           <button class="secondary" on:click={loadSetupStatus} disabled={setupBusy}>{tr('Refresh', 'Actualizar')}</button>
           <button on:click={runSetupInstallAll} disabled={setupBusy}>
             {setupBusy ? tr('Working...', 'Trabajando...') : tr('Install / Repair All', 'Instalar / Reparar Todo')}
+          </button>
+          <button class="secondary danger-outline" on:click={openSetupPurgeConfirm} disabled={setupBusy}>
+            {setupBusy && setupBusyItemId === 'purge' ? tr('Working...', 'Trabajando...') : tr('Uninstall / Purge All', 'Desinstalar / Limpiar Todo')}
           </button>
           {#if setupUpdatedAt}
             <span class="badge">{tr('last check', 'ultima revision')}: {formatTimestamp(setupUpdatedAt)}</span>
@@ -11489,6 +11545,39 @@
             <button class="secondary" on:click={closeCleanConfirm} disabled={busy}>{tr('Cancel', 'Cancelar')}</button>
             <button class="danger" on:click={runCleanWallpapers} disabled={busy}>
               {#if selectedPack === 'all'}{tr('Confirm Clean All', 'Confirmar Limpieza Total')}{:else}{tr('Confirm Clean Pack', 'Confirmar Limpieza de Pack')}{/if}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if showSetupPurgeConfirm}
+      <div
+        class="modal-backdrop"
+        role="button"
+        tabindex="0"
+        on:click|self={closeSetupPurgeConfirm}
+        on:keydown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') closeSetupPurgeConfirm();
+        }}
+      >
+        <div
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label={tr('Host purge confirmation', 'Confirmacion de limpieza total del host')}
+        >
+          <h3>{tr('Uninstall And Purge Host Data', 'Desinstalar Y Limpiar Datos Del Host')}</h3>
+          <p class="muted">
+            {tr('This removes kitowall, kitsune, rendercore, services, configs, state, groups, profiles, and local data installed by the host flow.', 'Esto elimina kitowall, kitsune, rendercore, servicios, configuraciones, estado, groups, perfiles y datos locales instalados por el flujo del host.')}
+          </p>
+          <p class="muted">
+            {tr('System packages like nodejs, npm, cava, swww, hyprctl, or gtk packages are not removed.', 'Los paquetes del sistema como nodejs, npm, cava, swww, hyprctl o paquetes gtk no se eliminan.')}
+          </p>
+          <div class="row">
+            <button class="secondary" on:click={closeSetupPurgeConfirm} disabled={setupBusy}>{tr('Cancel', 'Cancelar')}</button>
+            <button class="danger" on:click={() => void confirmSetupPurge()} disabled={setupBusy}>
+              {tr('Confirm Purge', 'Confirmar Limpieza')}
             </button>
           </div>
         </div>

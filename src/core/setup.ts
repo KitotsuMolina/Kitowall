@@ -477,3 +477,76 @@ export async function installSetupItem(id: string, namespace = 'kitowall'): Prom
   }
   throw new Error(`Unsupported setup item: ${id}`);
 }
+
+async function rmIfExists(targetPath: string, logs: string[]): Promise<void> {
+  if (!(await fileExists(targetPath))) return;
+  await fs.rm(targetPath, {recursive: true, force: true});
+  logs.push(`[removed] ${targetPath}`);
+}
+
+async function runSystemctlUserBestEffort(args: string[], logs: string[]): Promise<void> {
+  try {
+    await run('systemctl', ['--user', ...args], {
+      env: {
+        ...process.env,
+        HOME: homeDir(),
+        PATH: hostPathEntries().join(':')
+      },
+      timeoutMs: 4000
+    });
+    logs.push(`[systemctl] ${args.join(' ')}`);
+  } catch (err) {
+    logs.push(`[systemctl-warn] ${args.join(' ')} :: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+export async function purgeSetup(namespace = 'kitowall'): Promise<SetupActionResult> {
+  const home = homeDir();
+  const logs: string[] = [];
+  const removeTargets = [
+    join(home, '.config', 'kitowall'),
+    join(home, '.local', 'share', 'kitowall'),
+    join(home, '.local', 'state', 'kitowall'),
+    join(home, '.config', 'kitsune'),
+    join(home, '.local', 'share', 'kitsune'),
+    join(home, '.local', 'state', 'kitsune'),
+    join(home, '.config', 'kitsune-rendercore'),
+    join(home, '.local', 'lib', 'node_modules', 'kitowall'),
+    join(home, '.npm-global', 'lib', 'node_modules', 'kitowall')
+  ];
+  const removeFiles = [
+    join(home, '.local', 'bin', 'kitowall'),
+    join(home, '.local', 'bin', 'kitsune'),
+    join(home, '.local', 'bin', 'kitsune-overlay'),
+    join(home, '.local', 'bin', 'kitsune-color-resolve'),
+    join(home, '.local', 'bin', 'kitsune-rendercore'),
+    join(home, '.cargo', 'bin', 'kitsune'),
+    join(home, '.cargo', 'bin', 'kitsune-overlay'),
+    join(home, '.cargo', 'bin', 'kitsune-color-resolve'),
+    join(home, '.cargo', 'bin', 'kitsune-rendercore'),
+    join(home, '.config', 'systemd', 'user', 'kitowall-next.service'),
+    join(home, '.config', 'systemd', 'user', 'kitowall-next.timer'),
+    join(home, '.config', 'systemd', 'user', 'kitowall-watch.service'),
+    join(home, '.config', 'systemd', 'user', 'kitowall-login-apply.service'),
+    join(home, '.config', 'systemd', 'user', 'kitsune-rendercore.service')
+  ];
+
+  logs.push(`[purge] namespace=${namespace}`);
+  await runSystemctlUserBestEffort(['disable', '--now', 'kitowall-next.timer'], logs);
+  await runSystemctlUserBestEffort(['stop', 'kitowall-next.service'], logs);
+  await runSystemctlUserBestEffort(['disable', '--now', 'kitowall-watch.service'], logs);
+  await runSystemctlUserBestEffort(['disable', '--now', 'kitowall-login-apply.service'], logs);
+  await runSystemctlUserBestEffort(['disable', '--now', 'kitsune-rendercore.service'], logs);
+  await runSystemctlUserBestEffort(['daemon-reload'], logs);
+  await runSystemctlUserBestEffort(['reset-failed', 'kitowall-next.service', 'kitowall-next.timer', 'kitowall-watch.service', 'kitowall-login-apply.service', 'kitsune-rendercore.service'], logs);
+
+  for (const targetPath of removeFiles) {
+    await rmIfExists(targetPath, logs);
+  }
+  for (const targetPath of removeTargets) {
+    await rmIfExists(targetPath, logs);
+  }
+
+  logs.push('[ok] purge complete');
+  return {ok: true, code: 0, logs: `${logs.join('\n')}\n`};
+}

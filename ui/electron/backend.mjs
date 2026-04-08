@@ -1122,6 +1122,16 @@ export async function createBackend(win) {
             logs: `${out.stdout ?? ''}${out.stderr ?? ''}`
           };
         }
+        case 'kitowall_setup_purge': {
+          const namespace = args.namespace || 'kitowall';
+          await fs.writeFile(UI_LOG_PATH, '', 'utf8').catch(() => {});
+          const out = await runLoggedKitowallRaw(['host-setup', 'purge', '--namespace', namespace, '--yes']);
+          return {
+            ok: (out.code ?? 1) === 0,
+            code: out.code,
+            logs: `${out.stdout ?? ''}${out.stderr ?? ''}`
+          };
+        }
         case 'kitowall_preflight_status': {
           const checks = [
             ['kitowall', 'kitowall', false],
